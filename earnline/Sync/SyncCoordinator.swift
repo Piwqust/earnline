@@ -5,23 +5,22 @@ import Supabase
 @MainActor
 enum SyncCoordinator {
     static func sync(context: ModelContext, client: SupabaseClient) async throws -> Date {
-        let user = try await client.auth.user()
-        let userID = user.id
+        let workspaceID = SupabaseProjectDefaults.workspaceID
         let syncedAt = Date()
 
-        try await pushDeletes(context: context, client: client, userID: userID)
-        try await pushLocalRows(context: context, client: client, userID: userID, syncedAt: syncedAt)
-        try await pullRemoteRows(context: context, client: client, syncedAt: syncedAt)
+        try await pushDeletes(context: context, client: client, workspaceID: workspaceID)
+        try await pushLocalRows(context: context, client: client, workspaceID: workspaceID, syncedAt: syncedAt)
+        try await pullRemoteRows(context: context, client: client, workspaceID: workspaceID, syncedAt: syncedAt)
 
         try context.save()
         return syncedAt
     }
 
-    private static func pushDeletes(context: ModelContext, client: SupabaseClient, userID: UUID) async throws {
+    private static func pushDeletes(context: ModelContext, client: SupabaseClient, workspaceID: String) async throws {
         let tombstones = try context.fetch(FetchDescriptor<SyncTombstone>())
         guard !tombstones.isEmpty else { return }
 
-        let remoteTombstones = tombstones.map { RemoteTombstone($0, userID: userID) }
+        let remoteTombstones = tombstones.map { RemoteTombstone($0, workspaceID: workspaceID) }
         try await client
             .from("earnline_tombstones")
             .upsert(remoteTombstones)
@@ -32,6 +31,7 @@ enum SyncCoordinator {
                 .from(tableName(for: tombstone.entity))
                 .delete()
                 .eq("id", value: tombstone.recordID.uuidString)
+                .eq("workspace_id", value: workspaceID)
                 .execute()
             context.delete(tombstone)
         }
@@ -39,53 +39,60 @@ enum SyncCoordinator {
 
     private static func pushLocalRows(context: ModelContext,
                                       client: SupabaseClient,
-                                      userID: UUID,
+                                      workspaceID: String,
                                       syncedAt: Date) async throws {
         let clients = try context.fetch(FetchDescriptor<Client>())
         let headings = try context.fetch(FetchDescriptor<Heading>())
         let entries = try context.fetch(FetchDescriptor<Entry>())
 
-        let dirtyClients = clients.filter(\.needsSync).map { RemoteClient($0, userID: userID) }
+        let dirtyClients = clients.filter(\.needsSync).map { RemoteClient($0, workspaceID: workspaceID) }
         if !dirtyClients.isEmpty {
             try await client.from("earnline_clients").upsert(dirtyClients).execute()
             clients.filter(\.needsSync).forEach { $0.markSynced(at: syncedAt) }
         }
 
-        let dirtyHeadings = headings.filter(\.needsSync).map { RemoteHeading($0, userID: userID) }
+        let dirtyHeadings = headings.filter(\.needsSync).map { RemoteHeading($0, workspaceID: workspaceID) }
         if !dirtyHeadings.isEmpty {
             try await client.from("earnline_headings").upsert(dirtyHeadings).execute()
             headings.filter(\.needsSync).forEach { $0.markSynced(at: syncedAt) }
         }
 
-        let dirtyEntries = entries.filter(\.needsSync).compactMap { RemoteEntry($0, userID: userID) }
+        let dirtyEntries = entries.filter(\.needsSync).compactMap { RemoteEntry($0, workspaceID: workspaceID) }
         if !dirtyEntries.isEmpty {
             try await client.from("earnline_entries").upsert(dirtyEntries).execute()
             entries.filter(\.needsSync).forEach { $0.markSynced(at: syncedAt) }
         }
     }
 
-    private static func pullRemoteRows(context: ModelContext, client: SupabaseClient, syncedAt: Date) async throws {
+    private static func pullRemoteRows(context: ModelContext,
+                                       client: SupabaseClient,
+                                       workspaceID: String,
+                                       syncedAt: Date) async throws {
         let remoteClients: [RemoteClient] = try await client
             .from("earnline_clients")
             .select()
+            .eq("workspace_id", value: workspaceID)
             .execute()
             .value
 
         let remoteHeadings: [RemoteHeading] = try await client
             .from("earnline_headings")
             .select()
+            .eq("workspace_id", value: workspaceID)
             .execute()
             .value
 
         let remoteEntries: [RemoteEntry] = try await client
             .from("earnline_entries")
             .select()
+            .eq("workspace_id", value: workspaceID)
             .execute()
             .value
 
         let remoteTombstones: [RemoteTombstone] = try await client
             .from("earnline_tombstones")
             .select()
+            .eq("workspace_id", value: workspaceID)
             .execute()
             .value
 

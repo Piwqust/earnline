@@ -11,8 +11,6 @@ struct SettingsView: View {
     @Query private var tombstones: [SyncTombstone]
 
     private let currencies = ["USD", "EUR", "GBP", "RUB", "UAH"]
-    @State private var email = ""
-    @State private var password = ""
 
     var body: some View {
         @Bindable var app = appModel
@@ -60,30 +58,12 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: { Text("Supabase") } footer: {
-                    Text("Use a publishable key. Never paste a service_role key into the app.")
+                    Text("Personal no-login sync uses this publishable key. Never paste a service_role key into the app.")
                 }
 
                 Section {
-                    if let signedInEmail = app.signedInEmail {
-                        LabeledContent("Signed in", value: signedInEmail)
-                        Button("Sign out") { Task { await app.signOut() } }
-                    } else {
-                        TextField("Email", text: $email)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        SecureField("Password", text: $password)
-                        HStack {
-                            Button("Sign in") { Task { await app.signIn(email: email, password: password) } }
-                                .disabled(!canSubmitAuth)
-                            Spacer()
-                            Button("Create account") { Task { await app.signUp(email: email, password: password) } }
-                                .disabled(!canSubmitAuth)
-                        }
-                    }
-                } header: { Text("Account") }
-
-                Section {
+                    LabeledContent("Mode", value: "Personal")
+                    LabeledContent("Workspace", value: SupabaseProjectDefaults.workspaceID)
                     LabeledContent("Status", value: app.syncMessage)
                     LabeledContent("Pending", value: "\(pendingSyncCount)")
                     if let lastSyncAt = app.lastSyncAt {
@@ -102,7 +82,9 @@ struct SettingsView: View {
                         let inserted = IncomeLedgerImporter.importBundledLedger(into: context)
                         if inserted > 0 { app.queueSync(context: context) }
                     }
-                } header: { Text("Sync") }
+                } header: { Text("Sync") } footer: {
+                    Text("This syncs directly to the shared Earnline workspace without an account.")
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -114,12 +96,6 @@ struct SettingsView: View {
 
     private func label(for code: String) -> String {
         "\(code)  \(CurrencyFormatter.symbol(for: code))"
-    }
-
-    private var canSubmitAuth: Bool {
-        appModel.isSupabaseConfigured
-            && email.contains("@")
-            && password.count >= 6
     }
 
     private var pendingSyncCount: Int {

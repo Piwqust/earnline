@@ -2,14 +2,11 @@ import Foundation
 
 enum SyncError: LocalizedError {
     case missingConfiguration
-    case missingUser
 
     var errorDescription: String? {
         switch self {
         case .missingConfiguration:
             return "Supabase is not configured."
-        case .missingUser:
-            return "Sign in before syncing."
         }
     }
 }
@@ -56,16 +53,16 @@ enum SyncDateCodec {
 
 struct RemoteClient: Codable, Identifiable {
     let id: UUID
-    let userID: UUID
+    let workspaceID: String
     let name: String
     let colorHex: String
     let sortIndex: Int
     let createdAt: String
     let updatedAt: String
 
-    init(_ client: Client, userID: UUID) {
+    init(_ client: Client, workspaceID: String) {
         id = client.id
-        self.userID = userID
+        self.workspaceID = workspaceID
         name = client.name
         colorHex = client.colorHex
         sortIndex = client.sortIndex
@@ -75,7 +72,7 @@ struct RemoteClient: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userID = "user_id"
+        case workspaceID = "workspace_id"
         case name
         case colorHex = "color_hex"
         case sortIndex = "sort_index"
@@ -86,7 +83,7 @@ struct RemoteClient: Codable, Identifiable {
 
 struct RemoteEntry: Codable, Identifiable {
     let id: UUID
-    let userID: UUID
+    let workspaceID: String
     let clientID: UUID
     let amount: Double
     let currencyCode: String
@@ -99,10 +96,10 @@ struct RemoteEntry: Codable, Identifiable {
     let createdAt: String
     let updatedAt: String
 
-    init?(_ entry: Entry, userID: UUID) {
+    init?(_ entry: Entry, workspaceID: String) {
         guard let clientID = entry.client?.id else { return nil }
         id = entry.id
-        self.userID = userID
+        self.workspaceID = workspaceID
         self.clientID = clientID
         amount = NSDecimalNumber(decimal: entry.amount).doubleValue
         currencyCode = entry.currencyCode
@@ -118,7 +115,7 @@ struct RemoteEntry: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userID = "user_id"
+        case workspaceID = "workspace_id"
         case clientID = "client_id"
         case amount
         case currencyCode = "currency_code"
@@ -135,16 +132,16 @@ struct RemoteEntry: Codable, Identifiable {
 
 struct RemoteHeading: Codable, Identifiable {
     let id: UUID
-    let userID: UUID
+    let workspaceID: String
     let title: String
     let date: String
     let sortIndex: Int
     let createdAt: String
     let updatedAt: String
 
-    init(_ heading: Heading, userID: UUID) {
+    init(_ heading: Heading, workspaceID: String) {
         id = heading.id
-        self.userID = userID
+        self.workspaceID = workspaceID
         title = heading.title
         date = SyncDateCodec.dayString(heading.date)
         sortIndex = heading.sortIndex
@@ -154,7 +151,7 @@ struct RemoteHeading: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userID = "user_id"
+        case workspaceID = "workspace_id"
         case title
         case date
         case sortIndex = "sort_index"
@@ -165,15 +162,15 @@ struct RemoteHeading: Codable, Identifiable {
 
 struct RemoteTombstone: Codable, Identifiable {
     let id: UUID
-    let userID: UUID
+    let workspaceID: String
     let entity: String
     let recordID: UUID
     let deletedAt: String
     let createdAt: String
 
-    init(_ tombstone: SyncTombstone, userID: UUID) {
+    init(_ tombstone: SyncTombstone, workspaceID: String) {
         id = tombstone.id
-        self.userID = userID
+        self.workspaceID = workspaceID
         entity = tombstone.entityRaw
         recordID = tombstone.recordID
         deletedAt = SyncDateCodec.timestampString(tombstone.deletedAt)
@@ -182,7 +179,7 @@ struct RemoteTombstone: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case userID = "user_id"
+        case workspaceID = "workspace_id"
         case entity
         case recordID = "record_id"
         case deletedAt = "deleted_at"

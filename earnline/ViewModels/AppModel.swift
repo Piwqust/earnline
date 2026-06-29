@@ -29,7 +29,6 @@ final class AppModel {
             resetSupabaseClient()
         }
     }
-    var signedInEmail: String?
     var isSyncing = false
     var syncMessage = "Offline"
     var syncError: String?
@@ -52,6 +51,7 @@ final class AppModel {
         supabaseURLString = defaults.string(forKey: "supabaseURLString") ?? SupabaseProjectDefaults.url
         supabaseKey = defaults.string(forKey: "supabaseKey") ?? SupabaseProjectDefaults.publishableKey
         lastSyncAt = defaults.object(forKey: "lastSyncAt") as? Date
+        syncMessage = isSupabaseConfigured ? "Ready" : "Offline"
     }
 
     // MARK: Currency
@@ -120,59 +120,12 @@ final class AppModel {
 
     func refreshSupabaseSession() async {
         guard isSupabaseConfigured else {
-            signedInEmail = nil
             syncMessage = "Offline"
             return
         }
-        do {
-            let user = try await supabase().auth.user()
-            signedInEmail = user.email
-            syncMessage = "Signed in"
-            syncError = nil
-        } catch {
-            signedInEmail = nil
-            syncMessage = "Not signed in"
-        }
-    }
-
-    func signIn(email: String, password: String) async {
-        guard isSupabaseConfigured else {
-            syncError = "Add your Supabase URL and publishable key first."
-            return
-        }
-        do {
-            try await supabase().auth.signIn(email: email, password: password)
-            await refreshSupabaseSession()
-        } catch {
-            syncError = error.localizedDescription
-        }
-    }
-
-    func signUp(email: String, password: String) async {
-        guard isSupabaseConfigured else {
-            syncError = "Add your Supabase URL and publishable key first."
-            return
-        }
-        do {
-            try await supabase().auth.signUp(email: email, password: password)
-            await refreshSupabaseSession()
-            if signedInEmail == nil {
-                syncMessage = "Check email"
-            }
-        } catch {
-            syncError = error.localizedDescription
-        }
-    }
-
-    func signOut() async {
-        guard isSupabaseConfigured else { return }
-        do {
-            try await supabase().auth.signOut()
-            signedInEmail = nil
-            syncMessage = "Signed out"
-        } catch {
-            syncError = error.localizedDescription
-        }
+        _ = try? supabase()
+        syncMessage = "Ready"
+        syncError = nil
     }
 
     func syncNow(context: ModelContext) async {
@@ -219,8 +172,7 @@ final class AppModel {
 
     private func resetSupabaseClient() {
         supabaseClient = nil
-        signedInEmail = nil
-        syncMessage = isSupabaseConfigured ? "Not signed in" : "Offline"
+        syncMessage = isSupabaseConfigured ? "Ready" : "Offline"
     }
 }
 

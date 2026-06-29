@@ -21,7 +21,7 @@ materials, soft scroll edges, spring micro-interactions, and haptics.
 - **SwiftUI** (iOS 26) with the real Liquid Glass APIs (`glassEffect`, `GlassEffectContainer`,
   `buttonStyle(.glass)`, `scrollEdgeEffectStyle`).
 - **SwiftData** for offline-first persistence (`Client`, `Entry`, `Heading`) plus sync tombstones.
-- **Supabase Swift** for authenticated cloud sync, pinned through XcodeGen.
+- **Supabase Swift** for personal no-login cloud sync, pinned through XcodeGen.
 - **`@Observable`** app state + `@AppStorage`-backed currency settings.
 - A custom, unit-tested **`LineParser`** powers the smart "type → chips" composer.
 
@@ -39,7 +39,7 @@ materials, soft scroll edges, spring micro-interactions, and haptics.
 - Status menus (logged → in-progress → paid), the New Heading / Project / Client glass menu, an empty
   state, and multi-month sample data on first launch.
 - Bundled import of the original income ledger from `/Users/dameer/Desktop/earnline_income_db_1.txt`.
-- Supabase email/password sign-in from Settings, local dirty-row sync, pull sync, and offline delete
+- Supabase personal workspace sync from Settings, local dirty-row sync, pull sync, and offline delete
   tombstones.
 
 ## Supabase setup
@@ -49,7 +49,8 @@ and a one-shot current schema is kept at
 [supabase/earnline_sync_schema.sql](/Users/dameer/Desktop/code/earnline/supabase/earnline_sync_schema.sql).
 
 The app defaults to the project URL and publishable mobile key, so Settings should already be filled
-in. The mobile app never needs a Postgres password or service role key.
+in. It syncs directly to the fixed `earnline-personal` workspace with no app login. The mobile app
+never needs a Postgres password or service role key.
 
 If you install the Supabase CLI locally, you can connect the folder with:
 ```bash

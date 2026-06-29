@@ -14,6 +14,7 @@ struct earnlineApp: App {
         }
         SampleData.seedIfNeeded(container.mainContext)
         SampleData.importBundledLedgerIfNeeded(container.mainContext)
+        SampleData.cleanupLegacyDemoEntriesIfNeeded(container.mainContext)
     }
 
     var body: some Scene {
@@ -23,9 +24,7 @@ struct earnlineApp: App {
                 .tint(Theme.blue)
                 .task {
                     await app.refreshSupabaseSession()
-                    if app.signedInEmail != nil {
-                        await app.syncNow(context: container.mainContext)
-                    }
+                    await app.syncNow(context: container.mainContext)
                 }
         }
         .modelContainer(container)

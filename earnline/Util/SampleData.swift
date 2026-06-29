@@ -5,6 +5,8 @@ import SwiftData
 enum SampleData {
     private static let bundledLedgerImportVersion = 1
     private static let bundledLedgerImportKey = "bundledIncomeLedgerImportVersion"
+    private static let legacyDemoCleanupVersion = 1
+    private static let legacyDemoCleanupKey = "legacyDemoCleanupVersion"
 
     static func seedIfNeeded(_ context: ModelContext) {
         let existing = try? context.fetch(FetchDescriptor<Client>())
@@ -19,6 +21,23 @@ enum SampleData {
         let inserted = IncomeLedgerImporter.importBundledLedger(into: context)
         defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
         return inserted
+    }
+
+    @discardableResult
+    static func cleanupLegacyDemoEntriesIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+        guard defaults.integer(forKey: legacyDemoCleanupKey) < legacyDemoCleanupVersion else { return 0 }
+        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        var deleted = 0
+
+        for entry in entries where isLegacyDemoEntry(entry) {
+            SyncDeleteQueue.enqueue(.entry, id: entry.id, in: context)
+            context.delete(entry)
+            deleted += 1
+        }
+
+        defaults.set(legacyDemoCleanupVersion, forKey: legacyDemoCleanupKey)
+        try? context.save()
+        return deleted
     }
 
     static func seed(_ context: ModelContext) {
@@ -83,5 +102,51 @@ enum SampleData {
         for (client, e) in lastMonth + twoMonthsAgo { e.client = client; context.insert(e) }
 
         try? context.save()
+    }
+
+    private static func isLegacyDemoEntry(_ entry: Entry) -> Bool {
+        legacyDemoEntryKeys.contains(demoKey(client: entry.client?.name,
+                                            project: entry.project,
+                                            task: entry.task,
+                                            amount: entry.amount,
+                                            currencyCode: entry.currencyCode))
+    }
+
+    private static let legacyDemoEntryKeys: Set<String> = [
+        demoKey(client: "Mikita", project: "LunaAI", task: "2 screens for my home page gggg yoyoyooy", amount: 240, currencyCode: "USD"),
+        demoKey(client: "Mikita", project: "LunaAI", task: "Landing page", amount: 300, currencyCode: "USD"),
+        demoKey(client: "Mikita", project: "LunaAI", task: "Logotype", amount: 140, currencyCode: "USD"),
+        demoKey(client: "Mikita", project: "LunaAI", task: "Dashboard redesign", amount: 875, currencyCode: "USD"),
+        demoKey(client: "Mikita", project: "LunaAI", task: "Design system kickoff", amount: 1000, currencyCode: "USD"),
+        demoKey(client: "Mikita", project: "LunaAI", task: "Onboarding screens", amount: 480, currencyCode: "USD"),
+        demoKey(client: "Mikita", project: "LunaAI", task: "Icon set", amount: 260, currencyCode: "USD"),
+        demoKey(client: "Mikita", project: "LunaAI", task: "Brand refresh", amount: 540, currencyCode: "USD"),
+        demoKey(client: "BlackWave", project: "BlackResell", task: "Admin Panel for him website", amount: 900, currencyCode: "USD"),
+        demoKey(client: "BlackWave", project: "BlackResell", task: "Telegram bot tweaks", amount: 100, currencyCode: "USD"),
+        demoKey(client: "BlackWave", project: "BlackResell", task: "Pricing page", amount: 700, currencyCode: "USD"),
+        demoKey(client: "BlackWave", project: "BlackResell", task: "Landing hero", amount: 320, currencyCode: "USD"),
+    ]
+
+    private static func demoKey(client: String?,
+                                project: String?,
+                                task: String,
+                                amount: Decimal,
+                                currencyCode: String) -> String {
+        let amountText = NSDecimalNumber(decimal: amount).stringValue
+        return [
+            client?.normalizedDemoKey ?? "",
+            project?.normalizedDemoKey ?? "",
+            task.normalizedDemoKey,
+            amountText,
+            currencyCode.uppercased(),
+        ].joined(separator: "|")
+    }
+}
+
+private extension String {
+    var normalizedDemoKey: String {
+        folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }

@@ -1,6 +1,7 @@
 create table if not exists public.earnline_clients (
   id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id text not null default 'earnline-personal'
+    constraint earnline_clients_workspace_id_check check (workspace_id = 'earnline-personal'),
   name text not null,
   color_hex text not null,
   sort_index integer not null default 0,
@@ -10,7 +11,8 @@ create table if not exists public.earnline_clients (
 
 create table if not exists public.earnline_entries (
   id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id text not null default 'earnline-personal'
+    constraint earnline_entries_workspace_id_check check (workspace_id = 'earnline-personal'),
   client_id uuid not null references public.earnline_clients(id) on delete cascade,
   amount numeric(14, 2) not null,
   currency_code text not null,
@@ -26,7 +28,8 @@ create table if not exists public.earnline_entries (
 
 create table if not exists public.earnline_headings (
   id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id text not null default 'earnline-personal'
+    constraint earnline_headings_workspace_id_check check (workspace_id = 'earnline-personal'),
   title text not null,
   date date not null,
   sort_index integer not null default 0,
@@ -36,150 +39,136 @@ create table if not exists public.earnline_headings (
 
 create table if not exists public.earnline_tombstones (
   id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  workspace_id text not null default 'earnline-personal'
+    constraint earnline_tombstones_workspace_id_check check (workspace_id = 'earnline-personal'),
   entity text not null check (entity in ('client', 'entry', 'heading')),
   record_id uuid not null,
   deleted_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
 
-create index if not exists earnline_clients_user_updated_idx
-  on public.earnline_clients (user_id, updated_at desc);
+create index if not exists earnline_clients_workspace_updated_idx
+  on public.earnline_clients (workspace_id, updated_at desc);
 
-create index if not exists earnline_entries_user_updated_idx
-  on public.earnline_entries (user_id, updated_at desc);
+create index if not exists earnline_entries_workspace_updated_idx
+  on public.earnline_entries (workspace_id, updated_at desc);
 
 create index if not exists earnline_entries_client_idx
   on public.earnline_entries (client_id);
 
-create index if not exists earnline_headings_user_updated_idx
-  on public.earnline_headings (user_id, updated_at desc);
+create index if not exists earnline_headings_workspace_updated_idx
+  on public.earnline_headings (workspace_id, updated_at desc);
 
-create index if not exists earnline_tombstones_user_deleted_idx
-  on public.earnline_tombstones (user_id, deleted_at desc);
+create index if not exists earnline_tombstones_workspace_deleted_idx
+  on public.earnline_tombstones (workspace_id, deleted_at desc);
 
 alter table public.earnline_clients enable row level security;
 alter table public.earnline_entries enable row level security;
 alter table public.earnline_headings enable row level security;
 alter table public.earnline_tombstones enable row level security;
 
-grant usage on schema public to authenticated;
-grant select, insert, update, delete on public.earnline_clients to authenticated;
-grant select, insert, update, delete on public.earnline_entries to authenticated;
-grant select, insert, update, delete on public.earnline_headings to authenticated;
-grant select, insert, update, delete on public.earnline_tombstones to authenticated;
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.earnline_clients to anon, authenticated;
+grant select, insert, update, delete on public.earnline_entries to anon, authenticated;
+grant select, insert, update, delete on public.earnline_headings to anon, authenticated;
+grant select, insert, update, delete on public.earnline_tombstones to anon, authenticated;
 
-drop policy if exists "earnline_clients_select_own" on public.earnline_clients;
-create policy "earnline_clients_select_own"
+drop policy if exists "earnline_clients_select_workspace" on public.earnline_clients;
+create policy "earnline_clients_select_workspace"
 on public.earnline_clients for select
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_clients_insert_own" on public.earnline_clients;
-create policy "earnline_clients_insert_own"
+drop policy if exists "earnline_clients_insert_workspace" on public.earnline_clients;
+create policy "earnline_clients_insert_workspace"
 on public.earnline_clients for insert
-to authenticated
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_clients_update_own" on public.earnline_clients;
-create policy "earnline_clients_update_own"
+drop policy if exists "earnline_clients_update_workspace" on public.earnline_clients;
+create policy "earnline_clients_update_workspace"
 on public.earnline_clients for update
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id)
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal')
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_clients_delete_own" on public.earnline_clients;
-create policy "earnline_clients_delete_own"
+drop policy if exists "earnline_clients_delete_workspace" on public.earnline_clients;
+create policy "earnline_clients_delete_workspace"
 on public.earnline_clients for delete
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_entries_select_own" on public.earnline_entries;
-create policy "earnline_entries_select_own"
+drop policy if exists "earnline_entries_select_workspace" on public.earnline_entries;
+create policy "earnline_entries_select_workspace"
 on public.earnline_entries for select
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_entries_insert_own" on public.earnline_entries;
-create policy "earnline_entries_insert_own"
+drop policy if exists "earnline_entries_insert_workspace" on public.earnline_entries;
+create policy "earnline_entries_insert_workspace"
 on public.earnline_entries for insert
-to authenticated
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_entries_update_own" on public.earnline_entries;
-create policy "earnline_entries_update_own"
+drop policy if exists "earnline_entries_update_workspace" on public.earnline_entries;
+create policy "earnline_entries_update_workspace"
 on public.earnline_entries for update
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id)
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal')
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_entries_delete_own" on public.earnline_entries;
-create policy "earnline_entries_delete_own"
+drop policy if exists "earnline_entries_delete_workspace" on public.earnline_entries;
+create policy "earnline_entries_delete_workspace"
 on public.earnline_entries for delete
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_headings_select_own" on public.earnline_headings;
-create policy "earnline_headings_select_own"
+drop policy if exists "earnline_headings_select_workspace" on public.earnline_headings;
+create policy "earnline_headings_select_workspace"
 on public.earnline_headings for select
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_headings_insert_own" on public.earnline_headings;
-create policy "earnline_headings_insert_own"
+drop policy if exists "earnline_headings_insert_workspace" on public.earnline_headings;
+create policy "earnline_headings_insert_workspace"
 on public.earnline_headings for insert
-to authenticated
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_headings_update_own" on public.earnline_headings;
-create policy "earnline_headings_update_own"
+drop policy if exists "earnline_headings_update_workspace" on public.earnline_headings;
+create policy "earnline_headings_update_workspace"
 on public.earnline_headings for update
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id)
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal')
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_headings_delete_own" on public.earnline_headings;
-create policy "earnline_headings_delete_own"
+drop policy if exists "earnline_headings_delete_workspace" on public.earnline_headings;
+create policy "earnline_headings_delete_workspace"
 on public.earnline_headings for delete
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_tombstones_select_own" on public.earnline_tombstones;
-create policy "earnline_tombstones_select_own"
+drop policy if exists "earnline_tombstones_select_workspace" on public.earnline_tombstones;
+create policy "earnline_tombstones_select_workspace"
 on public.earnline_tombstones for select
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_tombstones_insert_own" on public.earnline_tombstones;
-create policy "earnline_tombstones_insert_own"
+drop policy if exists "earnline_tombstones_insert_workspace" on public.earnline_tombstones;
+create policy "earnline_tombstones_insert_workspace"
 on public.earnline_tombstones for insert
-to authenticated
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_tombstones_update_own" on public.earnline_tombstones;
-create policy "earnline_tombstones_update_own"
+drop policy if exists "earnline_tombstones_update_workspace" on public.earnline_tombstones;
+create policy "earnline_tombstones_update_workspace"
 on public.earnline_tombstones for update
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id)
-with check ((select auth.uid()) is not null and (select auth.uid()) = user_id);
+to anon, authenticated
+using (workspace_id = 'earnline-personal')
+with check (workspace_id = 'earnline-personal');
 
-drop policy if exists "earnline_tombstones_delete_own" on public.earnline_tombstones;
-create policy "earnline_tombstones_delete_own"
+drop policy if exists "earnline_tombstones_delete_workspace" on public.earnline_tombstones;
+create policy "earnline_tombstones_delete_workspace"
 on public.earnline_tombstones for delete
-to authenticated
-using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
-
-revoke all privileges on table public.earnline_clients from anon;
-revoke all privileges on table public.earnline_entries from anon;
-revoke all privileges on table public.earnline_headings from anon;
-revoke all privileges on table public.earnline_tombstones from anon;
-
-revoke all privileges on table public.earnline_clients from authenticated;
-revoke all privileges on table public.earnline_entries from authenticated;
-revoke all privileges on table public.earnline_headings from authenticated;
-revoke all privileges on table public.earnline_tombstones from authenticated;
-
-grant select, insert, update, delete on table public.earnline_clients to authenticated;
-grant select, insert, update, delete on table public.earnline_entries to authenticated;
-grant select, insert, update, delete on table public.earnline_headings to authenticated;
-grant select, insert, update, delete on table public.earnline_tombstones to authenticated;
+to anon, authenticated
+using (workspace_id = 'earnline-personal');
