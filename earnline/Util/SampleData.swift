@@ -3,10 +3,22 @@ import SwiftData
 
 /// Seeds the Figma scene on first launch so the app feels alive.
 enum SampleData {
+    private static let bundledLedgerImportVersion = 1
+    private static let bundledLedgerImportKey = "bundledIncomeLedgerImportVersion"
+
     static func seedIfNeeded(_ context: ModelContext) {
         let existing = try? context.fetch(FetchDescriptor<Client>())
-        guard (existing?.isEmpty ?? true) else { return }
-        IncomeLedgerImporter.importBundledLedger(into: context)
+        if existing?.isEmpty ?? true {
+            importBundledLedgerIfNeeded(context)
+        }
+    }
+
+    @discardableResult
+    static func importBundledLedgerIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+        guard defaults.integer(forKey: bundledLedgerImportKey) < bundledLedgerImportVersion else { return 0 }
+        let inserted = IncomeLedgerImporter.importBundledLedger(into: context)
+        defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
+        return inserted
     }
 
     static func seed(_ context: ModelContext) {

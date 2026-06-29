@@ -13,6 +13,7 @@ struct earnlineApp: App {
             fatalError("Failed to create ModelContainer: \(error)")
         }
         SampleData.seedIfNeeded(container.mainContext)
+        SampleData.importBundledLedgerIfNeeded(container.mainContext)
     }
 
     var body: some Scene {
@@ -20,7 +21,12 @@ struct earnlineApp: App {
             LedgerView()
                 .environment(app)
                 .tint(Theme.blue)
-                .task { await app.refreshSupabaseSession() }
+                .task {
+                    await app.refreshSupabaseSession()
+                    if app.signedInEmail != nil {
+                        await app.syncNow(context: container.mainContext)
+                    }
+                }
         }
         .modelContainer(container)
     }
