@@ -1,0 +1,25 @@
+.DS_Store
+
+# Xcode local state
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+DerivedData/
+*.hmap
+
+# Build outputs
+build/
+.build/
+
+# SwiftPM working checkouts
+.swiftpm/
+
+# Local editor and tool state
+.vscode/
+.idea/
+.xcodebuildmcp/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
