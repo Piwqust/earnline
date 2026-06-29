@@ -13,6 +13,7 @@ enum LineParser {
 
     private static let paidMarks: Set<Character> = ["✅", "✔", "✓", "☑"]
     private static let progressMarks: Set<Character> = ["⌛", "⏳", "🕓", "🟠", "🟡", "◐"]
+    private static let cancelMarks: Set<Character> = ["❌", "✖", "✗", "🚫", "🔴"]
 
     static func parse(_ raw: String, defaultCurrency: String = "USD") -> ParsedLine {
         var result = ParsedLine(currencyCode: defaultCurrency)
@@ -60,6 +61,8 @@ enum LineParser {
                 status = .paid; consumed = true
             } else if progressMarks.contains(first) {
                 status = .inProgress; consumed = true
+            } else if cancelMarks.contains(first) {
+                status = .canceled; consumed = true
             } else if first == "+" || first.isWhitespace || first == "\u{FE0F}" {
                 consumed = true // strip decoration / variation selector
             }

@@ -178,7 +178,7 @@ enum SyncCoordinator {
                                   task: record.task,
                                   date: SyncDateCodec.parseDay(record.date),
                                   holdUntil: record.holdUntil.map(SyncDateCodec.parseDay),
-                                  status: EntryStatus(rawValue: record.status) ?? .logged,
+                                  status: EntryStatus(rawValue: record.status) ?? .paid,
                                   sortIndex: record.sortIndex,
                                   createdAt: SyncDateCodec.parseTimestamp(record.createdAt),
                                   updatedAt: remoteUpdatedAt,

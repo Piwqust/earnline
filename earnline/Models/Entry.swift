@@ -21,7 +21,8 @@ final class Entry {
     var client: Client?
 
     var status: EntryStatus {
-        get { EntryStatus(rawValue: statusRaw) ?? .logged }
+        // Unknown/legacy raw values (e.g. the old "logged") fall back to the new default.
+        get { EntryStatus(rawValue: statusRaw) ?? .paid }
         set { statusRaw = newValue.rawValue }
     }
 
@@ -32,7 +33,7 @@ final class Entry {
          task: String,
          date: Date = .now,
          holdUntil: Date? = nil,
-         status: EntryStatus = .logged,
+         status: EntryStatus = .paid,
          sortIndex: Int = 0,
          createdAt: Date = .now,
          updatedAt: Date = .now,

@@ -1,18 +1,17 @@
 import SwiftUI
 import SwiftData
 
-/// The income composer, built to match the Figma "Tertiary Item" exactly:
-///   `+  [ $100 ]  [ Project ⌄ ] : [ Task ]                 [ ◐ ⌄ ]`
-///   `↳  [ 29.06.26 ] · [ 📅 hold date ]`
-/// Controlled with the chips and the keyboard Return key
-/// (Amount → Return → Project → Return → Task → Return commits).
+/// The inline "mini creation window". Figma chip aesthetic, with a multi-line
+/// task (Return inserts a line break) and a Submit button to commit.
+/// Amount → Return → Project → Return → Task (multi-line) → Submit.
 struct SmartComposer: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
 
-    @Binding var targetClient: Client?
+    let client: Client
     var initialText: String = ""
-    var onClose: () -> Void
+
+    @Query(sort: \Entry.createdAt, order: .reverse) private var allEntries: [Entry]
 
     enum Field: Hashable { case amount, project, task }
     @FocusState private var focus: Field?
@@ -22,7 +21,7 @@ struct SmartComposer: View {
     @State private var task = ""
     @State private var entryDate = Date()
     @State private var holdUntil: Date?
-    @State private var status: EntryStatus = .inProgress
+    @State private var status: EntryStatus = .paid
     @State private var currencyCode = "USD"
     @State private var showDatePicker = false
     @State private var showHoldPicker = false
@@ -34,37 +33,27 @@ struct SmartComposer: View {
     }
     private var symbol: String { CurrencyFormatter.symbol(for: currencyCode) }
     private var canCommit: Bool {
-        targetClient != nil && amountDecimal != nil
-            && !Validation.trimmed(task, max: Limits.maxTaskLength).isEmpty
+        amountDecimal != nil && !Validation.trimmed(task, max: Limits.maxTaskLength).isEmpty
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Row 1 — content
+        VStack(alignment: .leading, spacing: 10) {
+            // Chips — single row: amount · project · status
             HStack(spacing: 6) {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.label(0.5))
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        amountChip
-                        HStack(spacing: 4) {
-                            projectChip
-                            Text(":")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(Theme.label(0.6))
-                            taskChip
-                        }
-                    }
-                }
-                .scrollClipDisabled()
-                .frame(maxWidth: .infinity, alignment: .leading)
-
+                    .frame(height: 28)
+                amountChip
+                projectChip
                 statusChip
+                Spacer(minLength: 0)
             }
 
-            // Row 2 — date
+            // Task — full width, multi-line (line breaks allowed)
+            taskField
+
+            // Date row + Submit
             HStack(spacing: 6) {
                 Image(systemName: "arrow.turn.down.right")
                     .font(.system(size: 10))
@@ -72,22 +61,29 @@ struct SmartComposer: View {
                 dateChip
                 Text("·").font(.system(size: 14)).foregroundStyle(Theme.label(0.6))
                 holdChip
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
+                submitButton
             }
         }
         .padding(12)
         .background(Theme.label(0.02), in: .rect(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.label(0.1), lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                .foregroundStyle(Theme.label(0.18))
+        )
         .onAppear(perform: prime)
+        .onChange(of: entryDate) { _, newValue in
+            if let holdUntil, holdUntil < newValue { self.holdUntil = newValue }
+        }
     }
 
-    // MARK: Row 1 chips
+    // MARK: Chips
 
     private var amountChip: some View {
         chip(bg: Theme.label(0.10)) {
             HStack(spacing: 1) {
-                Text(symbol)
-                    .foregroundStyle(amountText.isEmpty ? Theme.label(0.4) : Theme.label)
+                Text(symbol).foregroundStyle(amountText.isEmpty ? Theme.label(0.4) : Theme.label)
                 TextField("100", text: $amountText)
                     .fixedSize()
                     .frame(minWidth: 8)
@@ -113,26 +109,46 @@ struct SmartComposer: View {
                     .submitLabel(.next)
                     .onChange(of: project) { _, v in project = Validation.capped(v, max: Limits.maxProjectLength) }
                     .onSubmit { focus = .task }
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.label(0.4))
+                projectMenu
             }
             .font(.system(size: 18))
         }
     }
 
-    private var taskChip: some View {
-        chip {
-            TextField("Task", text: $task)
-                .fixedSize()
-                .frame(minWidth: 8)
-                .foregroundStyle(Theme.label)
-                .font(.system(size: 18))
-                .focused($focus, equals: .task)
-                .submitLabel(.done)
-                .onChange(of: task) { _, v in task = Validation.capped(v, max: Limits.maxTaskLength) }
-                .onSubmit(commit)
+    /// Tap the chevron to pick an existing project; type in the field to create a new one.
+    @ViewBuilder private var projectMenu: some View {
+        if existingProjects.isEmpty {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.label(0.35))
+        } else {
+            Menu {
+                Section("Existing projects") {
+                    ForEach(existingProjects, id: \.self) { name in
+                        Button { project = name; focus = .task } label: { Text(name) }
+                    }
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.label(0.45))
+                    .frame(width: 22, height: 24)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
         }
+    }
+
+    /// Distinct project names already used anywhere, most-recent first.
+    private var existingProjects: [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for entry in allEntries {
+            guard let raw = entry.project?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { continue }
+            if seen.insert(raw.lowercased()).inserted { result.append(raw) }
+            if result.count >= 12 { break }
+        }
+        return result
     }
 
     private var statusChip: some View {
@@ -142,48 +158,47 @@ struct SmartComposer: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: status.symbol)
-                    .font(.system(size: 13))
-                    .foregroundStyle(status.tint)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.label(0.4))
+                Image(systemName: status.symbol).font(.system(size: 13)).foregroundStyle(status.tint)
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.label(0.4))
             }
-            .padding(.horizontal, 6)
-            .frame(height: 24)
+            .padding(.horizontal, 8)
+            .frame(height: 28)
             .background(Theme.label(0.05), in: .capsule)
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: Row 2 chips
+    private var taskField: some View {
+        TextField("Task", text: $task, axis: .vertical)
+            .font(.system(size: 18))
+            .foregroundStyle(Theme.label)
+            .lineLimit(1...5)
+            .focused($focus, equals: .task)
+            .onChange(of: task) { _, v in task = Validation.capped(v, max: Limits.maxTaskLength) }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.label(0.05), in: .rect(cornerRadius: 8))
+    }
 
     private var dateChip: some View {
         Button { showDatePicker = true } label: {
-            chip(height: 20) {
-                Text(DateFormat.dotted(entryDate))
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.label(0.7))
+            chip(height: 22) {
+                Text(DateFormat.dotted(entryDate)).font(.system(size: 14)).foregroundStyle(Theme.label(0.7))
             }
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showDatePicker) {
-            DatePicker("Date", selection: $entryDate, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                .padding()
-                .frame(minWidth: 320)
-                .presentationCompactAdaptation(.popover)
+            DatePickerPopover(title: "Income date", date: $entryDate, minimumDate: nil,
+                              clearTitle: nil, onClear: nil, onDone: { showDatePicker = false })
         }
     }
 
     private var holdChip: some View {
         Button { showHoldPicker = true } label: {
-            chip(height: 20) {
+            chip(height: 22) {
                 HStack(spacing: 3) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.label(0.5))
+                    Image(systemName: "calendar").font(.system(size: 10)).foregroundStyle(Theme.label(0.5))
                     Text(holdUntil.map { DateFormat.dotted($0) } ?? "hold date")
                         .font(.system(size: 14))
                         .foregroundStyle(holdUntil != nil ? Theme.label(0.8) : Theme.label(0.4))
@@ -192,34 +207,36 @@ struct SmartComposer: View {
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showHoldPicker) {
-            VStack(spacing: 12) {
-                DatePicker("Hold until", selection: Binding(
-                    get: { holdUntil ?? .now },
-                    set: { holdUntil = $0 }
-                ), displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                if holdUntil != nil {
-                    Button("Clear", role: .destructive) { holdUntil = nil; showHoldPicker = false }
-                }
-            }
-            .padding()
-            .frame(minWidth: 320)
-            .presentationCompactAdaptation(.popover)
+            DatePickerPopover(
+                title: "Hold until",
+                date: Binding(get: { holdUntil ?? entryDate }, set: { holdUntil = max($0, entryDate) }),
+                minimumDate: entryDate,
+                clearTitle: holdUntil == nil ? nil : "Clear hold",
+                onClear: { holdUntil = nil; showHoldPicker = false },
+                onDone: { showHoldPicker = false }
+            )
         }
     }
 
-    // MARK: Chip container
+    private var submitButton: some View {
+        Button(action: commit) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(canCommit ? .white : Theme.label(0.3))
+                .frame(width: 34, height: 34)
+                .background(canCommit ? Theme.blue : Theme.label(0.10), in: .circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canCommit)
+        .animation(.snappy, value: canCommit)
+    }
 
-    private func chip<Content: View>(
-        bg: Color = Theme.label(0.05),
-        height: CGFloat = 28,
-        @ViewBuilder _ content: () -> Content
-    ) -> some View {
+    private func chip<Content: View>(bg: Color = Theme.label(0.05), height: CGFloat = 28,
+                                     @ViewBuilder _ content: () -> Content) -> some View {
         content()
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 7)
             .frame(minWidth: 44, minHeight: height, maxHeight: height)
-            .background(bg, in: .rect(cornerRadius: 5))
+            .background(bg, in: .rect(cornerRadius: 6))
     }
 
     // MARK: Lifecycle / commit
@@ -234,24 +251,16 @@ struct SmartComposer: View {
             project = parsed.project ?? ""
             task = parsed.task
             holdUntil = parsed.holdUntil
-            status = parsed.status ?? .inProgress
+            status = parsed.status ?? .paid
             currencyCode = parsed.currencyCode
         }
         focus = .amount
     }
 
     private func commit() {
-        guard let client = targetClient, let amount = amountDecimal else {
-            focus = amountDecimal == nil ? .amount : .task
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            return
-        }
+        guard let amount = amountDecimal else { focus = .amount; warn(); return }
         let cleanTask = Validation.trimmed(task, max: Limits.maxTaskLength)
-        guard !cleanTask.isEmpty else {
-            focus = .task
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            return
-        }
+        guard !cleanTask.isEmpty else { focus = .task; warn(); return }
         let cleanProject = Validation.trimmed(project, max: Limits.maxProjectLength)
         let minIndex = client.entries.map(\.sortIndex).min() ?? 0
         let entry = Entry(
@@ -272,8 +281,55 @@ struct SmartComposer: View {
 
         withAnimation(.snappy) {
             amountText = ""; project = ""; task = ""
-            holdUntil = nil; status = .inProgress; entryDate = Date()
+            holdUntil = nil; status = .paid; entryDate = Date()
         }
         focus = .amount
+    }
+
+    private func warn() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+}
+
+/// A compact graphical date picker shown as an anchored popover (tooltip), not a sheet.
+struct DatePickerPopover: View {
+    let title: String
+    @Binding var date: Date
+    var minimumDate: Date?
+    var clearTitle: String?
+    var onClear: (() -> Void)?
+    var onDone: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.label(0.85))
+                Spacer()
+                Button("Done", action: onDone)
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            picker
+                .datePickerStyle(.graphical)
+                .tint(Theme.blue)
+            if let clearTitle, let onClear {
+                Button(role: .destructive, action: onClear) {
+                    Label(clearTitle, systemImage: "xmark.circle")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
+        .presentationCompactAdaptation(.popover)
+    }
+
+    @ViewBuilder private var picker: some View {
+        if let minimumDate {
+            DatePicker(title, selection: $date, in: minimumDate..., displayedComponents: .date).labelsHidden()
+        } else {
+            DatePicker(title, selection: $date, displayedComponents: .date).labelsHidden()
+        }
     }
 }

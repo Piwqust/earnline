@@ -8,6 +8,7 @@ struct ClientDetailView: View {
     @Bindable var client: Client
 
     @State private var editingEntry: Entry?
+    @State private var pendingDelete: Entry?
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
 
@@ -83,7 +84,7 @@ struct ClientDetailView: View {
                         entry: entry,
                         onSetStatus: { setStatus(entry, $0) },
                         onEdit: { editingEntry = entry },
-                        onDelete: { delete(entry) }
+                        onDelete: { pendingDelete = entry }
                     )
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
                 }
@@ -116,6 +117,19 @@ struct ClientDetailView: View {
         .navigationTitle(client.name)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
+        .confirmationDialog(
+            "Delete this income line?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            presenting: pendingDelete
+        ) { entry in
+            Button("Delete", role: .destructive) {
+                delete(entry)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { entry in
+            Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)\nThis can't be undone.")
+        }
         .onDisappear {
             try? context.save()
             app.queueSync(context: context)

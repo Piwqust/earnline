@@ -14,7 +14,7 @@ struct EditEntrySheet: View {
     @State private var date: Date = .now
     @State private var hasHold = false
     @State private var holdDate: Date = .now
-    @State private var status: EntryStatus = .logged
+    @State private var status: EntryStatus = .paid
     @State private var selectedClient: Client?
 
     private var amountDecimal: Decimal? {
@@ -22,7 +22,9 @@ struct EditEntrySheet: View {
         return Validation.clampAmount(d)
     }
     private var canSave: Bool {
-        amountDecimal != nil && !Validation.trimmed(task, max: Limits.maxTaskLength).isEmpty
+        amountDecimal != nil
+            && selectedClient != nil
+            && !Validation.trimmed(task, max: Limits.maxTaskLength).isEmpty
     }
 
     var body: some View {
@@ -54,7 +56,7 @@ struct EditEntrySheet: View {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                     Toggle("Hold until", isOn: $hasHold.animation())
                     if hasHold {
-                        DatePicker("Hold date", selection: $holdDate, displayedComponents: .date)
+                        DatePicker("Hold date", selection: $holdDate, in: date..., displayedComponents: .date)
                     }
                 }
             }
@@ -66,6 +68,11 @@ struct EditEntrySheet: View {
             }
         }
         .onAppear(perform: load)
+        .onChange(of: date) { _, newValue in
+            if holdDate < newValue { holdDate = newValue }
+        }
+        .presentationDetents([.large])
+        .presentationBackground(Theme.background)
     }
 
     private func load() {

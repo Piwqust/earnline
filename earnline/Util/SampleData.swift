@@ -72,7 +72,7 @@ enum SampleData {
             Entry(amount: 875, project: "LunaAI", task: "Dashboard redesign",
                   date: day(18), status: .paid, sortIndex: 3),
             Entry(amount: 1000, project: "LunaAI", task: "Design system kickoff",
-                  date: day(12), status: .logged, sortIndex: 4),
+                  date: day(12), status: .canceled, sortIndex: 4),
         ]
         let blackwaveEntries: [Entry] = [
             Entry(amount: 900, project: "BlackResell", task: "Admin Panel for him website",

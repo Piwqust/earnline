@@ -31,9 +31,13 @@ enum Theme {
     ]
 
     // MARK: Status
-    static let statusPaid = Color(hex: "#16B364")     // green ✅
-    static let statusProgress = Color(hex: "#F5A623")  // amber ⌛
-    static let statusLogged = Color(hex: "#1A1A1A").opacity(0.22) // neutral
+    static let statusPaid = Color(hex: "#8E8E93")      // gray — already paid, unremarkable
+    static let statusProgress = Color(hex: "#FF8A00")  // orange — in progress
+    static let statusCanceled = Color(hex: "#FF3B30")  // red — canceled
+
+    // MARK: Swipe actions
+    static let actionHide = Color(hex: "#AEAEB2")
+    static let actionDelete = Color(hex: "#FF4245")
 
     // MARK: Metrics
     enum Radius {

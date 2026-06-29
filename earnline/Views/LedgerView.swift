@@ -7,38 +7,60 @@ struct LedgerView: View {
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     @Query(sort: \Heading.sortIndex) private var headings: [Heading]
 
-    @State private var composerTarget: Client?
-    @State private var showComposer = false
+    @State private var composerClient: Client?
     @State private var showNewClient = false
     @State private var showSettings = false
     @State private var detailClient: Client?
     @State private var editingEntry: Entry?
     @State private var renamingHeading: Heading?
     @State private var headingTitle = ""
-    @State private var composerInitialText = ""
+    @State private var pendingDelete: Entry?
     @State private var didRunDemo = false
+    @State private var hiddenEntryIDs: Set<UUID> = []
 
     // MARK: Derived
 
     private var months: [Date] { app.monthsWithData(clients) }
 
-    private func sectionClients(in month: Date) -> [Client] {
-        var list = app.clientsWithEntries(clients, in: month)
-        if showComposer, let t = composerTarget, isCurrentMonth(month),
-           !list.contains(where: { $0.id == t.id }) {
-            list.append(t)
-        }
-        return list
-    }
-
     private func sectionHeadings(in month: Date) -> [Heading] {
         headings.filter { Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) }
+    }
+
+    private func sectionClients(in month: Date) -> [Client] {
+        var list = app.clientsWithEntries(clients, in: month)
+        if let cc = composerClient, isCurrentMonth(month), !list.contains(where: { $0.id == cc.id }) {
+            list.append(cc)
+        }
+        return list
     }
 
     private func blocks(in month: Date) -> [Block] {
         let h = sectionHeadings(in: month).map { Block.heading($0) }
         let c = sectionClients(in: month).map { Block.client($0) }
         return (h + c).sorted { $0.order < $1.order }
+    }
+
+    private func visibleEntries(of client: Client, in month: Date) -> [Entry] {
+        app.entries(of: client, in: month).filter { !hiddenEntryIDs.contains($0.id) }
+    }
+
+    private var ledgerRows: [Row] {
+        var rows: [Row] = []
+        for month in months {
+            rows.append(.month(month))
+            for block in blocks(in: month) {
+                switch block {
+                case .heading(let h): rows.append(.heading(h))
+                case .client(let c):
+                    rows.append(.client(c, month))
+                    if isCurrentMonth(month), composerClient?.id == c.id {
+                        rows.append(.composer(c))
+                    }
+                    for e in visibleEntries(of: c, in: month) { rows.append(.entry(e)) }
+                }
+            }
+        }
+        return rows
     }
 
     private var hasContent: Bool {
@@ -63,9 +85,7 @@ struct LedgerView: View {
         .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
         .sheet(isPresented: $showNewClient) {
             NewClientSheet(existingCount: clients.count) { newClient in
-                composerTarget = newClient
-                composerInitialText = ""
-                withAnimation(.snappy) { showComposer = true }
+                openComposer(for: newClient)
             }
         }
         .alert("Heading", isPresented: Binding(
@@ -76,6 +96,19 @@ struct LedgerView: View {
             Button("Save") { saveHeading() }
             Button("Delete", role: .destructive) { deleteRenamingHeading() }
             Button("Cancel", role: .cancel) { renamingHeading = nil }
+        }
+        .confirmationDialog(
+            "Delete this income line?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            presenting: pendingDelete
+        ) { entry in
+            Button("Delete", role: .destructive) {
+                delete(entry)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { entry in
+            Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)\nThis can't be undone.")
         }
         .preferredColorScheme(.light)
     }
@@ -92,25 +125,31 @@ struct LedgerView: View {
             .animation(.snappy, value: app.displayedMonth)
     }
 
-    // MARK: Scroll content
+    // MARK: Scroll content (List → native swipe actions)
 
     private var scrollContent: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                if !hasContent && !showComposer {
-                    EmptyStateView(onStart: startFirstLine)
-                        .padding(.top, 4)
-                } else {
-                    ForEach(months, id: \.self) { month in
-                        monthSection(month)
-                    }
+        List {
+            if !hasContent {
+                EmptyStateView(onStart: startFirstLine)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            } else {
+                ForEach(ledgerRows) { row in
+                    rowView(row)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(insets(for: row))
                 }
-                Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 16)
-            .animation(.snappy(duration: 0.3), value: months)
-            .animation(.snappy(duration: 0.3), value: showComposer)
+            Color.clear
+                .frame(height: 80)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 1)
         .coordinateSpace(name: "ledger")
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollDismissesKeyboard(.interactively)
@@ -119,62 +158,64 @@ struct LedgerView: View {
         }
     }
 
-    private func monthSection(_ month: Date) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            MonthDivider(
-                title: DateFormat.month(month),
-                total: app.primaryString(app.monthTotal(clients, in: month))
-            )
-            .padding(.top, 4)
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(
-                        key: MonthAnchorKey.self,
-                        value: [MonthAnchor(month: month, y: geo.frame(in: .named("ledger")).minY)]
-                    )
-                }
-            )
-
-            ForEach(blocks(in: month)) { block in
-                switch block {
-                case .heading(let h): headingRow(h)
-                case .client(let c): clientSection(c, month: month)
-                }
-            }
+    @ViewBuilder
+    private func rowView(_ row: Row) -> some View {
+        switch row {
+        case .month(let m):
+            monthRow(m)
+        case .heading(let h):
+            headingRow(h)
+        case .client(let c, let m):
+            clientHeaderRow(c, month: m)
+        case .composer(let c):
+            composerRow(c)
+        case .entry(let e):
+            entryRow(e)
         }
     }
 
-    private func clientSection(_ client: Client, month: Date) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ClientChip(
-                client: client,
-                total: app.total(of: client, in: month),
-                onOpen: { detailClient = client },
-                onAdd: { openComposer(for: client) }
-            )
+    private func clientHeaderRow(_ client: Client, month: Date) -> some View {
+        ClientChip(
+            client: client,
+            total: app.total(of: client, in: month),
+            onOpen: { detailClient = client },
+            onAdd: { toggleComposer(client) }
+        )
+    }
 
-            if showComposer, composerTarget?.id == client.id, isCurrentMonth(month) {
-                SmartComposer(
-                    targetClient: $composerTarget,
-                    initialText: composerInitialText,
-                    onClose: closeComposer
+    private func composerRow(_ client: Client) -> some View {
+        SmartComposer(client: client)
+            .transition(.opacity)
+    }
+
+    private func monthRow(_ month: Date) -> some View {
+        MonthDivider(
+            title: DateFormat.month(month),
+            total: app.primaryString(app.monthTotal(clients, in: month))
+        )
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: MonthAnchorKey.self,
+                    value: [MonthAnchor(month: month, y: geo.frame(in: .named("ledger")).minY)]
                 )
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.96, anchor: .top).combined(with: .opacity),
-                    removal: .opacity
-                ))
             }
+        )
+    }
 
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(app.entries(of: client, in: month)) { entry in
-                    EntryRow(
-                        entry: entry,
-                        onSetStatus: { setStatus(entry, $0) },
-                        onEdit: { editingEntry = entry },
-                        onDelete: { delete(entry) }
-                    )
-                }
-            }
+    private func entryRow(_ entry: Entry) -> some View {
+        EntryRow(
+            entry: entry,
+            onSetStatus: { setStatus(entry, $0) },
+            onEdit: { editingEntry = entry },
+            onDelete: { pendingDelete = entry }
+        )
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) { pendingDelete = entry } label: { Label("Delete", systemImage: "trash") }
+            Button { editingEntry = entry } label: { Label("Edit", systemImage: "pencil") }
+                .tint(Theme.blue)
+            Button { hide(entry) } label: { Label("Hide", systemImage: "eye.slash") }
+                .tint(Theme.actionHide)
         }
     }
 
@@ -186,7 +227,6 @@ struct LedgerView: View {
                 .lineLimit(1)
             Rectangle().fill(Theme.hairline).frame(height: 1)
         }
-        .padding(.top, 4)
         .contentShape(.rect)
         .onTapGesture {
             headingTitle = h.title
@@ -197,13 +237,32 @@ struct LedgerView: View {
         }
     }
 
+    private func insets(for row: Row) -> EdgeInsets {
+        switch row {
+        case .month: return EdgeInsets(top: 16, leading: 16, bottom: 6, trailing: 16)
+        case .heading: return EdgeInsets(top: 12, leading: 16, bottom: 2, trailing: 16)
+        case .client: return EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16)
+        case .composer: return EdgeInsets(top: 6, leading: 16, bottom: 8, trailing: 16)
+        case .entry: return EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16)
+        }
+    }
+
     // MARK: FAB
 
     private var fab: some View {
         Menu {
-            Button { addHeading() } label: { Label("New Heading", systemImage: "textformat") }
-            Button { newProject() } label: { Label("New Project", systemImage: "folder") }
-            Button { showNewClient = true } label: { Label("New Client", systemImage: "person.crop.circle") }
+            if clients.isEmpty {
+                Button { showNewClient = true } label: { Label("Income", systemImage: "dollarsign") }
+            } else {
+                Menu {
+                    ForEach(clients) { client in
+                        Button { openComposer(for: client) } label: { Text(client.name) }
+                    }
+                } label: {
+                    Label("Income", systemImage: "dollarsign")
+                }
+            }
+            Button { showNewClient = true } label: { Label("Client", systemImage: "person.crop.circle.badge.plus") }
             Divider()
             Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
         } label: {
@@ -220,44 +279,43 @@ struct LedgerView: View {
     // MARK: Entry actions
 
     private func setStatus(_ e: Entry, _ s: EntryStatus) {
-        withAnimation(.snappy) {
-            e.status = s
-            e.markDirty()
-        }
+        withAnimation(.snappy) { e.status = s; e.markDirty() }
         try? context.save()
         app.queueSync(context: context)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
+    private func hide(_ e: Entry) {
+        withAnimation(.snappy) { _ = hiddenEntryIDs.insert(e.id) }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+    }
+
     private func delete(_ e: Entry) {
         SyncDeleteQueue.enqueue(.entry, id: e.id, in: context)
-        withAnimation(.snappy) { context.delete(e) }
+        withAnimation(.snappy) {
+            hiddenEntryIDs.remove(e.id)
+            context.delete(e)
+        }
         try? context.save()
         app.queueSync(context: context)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
-    // MARK: Composer actions
+    // MARK: Add income
 
-    private func openComposer(for client: Client) {
-        if showComposer, composerTarget?.id == client.id {
-            withAnimation(.snappy) { showComposer = false }
-            return
+    private func toggleComposer(_ client: Client) {
+        withAnimation(.smooth(duration: 0.3)) {
+            composerClient = (composerClient?.id == client.id) ? nil : client
         }
-        composerInitialText = ""
-        composerTarget = client
-        withAnimation(.snappy) { showComposer = true }
     }
 
-    private func closeComposer() {
-        withAnimation(.snappy) { showComposer = false }
+    private func openComposer(for client: Client) {
+        withAnimation(.smooth(duration: 0.3)) { composerClient = client }
     }
 
     private func newProject() {
         if clients.isEmpty { showNewClient = true; return }
-        composerInitialText = ""
-        composerTarget = mostRecentClient
-        withAnimation(.snappy) { showComposer = true }
+        if let c = mostRecentClient { openComposer(for: c) }
     }
 
     private func startFirstLine() {
@@ -269,24 +327,13 @@ struct LedgerView: View {
     }
 
     private func runDemoIfNeeded() {
-        guard !didRunDemo, ProcessInfo.processInfo.arguments.contains("-demoComposer") else { return }
+        guard !didRunDemo else { return }
+        guard ProcessInfo.processInfo.arguments.contains("-demoComposer") else { return }
         didRunDemo = true
-        composerInitialText = "$320 LunaAI: Mobile onboarding flow  hold until 18.07.26"
-        composerTarget = clients.first
-        withAnimation(.snappy) { showComposer = true }
+        composerClient = clients.first
     }
 
     // MARK: Headings
-
-    private func addHeading() {
-        let next = (headings.map(\.sortIndex).max() ?? 0) + 1
-        let heading = Heading(title: "", date: .now, sortIndex: next)
-        context.insert(heading)
-        try? context.save()
-        app.queueSync(context: context)
-        headingTitle = ""
-        renamingHeading = heading
-    }
 
     private func saveHeading() {
         renamingHeading?.title = Validation.trimmed(headingTitle, max: Limits.maxHeadingLength)
@@ -324,7 +371,25 @@ struct LedgerView: View {
     }
 }
 
-// MARK: - Block & scroll anchor
+// MARK: - Row model
+
+private enum Row: Identifiable {
+    case month(Date)
+    case heading(Heading)
+    case client(Client, Date)
+    case composer(Client)
+    case entry(Entry)
+
+    var id: String {
+        switch self {
+        case .month(let d): return "m-\(d.timeIntervalSinceReferenceDate)"
+        case .heading(let h): return "h-\(h.id)"
+        case .client(let c, let d): return "c-\(c.id)-\(d.timeIntervalSinceReferenceDate)"
+        case .composer(let c): return "composer-\(c.id)"
+        case .entry(let e): return "e-\(e.id)"
+        }
+    }
+}
 
 private enum Block: Identifiable {
     case heading(Heading)
