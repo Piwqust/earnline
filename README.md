@@ -43,9 +43,20 @@ materials, soft scroll edges, spring micro-interactions, and haptics.
   tombstones.
 
 ## Supabase setup
-Run [supabase/earnline_sync_schema.sql](/Users/dameer/Desktop/code/earnline/supabase/earnline_sync_schema.sql)
-in your Supabase SQL editor, then paste the Project URL and publishable key into Settings. The mobile
-app never needs a service role key.
+The remote project `qpjfaapipwjultzvuxrm` has been migrated through the Supabase MCP. The same SQL
+history is mirrored under [supabase/migrations](/Users/dameer/Desktop/code/earnline/supabase/migrations),
+and a one-shot current schema is kept at
+[supabase/earnline_sync_schema.sql](/Users/dameer/Desktop/code/earnline/supabase/earnline_sync_schema.sql).
+
+The app defaults to the project URL and publishable mobile key, so Settings should already be filled
+in. The mobile app never needs a Postgres password or service role key.
+
+If you install the Supabase CLI locally, you can connect the folder with:
+```bash
+supabase login
+supabase init
+supabase link --project-ref qpjfaapipwjultzvuxrm
+```
 
 ## Build & run
 ```bash

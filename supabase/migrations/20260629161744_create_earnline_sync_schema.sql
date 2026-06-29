@@ -168,18 +168,3 @@ create policy "earnline_tombstones_delete_own"
 on public.earnline_tombstones for delete
 to authenticated
 using ((select auth.uid()) is not null and (select auth.uid()) = user_id);
-
-revoke all privileges on table public.earnline_clients from anon;
-revoke all privileges on table public.earnline_entries from anon;
-revoke all privileges on table public.earnline_headings from anon;
-revoke all privileges on table public.earnline_tombstones from anon;
-
-revoke all privileges on table public.earnline_clients from authenticated;
-revoke all privileges on table public.earnline_entries from authenticated;
-revoke all privileges on table public.earnline_headings from authenticated;
-revoke all privileges on table public.earnline_tombstones from authenticated;
-
-grant select, insert, update, delete on table public.earnline_clients to authenticated;
-grant select, insert, update, delete on table public.earnline_entries to authenticated;
-grant select, insert, update, delete on table public.earnline_headings to authenticated;
-grant select, insert, update, delete on table public.earnline_tombstones to authenticated;

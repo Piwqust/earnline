@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		01E434676645CC365DC5FF54 /* ParsedLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB161E3E96D48C67987A255 /* ParsedLine.swift */; };
+		089E3EC6BE904283607DD1C4 /* SupabaseProjectDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 151FA53FE5F4C19E1C534018 /* SupabaseProjectDefaults.swift */; };
 		0B64CAFFAE07047B17039889 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A871324D0289D0C90B7F6F59 /* Theme.swift */; };
 		0CE2F8C503A9D1C602BFCCF0 /* GlassButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE801B1A80A6CBE06F53FB5 /* GlassButtons.swift */; };
 		101FEEBF4DED3C1EC00F3DC9 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383B9ABD7DA1911F20C6F8BA /* FlowLayout.swift */; };
@@ -60,6 +61,7 @@
 		0E2E0CB44F303F2ABAF4C46A /* ClientDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDetailView.swift; sourceTree = "<group>"; };
 		14066EAF21F6D5EE593AC78E /* earnline.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = earnline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1422EDE680AC1B4CF5356BAA /* RemoteRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRecords.swift; sourceTree = "<group>"; };
+		151FA53FE5F4C19E1C534018 /* SupabaseProjectDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseProjectDefaults.swift; sourceTree = "<group>"; };
 		28596D76F0D416DC4CFA07D1 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
 		2866D0EEB82F32087C5B07DD /* MonthDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthDivider.swift; sourceTree = "<group>"; };
 		2D73A7203ADA906880BF3ECB /* Client.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Client.swift; sourceTree = "<group>"; };
@@ -217,6 +219,7 @@
 			isa = PBXGroup;
 			children = (
 				1422EDE680AC1B4CF5356BAA /* RemoteRecords.swift */,
+				151FA53FE5F4C19E1C534018 /* SupabaseProjectDefaults.swift */,
 				28596D76F0D416DC4CFA07D1 /* SyncCoordinator.swift */,
 			);
 			path = Sync;
@@ -357,6 +360,7 @@
 				74324CDD790A7412041F17E7 /* SettingsView.swift in Sources */,
 				E427FFC8D8DC77D5D2CAD198 /* SmartComposer.swift in Sources */,
 				89D12A29B6DD1FE3D46035CB /* SummaryPill.swift in Sources */,
+				089E3EC6BE904283607DD1C4 /* SupabaseProjectDefaults.swift in Sources */,
 				808D50AFF587FB1173AD621A /* SyncCoordinator.swift in Sources */,
 				21E87A8247C04C867DA6B2B0 /* SyncState.swift in Sources */,
 				0B64CAFFAE07047B17039889 /* Theme.swift in Sources */,

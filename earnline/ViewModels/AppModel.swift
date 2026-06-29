@@ -49,8 +49,8 @@ final class AppModel {
         secondaryCurrencyCode = defaults.string(forKey: "secondaryCurrencyCode") ?? "RUB"
         let r = defaults.double(forKey: "rate")
         rate = r > 0 ? r : 98
-        supabaseURLString = defaults.string(forKey: "supabaseURLString") ?? ""
-        supabaseKey = defaults.string(forKey: "supabaseKey") ?? ""
+        supabaseURLString = defaults.string(forKey: "supabaseURLString") ?? SupabaseProjectDefaults.url
+        supabaseKey = defaults.string(forKey: "supabaseKey") ?? SupabaseProjectDefaults.publishableKey
         lastSyncAt = defaults.object(forKey: "lastSyncAt") as? Date
     }
 
