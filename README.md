@@ -22,37 +22,40 @@ materials, soft scroll edges, spring micro-interactions, and haptics.
   `buttonStyle(.glass)`, `scrollEdgeEffectStyle`).
 - **SwiftData** for offline-first persistence (`Client`, `Entry`, `Heading`) plus sync tombstones.
 - **Supabase Swift** for personal no-login cloud sync, pinned through XcodeGen.
-- **`@Observable`** app state + `@AppStorage`-backed currency settings.
+- **`@Observable`** app state + `UserDefaults`-backed currency settings.
 - A custom, unit-tested **`LineParser`** powers the smart "type → chips" composer.
 
 ## Features
 - **Chip + Return composer:** build a line token by token — type the amount and press **Return** to
-  advance to the project, Return for the task, a final Return commits. Every token is a chip you can
-  tap to jump back and edit; status and hold-date are chips you set directly. Values are limited and
-  sanitized (amount range, field lengths), and chips wrap so nothing leaves the borders.
+  advance to the project, Return for the task, a final Return commits. The amount, project, status,
+  date, and hold-date are chips you set directly. The **project chip** lets you pick an existing
+  project or type a new one; the **date** and **hold-until** open as anchored popovers (tooltips).
+  Values are limited and sanitized (amount range, field lengths). The composer animates open as its
+  own row beneath the client.
+- **Statuses:** most income you add is already paid, so **Paid** is the calm default (gray
+  `checkmark.circle.fill`). Lines that still need work show **In progress** (orange `clock.fill`),
+  and ones that fell through show **Canceled** (red `xmark.circle.fill`).
+- **Responsive client row:** the running total keeps the **main currency at full size**; if space is
+  tight it drops the secondary-currency value, and if it's still tight the **+ Add Income** button
+  collapses to a single **+**.
 - **Continuous month scroll:** all months are one list separated by month dividers (each showing that
   month's subtotal); the summary pill tracks the top-most visible month as you scroll.
-- **Add income** button on each client row; tap the client to open a per-client breakdown (by status
-  & project).
-- **Swipe a line** for Edit / Hide / Delete (custom swipe, since the ledger is a glass ScrollView).
-- Dual currency: write in a primary currency, see a secondary converted value (editable rate).
-- Status menus (logged → in-progress → paid), the New Heading / Project / Client glass menu, an empty
-  state, and multi-month sample data on first launch.
-- Bundled import of the original income ledger from `/Users/dameer/Desktop/earnline_income_db_1.txt`.
-- Supabase personal workspace sync from Settings, local dirty-row sync, pull sync, and offline delete
-  tombstones.
+- **Per-client detail:** tap a client to open a breakdown by status & project.
+- **Line actions:** swipe a row for Edit / Hide / Delete, or press-and-hold for a rich preview card
+  with Edit, a Status picker, and Delete. **Deleting always asks for confirmation** (red, irreversible).
+- **Dual currency:** write in a primary currency, see a secondary converted value (editable rate).
+- **First-run data:** a bundled sample ledger is parsed in on first launch so the app isn't empty.
+- **Sync:** Supabase personal-workspace sync from Settings — local dirty-row push, pull sync, and
+  offline delete tombstones.
 
 ## Supabase setup
-The remote project `qpjfaapipwjultzvuxrm` has been migrated through the Supabase MCP. The same SQL
-history is mirrored under [supabase/migrations](/Users/dameer/Desktop/code/earnline/supabase/migrations),
-and a one-shot current schema is kept at
-[supabase/earnline_sync_schema.sql](/Users/dameer/Desktop/code/earnline/supabase/earnline_sync_schema.sql).
+The app ships with the project URL and a **publishable** mobile key (safe to embed in a client; access
+is gated by Row Level Security), so Settings is pre-filled. It syncs directly to the fixed
+`earnline-personal` workspace with no app login — the app never needs a Postgres password or service
+role key. The SQL history is mirrored under [`supabase/migrations`](supabase/migrations), with a
+one-shot current schema at [`supabase/earnline_sync_schema.sql`](supabase/earnline_sync_schema.sql).
 
-The app defaults to the project URL and publishable mobile key, so Settings should already be filled
-in. It syncs directly to the fixed `earnline-personal` workspace with no app login. The mobile app
-never needs a Postgres password or service role key.
-
-If you install the Supabase CLI locally, you can connect the folder with:
+To connect the folder with the Supabase CLI:
 ```bash
 supabase login
 supabase init
@@ -60,27 +63,29 @@ supabase link --project-ref qpjfaapipwjultzvuxrm
 ```
 
 ## Build & run
+This project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen):
 ```bash
-xcodegen generate                                   # regenerate the project from project.yml
+xcodegen generate                                   # regenerate earnline.xcodeproj from project.yml
 xcodebuild -scheme earnline \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' build
 xcodebuild -scheme earnline \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' test
 ```
 Open `earnline.xcodeproj` in Xcode 26 and run on an iOS 26 simulator.
-Verification launch args: `-demoComposer` opens the composer pre-filled; `-demoSwipe` opens the first
-row's swipe actions.
+Launch arg `-demoComposer` opens the composer pre-filled for the first client (handy for screenshots).
 
 ## Layout
 ```
 earnline/
-  Models/      Client, Entry, EntryStatus, Heading   (SwiftData)
+  Models/      Client, Entry, EntryStatus, Heading, SyncState   (SwiftData)
   Parsing/     LineParser, ParsedLine
   Theme/       Theme tokens, Color+Hex, CurrencyFormatter, DateFormat
+  Sync/        SyncCoordinator, RemoteRecords, SupabaseProjectDefaults
   ViewModels/  AppModel  (state, currency, grouping & totals)
   Views/       LedgerView + SummaryPill, ClientChip, EntryRow, SmartComposer,
-               MonthDivider, NewClientSheet, ClientDetailView, MonthSwitcherView,
+               MonthDivider, NewClientSheet, ClientDetailView, EditEntrySheet,
                SettingsView, EmptyStateView, GlassButtons
-  Util/        SampleData
-earnlineTests/ LineParserTests
+  Util/        SampleData, IncomeLedgerImporter, Validation, DeterministicID, FlowLayout
+earnlineTests/ LineParserTests, ValidationTests
+supabase/      schema + migrations
 ```
