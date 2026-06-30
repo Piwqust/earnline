@@ -3,9 +3,9 @@ import Foundation
 /// Understands a freeform income line and extracts its facets.
 ///
 /// Examples it handles:
-///   "+$240 LunaAI: 2 screens hold until 25.07.26"
+///   "+$240 Acme: 2 screens hold until 25.07.26"
 ///   "✅ $300 Studio X: Landing page"
-///   "⌛ 140 ₽ LunaAI: Logotype hold 14.03"
+///   "⌛ 140 ₽ Acme: Logotype hold 14.03"
 enum LineParser {
     static let currencyBySymbol: [Character: String] = [
         "$": "USD", "₽": "RUB", "€": "EUR", "£": "GBP", "₴": "UAH",
@@ -15,7 +15,16 @@ enum LineParser {
     private static let progressMarks: Set<Character> = ["⌛", "⏳", "🕓", "🟠", "🟡", "◐"]
     private static let cancelMarks: Set<Character> = ["❌", "✖", "✗", "🚫", "🔴"]
 
-    static func parse(_ raw: String, defaultCurrency: String = "USD") -> ParsedLine {
+    /// Parse a pasted multi-line block into one `ParsedLine` per non-empty line.
+    /// Shared by the paste-import sheet; callers filter on `ParsedLine.isCommittable`.
+    static func parseBlock(_ raw: String, defaultCurrency: String = "USD", referenceDate: Date = .now) -> [ParsedLine] {
+        raw.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { parse($0, defaultCurrency: defaultCurrency, referenceDate: referenceDate) }
+    }
+
+    static func parse(_ raw: String, defaultCurrency: String = "USD", referenceDate: Date = .now) -> ParsedLine {
         var result = ParsedLine(currencyCode: defaultCurrency)
         var working = raw.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -25,7 +34,7 @@ enum LineParser {
         }
 
         // 2) "hold until <date>" phrase (remove so its digits don't confuse the amount)
-        if let (date, range) = extractHoldDate(in: working) {
+        if let (date, range) = extractHoldDate(in: working, referenceDate: referenceDate) {
             result.holdUntil = date
             working.removeSubrange(range)
             working = working.trimmingCharacters(in: .whitespaces)
@@ -106,7 +115,7 @@ enum LineParser {
             }
         }
 
-        // Fallback: a leading bare number (2+ digits), e.g. "240 LunaAI: ..."
+        // Fallback: a leading bare number (2+ digits), e.g. "240 Acme: ..."
         if let regex = try? NSRegularExpression(pattern: "^([0-9][0-9.,\u{2009}\u{00A0} ]*[0-9])(?=\\s)"),
            let m = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
            let whole = Range(m.range, in: s),
@@ -149,7 +158,7 @@ enum LineParser {
         pattern: "(?i)(?:hold\\s*(?:until|till|til)?|until|till|due)\\s*:?\\s*(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?"
     )
 
-    private static func extractHoldDate(in s: String) -> (Date, Range<String.Index>)? {
+    private static func extractHoldDate(in s: String, referenceDate: Date) -> (Date, Range<String.Index>)? {
         guard let regex = holdRegex else { return nil }
         let full = NSRange(s.startIndex..., in: s)
         guard let m = regex.firstMatch(in: s, range: full),
@@ -159,13 +168,21 @@ enum LineParser {
               let day = Int(s[dRange]),
               let month = Int(s[mRange]) else { return nil }
 
-        var year = Calendar.current.component(.year, from: .now)
+        let calendar = Calendar.current
+        var year = calendar.component(.year, from: referenceDate)
+        var hasExplicitYear = false
         if let yRange = Range(m.range(at: 3), in: s), let y = Int(s[yRange]) {
             year = y < 100 ? 2000 + y : y
+            hasExplicitYear = true
         }
         var comps = DateComponents()
         comps.day = day; comps.month = month; comps.year = year
-        guard let date = Calendar.current.date(from: comps) else { return nil }
+        guard var date = calendar.date(from: comps) else { return nil }
+        if !hasExplicitYear, date < calendar.startOfDay(for: referenceDate) {
+            comps.year = year + 1
+            guard let rolloverDate = calendar.date(from: comps) else { return nil }
+            date = rolloverDate
+        }
         return (date, whole)
     }
 }

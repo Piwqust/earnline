@@ -11,6 +11,11 @@ DerivedData/
 build/
 .build/
 
+# Local/private screenshots
+docs/screenshots/*.png
+docs/screenshots/*.jpg
+docs/screenshots/*.jpeg
+
 # SwiftPM working checkouts
 .swiftpm/
 

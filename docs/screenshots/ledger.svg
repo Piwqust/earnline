@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1206" height="2622" viewBox="0 0 1206 2622" role="img" aria-label="Sanitized earnline ledger preview">
+  <rect width="1206" height="2622" rx="96" fill="#f2f2f7"/>
+  <rect x="72" y="120" width="1062" height="2382" rx="70" fill="#ffffff"/>
+  <text x="603" y="244" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="58" font-weight="700" fill="#1a1a1a">earn›line</text>
+  <text x="603" y="322" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="32" fill="#6b7280">Sanitized sample ledger</text>
+  <g transform="translate(120 420)">
+    <rect width="966" height="112" rx="56" fill="#eef2ff"/>
+    <text x="48" y="70" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="38" font-weight="700" fill="#1a1a1a">June 2026</text>
+    <text x="918" y="70" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="38" font-weight="700" fill="#1a1a1a">$1,240.50</text>
+  </g>
+  <g transform="translate(120 610)" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif">
+    <rect width="966" height="72" rx="36" fill="#0088ff"/>
+    <text x="36" y="48" font-size="30" font-weight="700" fill="#ffffff">Acme Studio</text>
+    <text x="930" y="48" text-anchor="end" font-size="30" font-weight="700" fill="#ffffff">$740.50</text>
+    <text x="0" y="154" font-size="42" font-weight="700" fill="#1a1a1a">+$240</text>
+    <text x="170" y="154" font-size="42" fill="#1a1a1a">Launch Kit : Two homepage screens</text>
+    <circle cx="940" cy="140" r="18" fill="#ff8a00"/>
+    <text x="38" y="210" font-size="26" fill="#6b7280">29.06 · hold until 25.07</text>
+    <text x="0" y="310" font-size="42" font-weight="700" fill="#1a1a1a">+$300</text>
+    <text x="170" y="310" font-size="42" fill="#1a1a1a">Launch Kit : Landing page</text>
+    <circle cx="940" cy="296" r="18" fill="#8e8e93"/>
+    <text x="38" y="366" font-size="26" fill="#6b7280">26.06</text>
+    <text x="0" y="466" font-size="42" font-weight="700" fill="#1a1a1a">+$200.50</text>
+    <text x="220" y="466" font-size="42" fill="#1a1a1a">Ops Console : QA fixes</text>
+    <circle cx="940" cy="452" r="18" fill="#8e8e93"/>
+    <text x="38" y="522" font-size="26" fill="#6b7280">22.06</text>
+  </g>
+  <g transform="translate(120 1260)" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif">
+    <rect width="966" height="72" rx="36" fill="#7b00ff"/>
+    <text x="36" y="48" font-size="30" font-weight="700" fill="#ffffff">Northstar Labs</text>
+    <text x="930" y="48" text-anchor="end" font-size="30" font-weight="700" fill="#ffffff">$500</text>
+    <text x="0" y="154" font-size="42" font-weight="700" fill="#1a1a1a">+$900</text>
+    <text x="170" y="154" font-size="42" fill="#1a1a1a">North Portal : Admin panel</text>
+    <circle cx="940" cy="140" r="18" fill="#ff3b30"/>
+    <text x="38" y="210" font-size="26" fill="#6b7280">Canceled lines stay visible but out of earned totals</text>
+    <text x="0" y="310" font-size="42" font-weight="700" fill="#1a1a1a">+$500</text>
+    <text x="170" y="310" font-size="42" fill="#1a1a1a">North Portal : Integration tweaks</text>
+    <circle cx="940" cy="296" r="18" fill="#8e8e93"/>
+    <text x="38" y="366" font-size="26" fill="#6b7280">10.06</text>
+  </g>
+</svg>

@@ -4,13 +4,24 @@ import Supabase
 
 @MainActor
 enum SyncCoordinator {
-    static func sync(context: ModelContext, client: SupabaseClient) async throws -> Date {
-        let workspaceID = SupabaseProjectDefaults.workspaceID
+    private static let tombstoneRetentionDays = 90
+
+    static func sync(context: ModelContext,
+                     client: SupabaseClient,
+                     workspaceID: String,
+                     lastPulledAt: Date? = nil) async throws -> Date {
         let syncedAt = Date()
 
+        // Push tombstones before pulling rows: in this personal no-login model,
+        // a local delete intentionally wins over a concurrent remote update.
         try await pushDeletes(context: context, client: client, workspaceID: workspaceID)
         try await pushLocalRows(context: context, client: client, workspaceID: workspaceID, syncedAt: syncedAt)
-        try await pullRemoteRows(context: context, client: client, workspaceID: workspaceID, syncedAt: syncedAt)
+        try await pullRemoteRows(context: context,
+                                 client: client,
+                                 workspaceID: workspaceID,
+                                 lastPulledAt: lastPulledAt,
+                                 syncedAt: syncedAt)
+        await pruneRemoteTombstones(client: client, workspaceID: workspaceID, syncedAt: syncedAt)
 
         try context.save()
         return syncedAt
@@ -67,36 +78,21 @@ enum SyncCoordinator {
     private static func pullRemoteRows(context: ModelContext,
                                        client: SupabaseClient,
                                        workspaceID: String,
+                                       lastPulledAt: Date?,
                                        syncedAt: Date) async throws {
-        let remoteClients: [RemoteClient] = try await client
-            .from("earnline_clients")
-            .select()
-            .eq("workspace_id", value: workspaceID)
-            .execute()
-            .value
-
-        let remoteHeadings: [RemoteHeading] = try await client
-            .from("earnline_headings")
-            .select()
-            .eq("workspace_id", value: workspaceID)
-            .execute()
-            .value
-
-        let remoteEntries: [RemoteEntry] = try await client
-            .from("earnline_entries")
-            .select()
-            .eq("workspace_id", value: workspaceID)
-            .execute()
-            .value
-
-        let remoteTombstones: [RemoteTombstone] = try await client
-            .from("earnline_tombstones")
-            .select()
-            .eq("workspace_id", value: workspaceID)
-            .execute()
-            .value
-
         let localClients = try context.fetch(FetchDescriptor<Client>())
+        let localHeadings = try context.fetch(FetchDescriptor<Heading>())
+        let localEntries = try context.fetch(FetchDescriptor<Entry>())
+
+        let clientSince = localClients.isEmpty ? nil : lastPulledAt
+        let headingSince = localHeadings.isEmpty ? nil : lastPulledAt
+        let entrySince = localEntries.isEmpty ? nil : lastPulledAt
+
+        let remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
+        let remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
+        let remoteEntries = try await fetchEntries(client: client, workspaceID: workspaceID, updatedAfter: entrySince)
+        let remoteTombstones = try await fetchTombstones(client: client, workspaceID: workspaceID, deletedAfter: lastPulledAt)
+
         var clientsByID = Dictionary(uniqueKeysWithValues: localClients.map { ($0.id, $0) })
 
         for record in remoteClients {
@@ -123,7 +119,6 @@ enum SyncCoordinator {
             }
         }
 
-        let localHeadings = try context.fetch(FetchDescriptor<Heading>())
         var headingsByID = Dictionary(uniqueKeysWithValues: localHeadings.map { ($0.id, $0) })
 
         for record in remoteHeadings {
@@ -150,7 +145,6 @@ enum SyncCoordinator {
             }
         }
 
-        let localEntries = try context.fetch(FetchDescriptor<Entry>())
         var entriesByID = Dictionary(uniqueKeysWithValues: localEntries.map { ($0.id, $0) })
 
         for record in remoteEntries {
@@ -158,13 +152,13 @@ enum SyncCoordinator {
             let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt)
             if let local = entriesByID[record.id] {
                 guard shouldApplyRemote(remoteUpdatedAt: remoteUpdatedAt, localUpdatedAt: local.syncUpdatedAt, localState: local.syncState) else { continue }
-                local.amount = Decimal(record.amount)
+                local.amount = record.amount.decimal
                 local.currencyCode = record.currencyCode
                 local.project = record.project
                 local.task = record.task
                 local.date = SyncDateCodec.parseDay(record.date)
                 local.holdUntil = record.holdUntil.map(SyncDateCodec.parseDay)
-                local.statusRaw = record.status
+                local.statusRaw = EntryStatus.fromSyncRawValue(record.status).rawValue
                 local.sortIndex = record.sortIndex
                 local.createdAt = SyncDateCodec.parseTimestamp(record.createdAt)
                 local.updatedAt = remoteUpdatedAt
@@ -172,13 +166,13 @@ enum SyncCoordinator {
                 local.markSynced(at: syncedAt)
             } else {
                 let entry = Entry(id: record.id,
-                                  amount: Decimal(record.amount),
+                                  amount: record.amount.decimal,
                                   currencyCode: record.currencyCode,
                                   project: record.project,
                                   task: record.task,
                                   date: SyncDateCodec.parseDay(record.date),
                                   holdUntil: record.holdUntil.map(SyncDateCodec.parseDay),
-                                  status: EntryStatus(rawValue: record.status) ?? .paid,
+                                  status: EntryStatus.fromSyncRawValue(record.status),
                                   sortIndex: record.sortIndex,
                                   createdAt: SyncDateCodec.parseTimestamp(record.createdAt),
                                   updatedAt: remoteUpdatedAt,
@@ -222,10 +216,118 @@ enum SyncCoordinator {
         }
     }
 
-    private static func shouldApplyRemote(remoteUpdatedAt: Date,
-                                          localUpdatedAt: Date,
-                                          localState: SyncState) -> Bool {
+    /// Conflict policy (last-write-wins, with local edits protected):
+    /// - If the local row has no unsynced edits (`.synced`), always take the
+    ///   remote copy — there's nothing local worth keeping.
+    /// - If the local row is dirty, take the remote copy only when it is at least
+    ///   as new as the local edit (`remote >= local`); a strictly newer local
+    ///   edit wins. Equal timestamps resolve in favour of remote.
+    /// Deletes are not handled here — tombstones are pushed before this pull
+    /// (`sync`), so a local delete always wins over a concurrent remote update.
+    /// `updated_at` is server-authoritative (DB trigger) to keep this ordering
+    /// stable across devices regardless of client clock skew.
+    static func shouldApplyRemote(remoteUpdatedAt: Date,
+                                  localUpdatedAt: Date,
+                                  localState: SyncState) -> Bool {
         localState == .synced || remoteUpdatedAt >= localUpdatedAt
+    }
+
+    private static func fetchClients(client: SupabaseClient,
+                                     workspaceID: String,
+                                     updatedAfter: Date?) async throws -> [RemoteClient] {
+        if let updatedAfter {
+            return try await client
+                .from("earnline_clients")
+                .select()
+                .eq("workspace_id", value: workspaceID)
+                .gte("updated_at", value: SyncDateCodec.timestampString(updatedAfter))
+                .execute()
+                .value
+        }
+        return try await client
+            .from("earnline_clients")
+            .select()
+            .eq("workspace_id", value: workspaceID)
+            .execute()
+            .value
+    }
+
+    private static func fetchHeadings(client: SupabaseClient,
+                                      workspaceID: String,
+                                      updatedAfter: Date?) async throws -> [RemoteHeading] {
+        if let updatedAfter {
+            return try await client
+                .from("earnline_headings")
+                .select()
+                .eq("workspace_id", value: workspaceID)
+                .gte("updated_at", value: SyncDateCodec.timestampString(updatedAfter))
+                .execute()
+                .value
+        }
+        return try await client
+            .from("earnline_headings")
+            .select()
+            .eq("workspace_id", value: workspaceID)
+            .execute()
+            .value
+    }
+
+    private static func fetchEntries(client: SupabaseClient,
+                                     workspaceID: String,
+                                     updatedAfter: Date?) async throws -> [RemoteEntry] {
+        if let updatedAfter {
+            return try await client
+                .from("earnline_entries")
+                .select()
+                .eq("workspace_id", value: workspaceID)
+                .gte("updated_at", value: SyncDateCodec.timestampString(updatedAfter))
+                .execute()
+                .value
+        }
+        return try await client
+            .from("earnline_entries")
+            .select()
+            .eq("workspace_id", value: workspaceID)
+            .execute()
+            .value
+    }
+
+    private static func fetchTombstones(client: SupabaseClient,
+                                        workspaceID: String,
+                                        deletedAfter: Date?) async throws -> [RemoteTombstone] {
+        if let deletedAfter {
+            return try await client
+                .from("earnline_tombstones")
+                .select()
+                .eq("workspace_id", value: workspaceID)
+                .gte("deleted_at", value: SyncDateCodec.timestampString(deletedAfter))
+                .execute()
+                .value
+        }
+        return try await client
+            .from("earnline_tombstones")
+            .select()
+            .eq("workspace_id", value: workspaceID)
+            .execute()
+            .value
+    }
+
+    private static func pruneRemoteTombstones(client: SupabaseClient,
+                                              workspaceID: String,
+                                              syncedAt: Date) async {
+        guard let cutoff = Calendar.current.date(byAdding: .day,
+                                                 value: -tombstoneRetentionDays,
+                                                 to: syncedAt) else { return }
+        do {
+            try await client
+                .from("earnline_tombstones")
+                .delete()
+                .eq("workspace_id", value: workspaceID)
+                .lt("deleted_at", value: SyncDateCodec.timestampString(cutoff))
+                .execute()
+        } catch {
+            // Tombstone pruning is retention hygiene; row push/pull already succeeded.
+        }
     }
 
     private static func tableName(for entity: SyncEntity) -> String {

@@ -22,8 +22,8 @@ Jot income the way you'd type it in Notes — earn›line parses every line into
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/ledger.png" width="320" alt="The earn›line ledger"></td>
-    <td><img src="docs/screenshots/composer.png" width="320" alt="The earn›line composer"></td>
+    <td><img src="docs/screenshots/ledger.svg" width="320" alt="The earn›line ledger"></td>
+    <td><img src="docs/screenshots/composer.svg" width="320" alt="The earn›line composer"></td>
   </tr>
   <tr>
     <td align="center"><b>The ledger</b><br><sub>months · clients · color‑coded statuses</sub></td>
@@ -40,8 +40,8 @@ Jot income the way you'd type it in Notes — earn›line parses every line into
 earn›line is **income‑only** — deliberately *not* a budget app, wallet, expense tracker, or CRM. You write what you earned as plain lines, and the app understands them:
 
 ```
-+$240 LunaAI: 2 screens
-⌛ +$140 LunaAI: Logotype hold until 14.07
++$240 Acme: 2 screens
+⌛ +$140 Acme: Logotype hold until 14.07
 ✅ +$300 Studio X: Landing page
 ```
 
@@ -52,9 +52,9 @@ Every line is parsed into **amount · client · project · task · date · hold�
 - 💬 **Smart composer** — build a line token by token: type the amount, **Return** → project, **Return** → task, **Return** commits. The project chip lets you **pick an existing project or type a new one**; the date and hold‑until open as anchored **popover tooltips**. The whole card animates open as its own row beneath the client.
 - 🟢 **Three calm statuses** — most income you add is *already paid*, so **Paid** is the unremarkable gray default. Lines that still need work show **In progress** (orange), and ones that fell through show **Canceled** (red).
 - 🔢 **Rolling totals** — the summary total animates with an odometer‑style numeric roll as the displayed month changes under your scroll.
-- 📐 **Responsive client rows** — the running total always keeps the **main currency full‑size**; when space is tight it drops the secondary currency, then collapses **+ Add Income** to a single **+**.
+- 📐 **Responsive client rows** — the running total always keeps the **main currency full‑size**; when space is tight it drops the secondary currency, then collapses **+ Line** to a single **+**.
 - 🗓 **Continuous month scroll** — every month is one list separated by dividers (each with its subtotal); the summary pill tracks the top‑most visible month.
-- ✋ **Rich line actions** — **press‑and‑hold** for a solid preview card with Edit, a Status picker, and Delete; **swipe** for Edit / Hide / Delete. Deleting always asks for confirmation (red, irreversible).
+- ✋ **Rich line actions** — **press‑and‑hold** for a solid preview card with Edit, a Status picker, and Delete; **swipe** for Edit / Delete. Deleting always asks for confirmation.
 - 💱 **Dual currency** — write in a primary currency, see a secondary converted value at an editable rate.
 - ☁️ **No‑login cloud sync** — personal Supabase workspace sync with dirty‑row push, pull, and offline delete tombstones.
 
@@ -104,7 +104,13 @@ Open `earnline.xcodeproj` in **Xcode 26** and run on an **iOS 26** simulator. La
 
 ## ✦ Supabase
 
-The app ships with the project URL and a **publishable** mobile key — safe to embed in a client; access is gated by Row Level Security — so Settings is pre‑filled and sync works with no app login. The app never needs a Postgres password or service‑role key. SQL history lives in [`supabase/migrations`](supabase/migrations), with a one‑shot current schema at [`supabase/earnline_sync_schema.sql`](supabase/earnline_sync_schema.sql).
+The app keeps the personal **no-login** sync model: Settings stores a Supabase project URL, publishable key, and workspace ID locally in `UserDefaults`. The tracked source contains placeholders only. Never paste a `service_role` key into the app.
+
+SQL history lives in [`supabase/migrations`](supabase/migrations), with a one-shot current schema at [`supabase/earnline_sync_schema.sql`](supabase/earnline_sync_schema.sql). Before applying the example schema to your own project, replace `your-workspace-id` with a private workspace identifier and keep that value out of public screenshots.
+
+## ✦ CI
+
+The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) regenerates the project with XcodeGen and runs `xcodebuild test` with signing disabled.
 
 ## ✦ Status
 

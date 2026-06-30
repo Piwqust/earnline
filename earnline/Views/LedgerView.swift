@@ -9,14 +9,19 @@ struct LedgerView: View {
 
     @State private var composerClient: Client?
     @State private var showNewClient = false
+    @State private var showPaste = false
+    @State private var showSearch = false
+    @State private var showInsights = false
+    @State private var showPending = false
     @State private var showSettings = false
     @State private var detailClient: Client?
     @State private var editingEntry: Entry?
     @State private var renamingHeading: Heading?
+    @State private var showHeadingEditor = false
     @State private var headingTitle = ""
     @State private var pendingDelete: Entry?
     @State private var didRunDemo = false
-    @State private var hiddenEntryIDs: Set<UUID> = []
+    @State private var saveError: String?
 
     // MARK: Derived
 
@@ -37,11 +42,7 @@ struct LedgerView: View {
     private func blocks(in month: Date) -> [Block] {
         let h = sectionHeadings(in: month).map { Block.heading($0) }
         let c = sectionClients(in: month).map { Block.client($0) }
-        return (h + c).sorted { $0.order < $1.order }
-    }
-
-    private func visibleEntries(of client: Client, in month: Date) -> [Entry] {
-        app.entries(of: client, in: month).filter { !hiddenEntryIDs.contains($0.id) }
+        return (h + c).sorted { $0.isOrderedBefore($1) }
     }
 
     private var ledgerRows: [Row] {
@@ -56,7 +57,7 @@ struct LedgerView: View {
                     if isCurrentMonth(month), composerClient?.id == c.id {
                         rows.append(.composer(c))
                     }
-                    for e in visibleEntries(of: c, in: month) { rows.append(.entry(e)) }
+                    for e in app.entries(of: c, in: month) { rows.append(.entry(e)) }
                 }
             }
         }
@@ -84,21 +85,36 @@ struct LedgerView: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
         .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
         .sheet(isPresented: $showNewClient) {
-            NewClientSheet(existingCount: clients.count) { newClient in
+            NewClientSheet(existingClients: clients) { newClient in
                 openComposer(for: newClient)
             }
         }
+        .sheet(isPresented: $showPaste) {
+            PasteLinesSheet(clients: clients, defaultClient: mostRecentClient)
+        }
+        .sheet(isPresented: $showSearch) { SearchView() }
+        .sheet(isPresented: $showInsights) { InsightsView() }
+        .sheet(isPresented: $showPending) { PendingView() }
         .alert("Heading", isPresented: Binding(
-            get: { renamingHeading != nil },
-            set: { if !$0 { renamingHeading = nil } }
+            get: { showHeadingEditor },
+            set: {
+                showHeadingEditor = $0
+                if !$0 { renamingHeading = nil }
+            }
         )) {
             TextField("Title", text: $headingTitle)
             Button("Save") { saveHeading() }
-            Button("Delete", role: .destructive) { deleteRenamingHeading() }
-            Button("Cancel", role: .cancel) { renamingHeading = nil }
+                .disabled(Validation.trimmed(headingTitle, max: Limits.maxHeadingLength).isEmpty)
+            if renamingHeading != nil {
+                Button("Delete", role: .destructive) { deleteRenamingHeading() }
+            }
+            Button("Cancel", role: .cancel) {
+                renamingHeading = nil
+                showHeadingEditor = false
+            }
         }
-        .confirmationDialog(
-            "Delete this income line?",
+        .alert(
+            "Delete income line?",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
             presenting: pendingDelete
         ) { entry in
@@ -108,7 +124,15 @@ struct LedgerView: View {
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: { entry in
-            Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)\nThis can't be undone.")
+            Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)")
+        }
+        .alert("Could not save changes", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: {
+            Text(saveError ?? "Try again.")
         }
         .preferredColorScheme(.light)
     }
@@ -191,7 +215,7 @@ struct LedgerView: View {
     private func monthRow(_ month: Date) -> some View {
         MonthDivider(
             title: DateFormat.month(month),
-            total: app.primaryString(app.monthTotal(clients, in: month))
+            total: app.monthTotal(clients, in: month)
         )
         .background(
             GeometryReader { geo in
@@ -214,8 +238,6 @@ struct LedgerView: View {
             Button(role: .destructive) { pendingDelete = entry } label: { Label("Delete", systemImage: "trash") }
             Button { editingEntry = entry } label: { Label("Edit", systemImage: "pencil") }
                 .tint(Theme.blue)
-            Button { hide(entry) } label: { Label("Hide", systemImage: "eye.slash") }
-                .tint(Theme.actionHide)
         }
     }
 
@@ -231,6 +253,7 @@ struct LedgerView: View {
         .onTapGesture {
             headingTitle = h.title
             renamingHeading = h
+            showHeadingEditor = true
         }
         .contextMenu {
             Button(role: .destructive) { delete(h) } label: { Label("Delete", systemImage: "trash") }
@@ -263,6 +286,17 @@ struct LedgerView: View {
                 }
             }
             Button { showNewClient = true } label: { Label("Client", systemImage: "person.crop.circle.badge.plus") }
+            Button { startNewHeading() } label: { Label("Heading", systemImage: "text.alignleft") }
+            if !clients.isEmpty {
+                Button { showPaste = true } label: { Label("Paste lines", systemImage: "doc.on.clipboard") }
+            }
+            Divider()
+            let pendingCount = app.pendingEntries(clients).count
+            Button { showPending = true } label: {
+                Label(pendingCount > 0 ? "Pending (\(pendingCount))" : "Pending", systemImage: "clock")
+            }
+            Button { showSearch = true } label: { Label("Search", systemImage: "magnifyingglass") }
+            Button { showInsights = true } label: { Label("Insights", systemImage: "chart.bar") }
             Divider()
             Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
         } label: {
@@ -272,6 +306,8 @@ struct LedgerView: View {
                 .frame(width: 56, height: 56)
                 .glassEffect(.regular.interactive(), in: .circle)
         }
+        .accessibilityLabel("Add")
+        .accessibilityIdentifier("ledger.fab")
         .padding(.trailing, 20)
         .padding(.bottom, 28)
     }
@@ -280,25 +316,17 @@ struct LedgerView: View {
 
     private func setStatus(_ e: Entry, _ s: EntryStatus) {
         withAnimation(.snappy) { e.status = s; e.markDirty() }
-        try? context.save()
-        app.queueSync(context: context)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-    }
-
-    private func hide(_ e: Entry) {
-        withAnimation(.snappy) { _ = hiddenEntryIDs.insert(e.id) }
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        if saveChanges() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
     }
 
     private func delete(_ e: Entry) {
         SyncDeleteQueue.enqueue(.entry, id: e.id, in: context)
-        withAnimation(.snappy) {
-            hiddenEntryIDs.remove(e.id)
-            context.delete(e)
+        withAnimation(.snappy) { context.delete(e) }
+        if saveChanges() {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
-        try? context.save()
-        app.queueSync(context: context)
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     // MARK: Add income
@@ -335,24 +363,55 @@ struct LedgerView: View {
 
     // MARK: Headings
 
-    private func saveHeading() {
-        renamingHeading?.title = Validation.trimmed(headingTitle, max: Limits.maxHeadingLength)
-        renamingHeading?.markDirty()
-        try? context.save()
-        app.queueSync(context: context)
+    private func startNewHeading() {
         renamingHeading = nil
+        headingTitle = ""
+        showHeadingEditor = true
+    }
+
+    private func saveHeading() {
+        let title = Validation.trimmed(headingTitle, max: Limits.maxHeadingLength)
+        guard !title.isEmpty else { return }
+        if let heading = renamingHeading {
+            heading.title = title
+            heading.markDirty()
+        } else {
+            context.insert(Heading(title: title,
+                                   date: app.displayedMonth,
+                                   sortIndex: nextHeadingSortIndex(in: app.displayedMonth)))
+        }
+        if saveChanges() {
+            renamingHeading = nil
+            showHeadingEditor = false
+        }
     }
 
     private func deleteRenamingHeading() {
         if let h = renamingHeading { delete(h) }
         renamingHeading = nil
+        showHeadingEditor = false
     }
 
     private func delete(_ h: Heading) {
         SyncDeleteQueue.enqueue(.heading, id: h.id, in: context)
         withAnimation(.snappy) { context.delete(h) }
-        try? context.save()
-        app.queueSync(context: context)
+        _ = saveChanges()
+    }
+
+    private func nextHeadingSortIndex(in month: Date) -> Int {
+        (blocks(in: month).map(\.sortIndex).max() ?? -1) + 1
+    }
+
+    @discardableResult
+    private func saveChanges() -> Bool {
+        do {
+            try context.save()
+            app.queueSync(context: context)
+            return true
+        } catch {
+            saveError = error.localizedDescription
+            return false
+        }
     }
 
     // MARK: Month tracking
@@ -402,11 +461,25 @@ private enum Block: Identifiable {
         }
     }
 
-    var order: Date {
+    var sortIndex: Int {
+        switch self {
+        case .heading(let h): return h.sortIndex
+        case .client(let c): return c.sortIndex
+        }
+    }
+
+    var createdAt: Date {
         switch self {
         case .heading(let h): return h.createdAt
         case .client(let c): return c.createdAt
         }
+    }
+
+    func isOrderedBefore(_ other: Block) -> Bool {
+        if sortIndex == other.sortIndex {
+            return createdAt < other.createdAt
+        }
+        return sortIndex < other.sortIndex
     }
 }
 
@@ -416,7 +489,7 @@ struct MonthAnchor: Equatable {
 }
 
 struct MonthAnchorKey: PreferenceKey {
-    static var defaultValue: [MonthAnchor] = []
+    static let defaultValue: [MonthAnchor] = []
     static func reduce(value: inout [MonthAnchor], nextValue: () -> [MonthAnchor]) {
         value.append(contentsOf: nextValue())
     }

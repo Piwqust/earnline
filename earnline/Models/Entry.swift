@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-/// A single income line: "+$240 LunaAI: 2 screens hold until 25.07".
+/// A single income line: "+$240 Acme: 2 screens hold until 25.07".
 @Model
 final class Entry {
     @Attribute(.unique) var id: UUID
@@ -22,7 +22,7 @@ final class Entry {
 
     var status: EntryStatus {
         // Unknown/legacy raw values (e.g. the old "logged") fall back to the new default.
-        get { EntryStatus(rawValue: statusRaw) ?? .paid }
+        get { EntryStatus.fromSyncRawValue(statusRaw) }
         set { statusRaw = newValue.rawValue }
     }
 

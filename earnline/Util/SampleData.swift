@@ -18,9 +18,13 @@ enum SampleData {
     @discardableResult
     static func importBundledLedgerIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
         guard defaults.integer(forKey: bundledLedgerImportKey) < bundledLedgerImportVersion else { return 0 }
-        let inserted = IncomeLedgerImporter.importBundledLedger(into: context)
-        defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
-        return inserted
+        do {
+            let inserted = try IncomeLedgerImporter.importBundledLedger(into: context)
+            defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
+            return inserted
+        } catch {
+            return 0
+        }
     }
 
     @discardableResult
@@ -36,8 +40,12 @@ enum SampleData {
         }
 
         defaults.set(legacyDemoCleanupVersion, forKey: legacyDemoCleanupKey)
-        try? context.save()
-        return deleted
+        do {
+            try context.save()
+            return deleted
+        } catch {
+            return 0
+        }
     }
 
     static func seed(_ context: ModelContext) {
@@ -57,51 +65,55 @@ enum SampleData {
             return cal.date(from: DateComponents(year: comps.year, month: comps.month, day: d)) ?? now
         }
 
-        let mikita = Client(name: "Mikita", colorHex: "#0088FF", sortIndex: 0)
-        let blackwave = Client(name: "BlackWave", colorHex: "#7B00FF", sortIndex: 1)
-        context.insert(mikita)
-        context.insert(blackwave)
+        let acme = Client(name: "Acme Studio", colorHex: "#0088FF", sortIndex: 0)
+        let northstar = Client(name: "Northstar Labs", colorHex: "#7B00FF", sortIndex: 1)
+        context.insert(acme)
+        context.insert(northstar)
 
-        let mikitaEntries: [Entry] = [
-            Entry(amount: 240, project: "LunaAI", task: "2 screens for my home page gggg yoyoyooy",
+        let acmeEntries: [Entry] = [
+            Entry(amount: 240, project: "Launch Kit", task: "Two homepage screens",
                   date: day(29), holdUntil: hold(25, min(month + 1, 12)), status: .inProgress, sortIndex: 0),
-            Entry(amount: 300, project: "LunaAI", task: "Landing page",
+            Entry(amount: 300, project: "Launch Kit", task: "Landing page",
                   date: day(26), status: .paid, sortIndex: 1),
-            Entry(amount: 140, project: "LunaAI", task: "Logotype",
+            Entry(amount: 140, project: "Launch Kit", task: "Logotype",
                   date: day(22), holdUntil: hold(14, min(month + 1, 12)), status: .inProgress, sortIndex: 2),
-            Entry(amount: 875, project: "LunaAI", task: "Dashboard redesign",
+            Entry(amount: 875, project: "Ops Console", task: "Dashboard redesign",
                   date: day(18), status: .paid, sortIndex: 3),
-            Entry(amount: 1000, project: "LunaAI", task: "Design system kickoff",
+            Entry(amount: 1000, project: "Ops Console", task: "Canceled scope",
                   date: day(12), status: .canceled, sortIndex: 4),
         ]
-        let blackwaveEntries: [Entry] = [
-            Entry(amount: 900, project: "BlackResell", task: "Admin Panel for him website",
+        let northstarEntries: [Entry] = [
+            Entry(amount: 900, project: "North Portal", task: "Admin panel",
                   date: day(20), status: .inProgress, sortIndex: 0),
-            Entry(amount: 100, project: "BlackResell", task: "Telegram bot tweaks",
+            Entry(amount: 100, project: "North Portal", task: "Integration tweaks",
                   date: day(10), status: .paid, sortIndex: 1),
         ]
 
         // Previous months — so the ledger scrolls as one continuous list.
         let lastMonth: [(Client, Entry)] = [
-            (mikita, Entry(amount: 480, project: "LunaAI", task: "Onboarding screens",
+            (acme, Entry(amount: 480, project: "Launch Kit", task: "Onboarding screens",
                            date: monthsBack(1, 24), status: .paid, sortIndex: 0)),
-            (mikita, Entry(amount: 260, project: "LunaAI", task: "Icon set",
+            (acme, Entry(amount: 260, project: "Launch Kit", task: "Icon set",
                            date: monthsBack(1, 15), status: .paid, sortIndex: 1)),
-            (blackwave, Entry(amount: 700, project: "BlackResell", task: "Pricing page",
+            (northstar, Entry(amount: 700, project: "North Portal", task: "Pricing page",
                               date: monthsBack(1, 9), status: .paid, sortIndex: 0)),
         ]
         let twoMonthsAgo: [(Client, Entry)] = [
-            (mikita, Entry(amount: 540, project: "LunaAI", task: "Brand refresh",
+            (acme, Entry(amount: 540, project: "Launch Kit", task: "Brand refresh",
                            date: monthsBack(2, 19), status: .paid, sortIndex: 0)),
-            (blackwave, Entry(amount: 320, project: "BlackResell", task: "Landing hero",
+            (northstar, Entry(amount: 320, project: "North Portal", task: "Landing hero",
                               date: monthsBack(2, 6), status: .paid, sortIndex: 0)),
         ]
 
-        for e in mikitaEntries { e.client = mikita; context.insert(e) }
-        for e in blackwaveEntries { e.client = blackwave; context.insert(e) }
+        for e in acmeEntries { e.client = acme; context.insert(e) }
+        for e in northstarEntries { e.client = northstar; context.insert(e) }
         for (client, e) in lastMonth + twoMonthsAgo { e.client = client; context.insert(e) }
 
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            assertionFailure("Failed to save sample data: \(error.localizedDescription)")
+        }
     }
 
     private static func isLegacyDemoEntry(_ entry: Entry) -> Bool {
@@ -113,18 +125,18 @@ enum SampleData {
     }
 
     private static let legacyDemoEntryKeys: Set<String> = [
-        demoKey(client: "Mikita", project: "LunaAI", task: "2 screens for my home page gggg yoyoyooy", amount: 240, currencyCode: "USD"),
-        demoKey(client: "Mikita", project: "LunaAI", task: "Landing page", amount: 300, currencyCode: "USD"),
-        demoKey(client: "Mikita", project: "LunaAI", task: "Logotype", amount: 140, currencyCode: "USD"),
-        demoKey(client: "Mikita", project: "LunaAI", task: "Dashboard redesign", amount: 875, currencyCode: "USD"),
-        demoKey(client: "Mikita", project: "LunaAI", task: "Design system kickoff", amount: 1000, currencyCode: "USD"),
-        demoKey(client: "Mikita", project: "LunaAI", task: "Onboarding screens", amount: 480, currencyCode: "USD"),
-        demoKey(client: "Mikita", project: "LunaAI", task: "Icon set", amount: 260, currencyCode: "USD"),
-        demoKey(client: "Mikita", project: "LunaAI", task: "Brand refresh", amount: 540, currencyCode: "USD"),
-        demoKey(client: "BlackWave", project: "BlackResell", task: "Admin Panel for him website", amount: 900, currencyCode: "USD"),
-        demoKey(client: "BlackWave", project: "BlackResell", task: "Telegram bot tweaks", amount: 100, currencyCode: "USD"),
-        demoKey(client: "BlackWave", project: "BlackResell", task: "Pricing page", amount: 700, currencyCode: "USD"),
-        demoKey(client: "BlackWave", project: "BlackResell", task: "Landing hero", amount: 320, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Launch Kit", task: "Two homepage screens", amount: 240, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Launch Kit", task: "Landing page", amount: 300, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Launch Kit", task: "Logotype", amount: 140, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Ops Console", task: "Dashboard redesign", amount: 875, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Ops Console", task: "Canceled scope", amount: 1000, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Launch Kit", task: "Onboarding screens", amount: 480, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Launch Kit", task: "Icon set", amount: 260, currencyCode: "USD"),
+        demoKey(client: "Acme Studio", project: "Launch Kit", task: "Brand refresh", amount: 540, currencyCode: "USD"),
+        demoKey(client: "Northstar Labs", project: "North Portal", task: "Admin panel", amount: 900, currencyCode: "USD"),
+        demoKey(client: "Northstar Labs", project: "North Portal", task: "Integration tweaks", amount: 100, currencyCode: "USD"),
+        demoKey(client: "Northstar Labs", project: "North Portal", task: "Pricing page", amount: 700, currencyCode: "USD"),
+        demoKey(client: "Northstar Labs", project: "North Portal", task: "Landing hero", amount: 320, currencyCode: "USD"),
     ]
 
     private static func demoKey(client: String?,

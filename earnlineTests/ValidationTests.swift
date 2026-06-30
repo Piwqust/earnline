@@ -34,4 +34,21 @@ struct ValidationTests {
         let long = "  " + String(repeating: "x", count: 200) + "  "
         #expect(Validation.trimmed(long, max: Limits.maxTaskLength).count == Limits.maxTaskLength)
     }
+
+    @Test func clientNameValidationTrimsAndAcceptsUniqueName() {
+        #expect(Validation.validateClientName("  Acme Studio  ", existingNames: []) == .valid("Acme Studio"))
+    }
+
+    @Test func clientNameValidationRejectsEmptyNames() {
+        #expect(Validation.validateClientName("   ", existingNames: []) == .empty)
+    }
+
+    @Test func clientNameValidationRejectsCaseInsensitiveDuplicates() {
+        #expect(Validation.validateClientName("acme studio", existingNames: ["Acme Studio"]) == .duplicate)
+    }
+
+    @Test func clientNameValidationAppliesMaxLength() {
+        let long = String(repeating: "a", count: Limits.maxClientNameLength + 10)
+        #expect(Validation.validateClientName(long, existingNames: []) == .valid(String(long.prefix(Limits.maxClientNameLength))))
+    }
 }

@@ -10,6 +10,28 @@ enum Limits {
     static let maxHeadingLength = 40
 }
 
+enum ClientNameValidation: Equatable {
+    case valid(String)
+    case empty
+    case duplicate
+
+    var message: String? {
+        switch self {
+        case .valid:
+            return nil
+        case .empty:
+            return "Enter a client name."
+        case .duplicate:
+            return "A client with this name already exists."
+        }
+    }
+
+    var validName: String? {
+        if case .valid(let name) = self { return name }
+        return nil
+    }
+}
+
 enum Validation {
     /// Clamp an amount into (0, maxAmount].
     static func clampAmount(_ value: Decimal) -> Decimal {
@@ -43,5 +65,20 @@ enum Validation {
     /// Cap a string's length while editing (no trim, so trailing spaces are allowed mid-type).
     static func capped(_ s: String, max: Int) -> String {
         s.count <= max ? s : String(s.prefix(max))
+    }
+
+    static func validateClientName(_ raw: String, existingNames: [String]) -> ClientNameValidation {
+        let name = trimmed(raw, max: Limits.maxClientNameLength)
+        guard !name.isEmpty else { return .empty }
+        let key = clientNameKey(name)
+        let duplicate = existingNames.contains { clientNameKey($0) == key }
+        return duplicate ? .duplicate : .valid(name)
+    }
+
+    private static func clientNameKey(_ value: String) -> String {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }

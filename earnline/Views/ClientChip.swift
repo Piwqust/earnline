@@ -1,29 +1,17 @@
 import SwiftUI
 
-/// A client's colored name pill + rolled-up total, with the Figma "+ Add Income" button.
+/// A client's colored name pill + rolled-up total, with the "+ Line" button.
+/// Tapping the name opens the client; tapping the total flips the shown currency.
 struct ClientChip: View {
-    @Environment(AppModel.self) private var app
     let client: Client
     let total: Decimal
     var onOpen: () -> Void
     var onAdd: () -> Void
 
-    /// Main currency at a fixed size; the secondary currency is appended only when asked.
-    private func totalText(showSecondary: Bool) -> Text {
-        var primary = AttributedString(app.primaryString(total))
-        primary.foregroundColor = Theme.label
-        primary.font = .system(size: 16, weight: .medium)
-        guard showSecondary else { return Text(primary) }
-        var secondary = AttributedString(" · \(app.secondaryString(total))")
-        secondary.foregroundColor = Theme.label(0.6)
-        secondary.font = .system(size: 14)
-        return Text(primary + secondary)
-    }
-
     var body: some View {
         HStack(spacing: 8) {
-            Button(action: onOpen) {
-                HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Button(action: onOpen) {
                     Text(client.name)
                         .font(.chipName)
                         .foregroundStyle(.white)
@@ -32,25 +20,25 @@ struct ClientChip: View {
                         .padding(.vertical, 4)
                         .glassEffect(.regular.tint(Color(hex: client.colorHex)).interactive(),
                                      in: .capsule)
-                        .layoutPriority(1)
-
-                    // Keep the main currency full-size; drop the secondary currency when tight.
-                    ViewThatFits(in: .horizontal) {
-                        totalText(showSecondary: true).lineLimit(1)
-                        totalText(showSecondary: false).lineLimit(1)
-                    }
                 }
-                .padding(.leading, 1)
-                .padding(.trailing, 8)
-                .padding(.vertical, 1)
-                .background(Theme.fillQuaternary, in: .capsule)
-                .overlay(Capsule().strokeBorder(Theme.chipStroke, lineWidth: 0.5))
+                .buttonStyle(.plain)
+                .layoutPriority(1)
+
+                MoneyAmountText(baseAmount: total,
+                                font: .chipTotal,
+                                color: Theme.label,
+                                minimumScaleFactor: 0.7)
+                    .animation(.snappy(duration: 0.3), value: total)
             }
-            .buttonStyle(.plain)
+            .padding(.leading, 1)
+            .padding(.trailing, 8)
+            .padding(.vertical, 1)
+            .background(Theme.fillQuaternary, in: .capsule)
+            .overlay(Capsule().strokeBorder(Theme.chipStroke, lineWidth: 0.5))
 
             Spacer(minLength: 8)
 
-            // Full "+ Add Income"; collapses to just "+" when there's still not enough room.
+            // "+ Line"; collapses to just "+" when there's still not enough room.
             Button(action: onAdd) {
                 ViewThatFits(in: .horizontal) {
                     addLabel(showText: true)
@@ -59,7 +47,7 @@ struct ClientChip: View {
             }
             .buttonStyle(.plain)
             .layoutPriority(1)
-            .accessibilityLabel("Add Income")
+            .accessibilityLabel("Add line")
         }
         .padding(.horizontal, 8)
     }
@@ -69,7 +57,7 @@ struct ClientChip: View {
             Image(systemName: "plus")
                 .font(.system(size: 16, weight: .medium))
             if showText {
-                Text("Add Income")
+                Text("Line")
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
             }

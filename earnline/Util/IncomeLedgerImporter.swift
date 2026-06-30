@@ -3,57 +3,21 @@ import SwiftData
 
 enum IncomeLedgerImporter {
     static let bundledLedger = """
-    — Доходы за апрель +- от Mikita
+    — Income for April from Acme Studio
 
-    + $220 desc + blur image
-    + $230 remake screens
-    + $80 pop-up stars
-    + $230 desc anim
+    + $220 Landing page wireframes
+    + $180 Brand polish
+    + $99.50 QA fixes
 
-    $760 / 55k ₽
+    — Income for May from Northstar Labs
 
-    — Доходы за май от Mikita
+    + €320 Design review
+    + $450 Dashboard prototype
 
-    + $480 pres
-    + $45 video cut
-    + $490 music download – ava+desc+anim
-    + $250 anim savebot 
-    + $30 stories
-    + $400 anim post + stories
-    + $170 updated design for screens
-    + $50 updated liquid glass buttons
-    + $240 anim post + stories
-    + $170 AI-desc anim (-55$ ai plan)
-    + $550 Escort UI update
-    + $250 LunaAI: desc anim AI 
+    — Income for June from River House
 
-    3125$ / 240k ₽
-
-    — Доходы за май от bóra
-    +  24k ₽
-
-    Доходы за май. Итого:   $3428 / 264 000 ₽
-
-
-    — Доходы за июнь от blackwave
-    + $900 Black Resell: design profile & admin & etc
-    + $100 Black Resell: additional tasks
-
-    — Доходы за июнь от Mikita
-    + $60 BuyTGStars: Background channel
-    + $70 BuyTGStars: New avatar channel
-    + $420 Chatus: Onboarding. UI update
-    + $140 BuyTGStars: buying tg stars video
-    + $160 LunaAI: Logo
-    + $35 NearMe: some edits
-    + $50 NearMe: banners
-    + $190 NearMe: Intro animation
-    + $150 LunaAI: Tab + Gifts
-
-    $2125
-
-    — Доходы за июнь от bóra 
-    + 11k₽ Winline: KVs 
+    + 24k ₽ Event banners
+    + 11k₽ Key visuals
     """
 
     struct ParsedEntry: Equatable {
@@ -69,7 +33,7 @@ enum IncomeLedgerImporter {
     }
 
     @discardableResult
-    static func importBundledLedger(into context: ModelContext, year: Int = Calendar.current.component(.year, from: .now)) -> Int {
+    static func importBundledLedger(into context: ModelContext, year: Int = Calendar.current.component(.year, from: .now)) throws -> Int {
         let parsed = parse(bundledLedger, year: year)
         guard !parsed.isEmpty else { return 0 }
 
@@ -113,7 +77,7 @@ enum IncomeLedgerImporter {
             inserted += 1
         }
 
-        try? context.save()
+        try context.save()
         return inserted
     }
 
@@ -163,9 +127,12 @@ enum IncomeLedgerImporter {
     }
 
     private static func parseSection(_ line: String) -> (month: Int, client: String)? {
-        guard line.contains("Доходы за"),
+        let isIncomeHeading = line.localizedCaseInsensitiveContains("Доходы за")
+            || line.localizedCaseInsensitiveContains("Income for")
+        guard isIncomeHeading,
               let month = monthMap.first(where: { line.localizedCaseInsensitiveContains($0.key) })?.value,
-              let range = line.range(of: " от ", options: [.caseInsensitive, .diacriticInsensitive]) else {
+              let range = line.range(of: " from ", options: [.caseInsensitive, .diacriticInsensitive])
+                ?? line.range(of: " от ", options: [.caseInsensitive, .diacriticInsensitive]) else {
             return nil
         }
         let client = String(line[range.upperBound...])
@@ -187,6 +154,18 @@ enum IncomeLedgerImporter {
         "октябр": 10,
         "ноябр": 11,
         "декабр": 12,
+        "january": 1,
+        "february": 2,
+        "march": 3,
+        "april": 4,
+        "may": 5,
+        "june": 6,
+        "july": 7,
+        "august": 8,
+        "september": 9,
+        "october": 10,
+        "november": 11,
+        "december": 12,
     ]
 
     private static func clientID(_ name: String) -> UUID {

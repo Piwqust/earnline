@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1206" height="2622" viewBox="0 0 1206 2622" role="img" aria-label="Sanitized earnline composer preview">
+  <rect width="1206" height="2622" rx="96" fill="#f2f2f7"/>
+  <rect x="72" y="120" width="1062" height="2382" rx="70" fill="#ffffff"/>
+  <text x="603" y="244" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="58" font-weight="700" fill="#1a1a1a">New line</text>
+  <text x="603" y="322" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="32" fill="#6b7280">Sanitized sample composer</text>
+  <g transform="translate(120 520)" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif">
+    <rect width="966" height="640" rx="42" fill="#fafafa" stroke="#d1d5db" stroke-width="4" stroke-dasharray="18 16"/>
+    <text x="54" y="105" font-size="32" fill="#6b7280">+</text>
+    <rect x="94" y="58" width="210" height="72" rx="16" fill="#e5e7eb"/>
+    <text x="124" y="106" font-size="38" fill="#1a1a1a">$ 240</text>
+    <rect x="324" y="58" width="250" height="72" rx="16" fill="#f3f4f6"/>
+    <text x="354" y="106" font-size="38" fill="#1a1a1a">Launch Kit</text>
+    <rect x="594" y="58" width="118" height="72" rx="36" fill="#fff7ed"/>
+    <circle cx="636" cy="94" r="18" fill="#ff8a00"/>
+    <text x="750" y="106" font-size="30" fill="#6b7280">In progress</text>
+    <rect x="54" y="178" width="858" height="110" rx="20" fill="#f3f4f6"/>
+    <text x="84" y="248" font-size="42" fill="#1a1a1a">Two homepage screens</text>
+    <text x="54" y="370" font-size="28" fill="#9ca3af">↳</text>
+    <rect x="94" y="324" width="170" height="58" rx="16" fill="#f3f4f6"/>
+    <text x="124" y="364" font-size="30" fill="#4b5563">29.06</text>
+    <text x="292" y="364" font-size="30" fill="#9ca3af">·</text>
+    <rect x="326" y="324" width="250" height="58" rx="16" fill="#f3f4f6"/>
+    <text x="356" y="364" font-size="30" fill="#4b5563">hold 25.07</text>
+    <circle cx="868" cy="352" r="46" fill="#0088ff"/>
+    <text x="868" y="367" text-anchor="middle" font-size="42" font-weight="700" fill="#ffffff">↑</text>
+  </g>
+</svg>

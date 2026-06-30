@@ -8,13 +8,26 @@ enum EntryStatus: String, Codable, CaseIterable, Identifiable {
     case inProgress
     case canceled
 
+    static func fromSyncRawValue(_ rawValue: String) -> EntryStatus {
+        switch rawValue {
+        case "logged":
+            return .paid
+        default:
+            return EntryStatus(rawValue: rawValue) ?? .paid
+        }
+    }
+
     var id: String { rawValue }
+
+    var isIncludedInEarnedTotals: Bool {
+        self != .canceled
+    }
 
     var title: String {
         switch self {
-        case .paid: return "Paid"
-        case .inProgress: return "In progress"
-        case .canceled: return "Canceled"
+        case .paid: return String(localized: "Paid")
+        case .inProgress: return String(localized: "In progress")
+        case .canceled: return String(localized: "Canceled")
         }
     }
 

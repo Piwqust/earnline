@@ -3,7 +3,7 @@ import SwiftUI
 /// A month separator in the continuous ledger, carrying that month's subtotal.
 struct MonthDivider: View {
     let title: String
-    var total: String? = nil
+    var total: Decimal? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -17,11 +17,11 @@ struct MonthDivider: View {
                 .fill(Theme.hairline)
                 .frame(height: 1)
             if let total {
-                Text(total)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.label(0.4))
-                    .monospacedDigit()
-                    .lineLimit(1)
+                MoneyAmountText(baseAmount: total,
+                                font: .system(size: 13, weight: .medium),
+                                color: Theme.label(0.4),
+                                minimumScaleFactor: 0.7)
+                    .animation(.snappy(duration: 0.3), value: total)
             }
         }
         .frame(maxWidth: .infinity)

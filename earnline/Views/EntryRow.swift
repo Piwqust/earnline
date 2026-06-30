@@ -2,6 +2,8 @@ import SwiftUI
 
 /// One income line. Tap to expand the task; tap the dot to change status.
 struct EntryRow: View {
+    @Environment(AppModel.self) private var app
+
     let entry: Entry
     var onSetStatus: (EntryStatus) -> Void = { _ in }
     var onEdit: () -> Void = {}
@@ -9,27 +11,28 @@ struct EntryRow: View {
 
     @State private var expanded = false
 
-    private var amountText: String {
-        CurrencyFormatter.string(entry.amount, code: entry.currencyCode)
+    private var baseAmount: Decimal {
+        app.toBase(entry.amount, code: entry.currencyCode)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
+            HStack(alignment: .top, spacing: 7) {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.label(0.45))
+                    .padding(.top, 7)
 
-                Text(amountText)
-                    .font(.lineAmount)
-                    .foregroundStyle(Theme.label)
-                    .monospacedDigit()
+                MoneyAmountText(baseAmount: baseAmount,
+                                font: .lineAmount,
+                                color: Theme.label,
+                                minimumScaleFactor: 1,
+                                isApproximate: !app.canConvert(entry.currencyCode))
+                    .animation(.snappy(duration: 0.3), value: entry.amount)
+                    .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(1)
 
-                description
-                    .font(.lineBody)
-                    .lineLimit(expanded ? nil : 1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                EntryDescriptionText(text: description, expanded: expanded)
 
                 statusMenu
             }
@@ -40,23 +43,46 @@ struct EntryRow: View {
         .padding(.vertical, 2)
         .contentShape(.rect)
         .onTapGesture {
-            withAnimation(.snappy(duration: 0.28)) { expanded.toggle() }
+            withAnimation(.smooth(duration: 0.24)) { expanded.toggle() }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
+        .accessibilityActions {
+            Button("Edit line") { onEdit() }
+            ForEach(EntryStatus.allCases) { status in
+                Button("Mark \(status.title)") { onSetStatus(status) }
+            }
+            Button("Delete", role: .destructive) { onDelete() }
         }
         .contextMenu {
             Button { onEdit() } label: { Label("Edit line", systemImage: "pencil") }
 
-            Picker("Status", selection: Binding(get: { entry.status }, set: { onSetStatus($0) })) {
+            Section("Status") {
                 ForEach(EntryStatus.allCases) { s in
-                    Label(s.title, systemImage: s.symbol).tag(s)
+                    Button { onSetStatus(s) } label: { Label(s.title, systemImage: s.symbol) }
                 }
             }
 
-            Divider()
-
-            Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
+            Section {
+                Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
+            }
         } preview: {
+            // Context-menu previews render in a detached hierarchy that does NOT
+            // inherit the SwiftUI environment, so re-inject AppModel — the preview
+            // (and its MoneyAmountText) reads it and would otherwise crash.
             EntryContextPreview(entry: entry)
+                .environment(app)
         }
+    }
+
+    private var accessibilityDescription: String {
+        var parts = [CurrencyFormatter.string(entry.amount, code: entry.currencyCode)]
+        if let project = entry.project, !project.isEmpty { parts.append(project) }
+        if !entry.task.isEmpty { parts.append(entry.task) }
+        parts.append(entry.status.title)
+        parts.append(DateFormat.dotted(entry.date))
+        if let hold = entry.holdUntil { parts.append("hold until \(DateFormat.dotted(hold))") }
+        return parts.joined(separator: ", ")
     }
 
     private var description: Text {
@@ -84,6 +110,8 @@ struct EntryRow: View {
                 .foregroundStyle(entry.status.tint)
                 .frame(width: 22, height: 22)
                 .contentShape(.circle)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(.snappy(duration: 0.3), value: entry.status)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -113,10 +141,12 @@ struct EntryRow: View {
 /// Rich preview shown under the press-and-hold context menu — a solid card so it
 /// reads clearly against the dimmed background (the plain row is transparent).
 private struct EntryContextPreview: View {
+    @Environment(AppModel.self) private var app
+
     let entry: Entry
 
-    private var amountText: String {
-        CurrencyFormatter.string(entry.amount, code: entry.currencyCode)
+    private var baseAmount: Decimal {
+        app.toBase(entry.amount, code: entry.currencyCode)
     }
 
     var body: some View {
@@ -125,10 +155,10 @@ private struct EntryContextPreview: View {
                 Image(systemName: entry.status.symbol)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(entry.status.tint)
-                Text(amountText)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Theme.label)
-                    .monospacedDigit()
+                MoneyAmountText(baseAmount: baseAmount,
+                                font: .system(size: 22, weight: .semibold),
+                                color: Theme.label,
+                                isApproximate: !app.canConvert(entry.currencyCode))
                 Spacer(minLength: 12)
                 Text(entry.status.title)
                     .font(.system(size: 13, weight: .semibold))
@@ -167,138 +197,89 @@ private struct EntryContextPreview: View {
     }
 }
 
-struct SwipeActionReveal<Content: View>: View {
-    @Binding var isRevealed: Bool
-    var onHide: () -> Void
-    var onEdit: () -> Void
-    var onDelete: () -> Void
-    @ViewBuilder var content: () -> Content
+private struct EntryDescriptionText: View {
+    let text: Text
+    let expanded: Bool
 
-    @GestureState private var dragTranslation: CGFloat = 0
+    @State private var collapsedHeight: CGFloat = 24
+    @State private var expandedHeight: CGFloat = 0
 
-    private let actionWidth: CGFloat = 210
-    private let openThreshold: CGFloat = 82
-
-    private var revealOffset: CGFloat {
-        let base = isRevealed ? actionWidth : 0
-        return min(max(base - dragTranslation, 0), actionWidth)
-    }
-
-    private var revealProgress: CGFloat {
-        actionWidth == 0 ? 0 : revealOffset / actionWidth
+    private var targetHeight: CGFloat {
+        let measured = expanded ? expandedHeight : collapsedHeight
+        return max(measured, collapsedHeight)
     }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            if revealProgress > 0 {
-                actionBar
-                    .opacity(revealProgress)
-                    .scaleEffect(0.96 + (0.04 * revealProgress), anchor: .trailing)
-                    .allowsHitTesting(isRevealed)
-                    .accessibilityHidden(!isRevealed)
-            }
-
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .offset(x: -revealOffset)
-                .overlay {
-                    if isRevealed {
-                        Color.clear
-                            .contentShape(.rect)
-                            .onTapGesture { close() }
-                    }
-                }
+        ZStack(alignment: .topLeading) {
+            displayText(lineLimit: nil)
+                .opacity(expanded ? 1 : 0)
+            displayText(lineLimit: 1)
+                .opacity(expanded ? 0 : 1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: targetHeight, alignment: .top)
         .clipped()
-        .gesture(horizontalDrag)
-        .animation(.snappy(duration: 0.26), value: isRevealed)
-        .animation(.snappy(duration: 0.18), value: dragTranslation)
-    }
-
-    private var actionBar: some View {
-        HStack(spacing: 10) {
-            SwipeActionButton(
-                title: "Hide",
-                systemName: "eye.slash",
-                color: Theme.actionHide,
-                action: performHide
-            )
-            SwipeActionButton(
-                title: "Edit",
-                systemName: "pencil",
-                color: Theme.blue,
-                action: performEdit
-            )
-            SwipeActionButton(
-                title: "Delete",
-                systemName: "trash",
-                color: Theme.actionDelete,
-                action: performDelete
-            )
-        }
-        .frame(width: actionWidth, alignment: .trailing)
-    }
-
-    private var horizontalDrag: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .updating($dragTranslation) { value, state, _ in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                state = value.translation.width
-            }
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                let base = isRevealed ? actionWidth : 0
-                let projectedOffset = min(max(base - value.predictedEndTranslation.width, 0), actionWidth)
-                withAnimation(.snappy(duration: 0.28)) {
-                    isRevealed = projectedOffset > openThreshold
+        .background(measurementViews)
+        .animation(.smooth(duration: 0.24), value: expanded)
+        .onPreferenceChange(EntryDescriptionHeightKey.self) { heights in
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if let collapsed = heights[.collapsed] {
+                    collapsedHeight = collapsed
                 }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                if let expanded = heights[.expanded] {
+                    expandedHeight = expanded
+                }
             }
+        }
     }
 
-    private func close() {
-        withAnimation(.snappy(duration: 0.24)) { isRevealed = false }
+    private func displayText(lineLimit: Int?) -> some View {
+        text
+            .font(.lineBody)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private func performHide() {
-        onHide()
+    private var measurementViews: some View {
+        ZStack(alignment: .topLeading) {
+            measuredText(lineLimit: 1, mode: .collapsed)
+            measuredText(lineLimit: nil, mode: .expanded)
+        }
+        .hidden()
+        .allowsHitTesting(false)
+        .transaction { transaction in
+            transaction.disablesAnimations = true
+        }
     }
 
-    private func performEdit() {
-        onEdit()
-    }
-
-    private func performDelete() {
-        onDelete()
+    private func measuredText(lineLimit: Int?, mode: EntryDescriptionHeightMode) -> some View {
+        text
+            .font(.lineBody)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: EntryDescriptionHeightKey.self,
+                                           value: [mode: proxy.size.height])
+                }
+            )
     }
 }
 
-private struct SwipeActionButton: View {
-    let title: String
-    let systemName: String
-    let color: Color
-    let action: () -> Void
+private enum EntryDescriptionHeightMode: Hashable {
+    case collapsed
+    case expanded
+}
 
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 5) {
-                Image(systemName: systemName)
-                    .font(.system(size: 21, weight: .regular))
-                    .foregroundStyle(.white)
-                    .frame(width: 60, height: 38)
-                    .background(color, in: .capsule)
+private struct EntryDescriptionHeightKey: PreferenceKey {
+    static let defaultValue: [EntryDescriptionHeightMode: CGFloat] = [:]
 
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color(.secondaryLabel))
-                    .frame(width: 60)
-            }
-            .frame(width: 60, height: 68, alignment: .top)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
+    static func reduce(value: inout [EntryDescriptionHeightMode: CGFloat],
+                       nextValue: () -> [EntryDescriptionHeightMode: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

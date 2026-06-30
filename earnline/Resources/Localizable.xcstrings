@@ -1,0 +1,252 @@
+{
+  "sourceLanguage" : "en",
+  "version" : "1.0",
+  "strings" : {
+    "About" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "О приложении" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Про застосунок" } }
+      }
+    },
+    "Add" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Додати" } }
+      }
+    },
+    "Add line" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить строку" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Додати рядок" } }
+      }
+    },
+    "Amount" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сумма" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Сума" } }
+      }
+    },
+    "Best month" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Лучший месяц" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Найкращий місяць" } }
+      }
+    },
+    "Cancel" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отмена" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Скасувати" } }
+      }
+    },
+    "Canceled" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменено" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Скасовано" } }
+      }
+    },
+    "Client" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Клиент" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Клієнт" } }
+      }
+    },
+    "Currency" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Валюта" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Валюта" } }
+      }
+    },
+    "Date" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Дата" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Дата" } }
+      }
+    },
+    "Delete" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Видалити" } }
+      }
+    },
+    "Details" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Детали" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Деталі" } }
+      }
+    },
+    "Done" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Готово" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Готово" } }
+      }
+    },
+    "Edit line" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Изменить строку" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Редагувати рядок" } }
+      }
+    },
+    "Exchange rate" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Курс обмена" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Курс обміну" } }
+      }
+    },
+    "Heading" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Заголовок" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Заголовок" } }
+      }
+    },
+    "Hold until" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удерживать до" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Утримувати до" } }
+      }
+    },
+    "In progress" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "В работе" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "В роботі" } }
+      }
+    },
+    "Income" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Доход" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Дохід" } }
+      }
+    },
+    "Insights" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Аналитика" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Аналітика" } }
+      }
+    },
+    "Last 12 months" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Последние 12 месяцев" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Останні 12 місяців" } }
+      }
+    },
+    "Nothing pending" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет ожидающих" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Немає в очікуванні" } }
+      }
+    },
+    "Offline" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не в сети" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Не в мережі" } }
+      }
+    },
+    "Overdue" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Просрочено" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Прострочено" } }
+      }
+    },
+    "Paid" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Оплачено" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Оплачено" } }
+      }
+    },
+    "Paste lines" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Вставить строки" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Вставити рядки" } }
+      }
+    },
+    "Pending" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Ожидание" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Очікування" } }
+      }
+    },
+    "Primary" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Основная" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Основна" } }
+      }
+    },
+    "Project" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проект" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Проєкт" } }
+      }
+    },
+    "Search" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Поиск" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Пошук" } }
+      }
+    },
+    "Search income" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Поиск дохода" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Пошук доходу" } }
+      }
+    },
+    "Secondary" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Дополнительная" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Додаткова" } }
+      }
+    },
+    "Settings" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Настройки" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Налаштування" } }
+      }
+    },
+    "Status" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Статус" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Статус" } }
+      }
+    },
+    "Sync" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Синхронизация" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Синхронізація" } }
+      }
+    },
+    "Synced" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Синхронизировано" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Синхронізовано" } }
+      }
+    },
+    "Sync now" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Синхронизировать" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Синхронізувати" } }
+      }
+    },
+    "Task" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Задача" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Завдання" } }
+      }
+    },
+    "This year" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "В этом году" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Цього року" } }
+      }
+    },
+    "Top clients" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Топ клиентов" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Топ клієнтів" } }
+      }
+    },
+    "Total pending" : {
+      "localizations" : {
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Всего в ожидании" } },
+        "uk" : { "stringUnit" : { "state" : "translated", "value" : "Усього в очікуванні" } }
+      }
+    }
+  }
+}

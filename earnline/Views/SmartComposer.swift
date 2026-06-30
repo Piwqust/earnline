@@ -26,6 +26,7 @@ struct SmartComposer: View {
     @State private var showDatePicker = false
     @State private var showHoldPicker = false
     @State private var primed = false
+    @State private var saveError: String?
 
     private var amountDecimal: Decimal? {
         guard let d = LineParser.decimal(from: amountText), d > 0 else { return nil }
@@ -76,6 +77,14 @@ struct SmartComposer: View {
         .onChange(of: entryDate) { _, newValue in
             if let holdUntil, holdUntil < newValue { self.holdUntil = newValue }
         }
+        .alert("Could not save line", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: {
+            Text(saveError ?? "Try again.")
+        }
     }
 
     // MARK: Chips
@@ -83,7 +92,20 @@ struct SmartComposer: View {
     private var amountChip: some View {
         chip(bg: Theme.label(0.10)) {
             HStack(spacing: 1) {
-                Text(symbol).foregroundStyle(amountText.isEmpty ? Theme.label(0.4) : Theme.label)
+                Menu {
+                    ForEach(AppModel.supportedCurrencyCodes, id: \.self) { code in
+                        Button { currencyCode = code } label: {
+                            Text("\(CurrencyFormatter.symbol(for: code)) \(code)")
+                        }
+                    }
+                } label: {
+                    Text(symbol)
+                        .foregroundStyle(amountText.isEmpty ? Theme.label(0.4) : Theme.label)
+                        .frame(minWidth: 18)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Currency")
+                .accessibilityValue(currencyCode)
                 TextField("100", text: $amountText)
                     .fixedSize()
                     .frame(minWidth: 8)
@@ -93,6 +115,7 @@ struct SmartComposer: View {
                     .submitLabel(.next)
                     .onChange(of: amountText) { _, v in amountText = Validation.sanitizeAmountInput(v) }
                     .onSubmit { focus = .project }
+                    .accessibilityLabel("Amount")
             }
             .font(.system(size: 18))
         }
@@ -109,6 +132,7 @@ struct SmartComposer: View {
                     .submitLabel(.next)
                     .onChange(of: project) { _, v in project = Validation.capped(v, max: Limits.maxProjectLength) }
                     .onSubmit { focus = .task }
+                    .accessibilityLabel("Project")
                 projectMenu
             }
             .font(.system(size: 18))
@@ -158,7 +182,11 @@ struct SmartComposer: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: status.symbol).font(.system(size: 13)).foregroundStyle(status.tint)
+                Image(systemName: status.symbol)
+                    .font(.system(size: 13))
+                    .foregroundStyle(status.tint)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(.snappy(duration: 0.3), value: status)
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.label(0.4))
             }
             .padding(.horizontal, 8)
@@ -166,6 +194,8 @@ struct SmartComposer: View {
             .background(Theme.label(0.05), in: .capsule)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Status")
+        .accessibilityValue(status.title)
     }
 
     private var taskField: some View {
@@ -179,6 +209,7 @@ struct SmartComposer: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.label(0.05), in: .rect(cornerRadius: 8))
+            .accessibilityLabel("Task")
     }
 
     private var dateChip: some View {
@@ -225,8 +256,11 @@ struct SmartComposer: View {
                 .foregroundStyle(canCommit ? .white : Theme.label(0.3))
                 .frame(width: 34, height: 34)
                 .background(canCommit ? Theme.blue : Theme.label(0.10), in: .circle)
+                .symbolEffect(.bounce, value: canCommit)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Add line")
+        .accessibilityIdentifier("composer.submit")
         .disabled(!canCommit)
         .animation(.snappy, value: canCommit)
     }
@@ -275,15 +309,21 @@ struct SmartComposer: View {
         )
         entry.client = client
         context.insert(entry)
-        try? context.save()
-        app.queueSync(context: context)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        do {
+            try context.save()
+            app.queueSync(context: context)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
-        withAnimation(.snappy) {
-            amountText = ""; project = ""; task = ""
-            holdUntil = nil; status = .paid; entryDate = Date()
+            withAnimation(.snappy) {
+                amountText = ""; project = ""; task = ""
+                holdUntil = nil; status = .paid; entryDate = Date()
+                currencyCode = app.baseCurrencyCode
+            }
+            focus = .amount
+        } catch {
+            context.delete(entry)
+            saveError = error.localizedDescription
         }
-        focus = .amount
     }
 
     private func warn() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }

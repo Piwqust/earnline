@@ -14,24 +14,19 @@ struct SummaryPill: View {
             Text("Earned in \(DateFormat.month(month))")
                 .font(.labelMed)
                 .foregroundStyle(Theme.label(0.6))
+                .id(month)
+                .transition(.blurReplace)
             Spacer(minLength: 12)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(app.primaryString(total))
-                    .font(.summaryTotal)
-                    .foregroundStyle(Theme.label)
-                    .monospacedDigit()
-                    .contentTransition(.numericText(countsDown: total < previousTotal))
-                Text(app.secondaryString(total))
-                    .font(.caption)
-                    .foregroundStyle(Theme.label(0.6))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(countsDown: total < previousTotal))
-            }
+            MoneyAmountText(baseAmount: total,
+                            font: .summaryTotal,
+                            color: Theme.label,
+                            countsDownFrom: previousTotal)
         }
         .padding(16)
         .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
         .contentShape(.rect(cornerRadius: Theme.Radius.summary))
         .animation(.snappy(duration: 0.34), value: total)
+        .animation(.snappy(duration: 0.34), value: month)
         .onChange(of: total) { oldValue, _ in previousTotal = oldValue }
     }
 }

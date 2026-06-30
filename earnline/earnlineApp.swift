@@ -23,8 +23,11 @@ struct earnlineApp: App {
                 .environment(app)
                 .tint(Theme.blue)
                 .task {
+                    await PendingNotifications.requestAuthorization()
                     await app.refreshSupabaseSession()
                     await app.syncNow(context: container.mainContext)
+                    app.refreshPendingReminders(context: container.mainContext)
+                    app.startRealtime(context: container.mainContext)
                 }
         }
         .modelContainer(container)

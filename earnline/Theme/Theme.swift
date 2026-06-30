@@ -35,10 +35,6 @@ enum Theme {
     static let statusProgress = Color(hex: "#FF8A00")  // orange — in progress
     static let statusCanceled = Color(hex: "#FF3B30")  // red — canceled
 
-    // MARK: Swipe actions
-    static let actionHide = Color(hex: "#AEAEB2")
-    static let actionDelete = Color(hex: "#FF4245")
-
     // MARK: Metrics
     enum Radius {
         static let summary: CGFloat = 26

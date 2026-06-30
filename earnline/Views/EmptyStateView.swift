@@ -15,7 +15,7 @@ struct EmptyStateView: View {
                 Text("Write your first line")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Theme.label)
-                Text("Jot income like a notebook —\n“$240 LunaAI: 2 screens”")
+                Text("Jot income like a notebook —\n“$240 Acme: 2 screens”")
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.label(0.5))
                     .multilineTextAlignment(.center)
