@@ -2,21 +2,15 @@
 
 # earn›line
 
-**An income‑only notebook for freelancers.**
-Jot income the way you'd type it in Notes — earn›line parses every line into a clean, self‑totalling, cloud‑synced ledger.
+**An income‑only notebook for freelancers — now on iOS *and* the web.**
+Jot income the way you'd type it in Notes — earn›line parses every line into a clean, self‑totalling, cloud‑synced ledger that stays in lock‑step across your phone and your browser.
 
 <br>
 
 ![iOS 26](https://img.shields.io/badge/iOS-26-000000?style=for-the-badge&logo=apple&logoColor=white)
 ![Swift](https://img.shields.io/badge/Swift-6-F05138?style=for-the-badge&logo=swift&logoColor=white)
-![SwiftUI · Liquid Glass](https://img.shields.io/badge/SwiftUI-Liquid_Glass-0A84FF?style=for-the-badge&logo=swift&logoColor=white)
-![SwiftData](https://img.shields.io/badge/SwiftData-offline--first-30B0C7?style=for-the-badge)
+![React](https://img.shields.io/badge/React-Vite_·_TS-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![Supabase](https://img.shields.io/badge/Supabase-sync-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)
-
-![Last commit](https://img.shields.io/github/last-commit/Piwqust/earnline?style=flat-square)
-![Release](https://img.shields.io/github/v/release/Piwqust/earnline?style=flat-square&color=success)
-![Repo size](https://img.shields.io/github/repo-size/Piwqust/earnline?style=flat-square)
-![Top language](https://img.shields.io/github/languages/top/Piwqust/earnline?style=flat-square)
 
 <br>
 
@@ -47,73 +41,56 @@ earn›line is **income‑only** — deliberately *not* a budget app, wallet, ex
 
 Every line is parsed into **amount · client · project · task · date · hold‑until · status**, and totals roll up automatically **by month, by client, and by status**.
 
-## ✦ Highlights
+## ✦ This is a monorepo
 
-- 💬 **Smart composer** — build a line token by token: type the amount, **Return** → project, **Return** → task, **Return** commits. The project chip lets you **pick an existing project or type a new one**; the date and hold‑until open as anchored **popover tooltips**. The whole card animates open as its own row beneath the client.
-- 🟢 **Three calm statuses** — most income you add is *already paid*, so **Paid** is the unremarkable gray default. Lines that still need work show **In progress** (orange), and ones that fell through show **Canceled** (red).
-- 🔢 **Rolling totals** — the summary total animates with an odometer‑style numeric roll as the displayed month changes under your scroll.
-- 📐 **Responsive client rows** — the running total always keeps the **main currency full‑size**; when space is tight it drops the secondary currency, then collapses **+ Line** to a single **+**.
-- 🗓 **Continuous month scroll** — every month is one list separated by dividers (each with its subtotal); the summary pill tracks the top‑most visible month.
-- ✋ **Rich line actions** — **press‑and‑hold** for a solid preview card with Edit, a Status picker, and Delete; **swipe** for Edit / Delete. Deleting always asks for confirmation.
-- 💱 **Dual currency** — write in a primary currency, see a secondary converted value at an editable rate.
-- ☁️ **No‑login cloud sync** — personal Supabase workspace sync with dirty‑row push, pull, and offline delete tombstones.
+| App | Path | Stack |
+| --- | --- | --- |
+| 📱 **iOS** | [`ios-app/`](ios-app) | SwiftUI (iOS 26) · Liquid Glass · SwiftData · Supabase Swift |
+| 🌐 **Web** | [`web/`](web) | React · Vite · TypeScript · Dexie · supabase-js · desktop‑first UI |
+| ☁️ **Backend** | [`supabase/`](supabase) | Shared Postgres schema + migrations (no app‑specific code) |
 
-## ✦ Design language — Liquid Glass
+Both apps are **peers** of the same Supabase project: they write the same tables with the same conventions, so a line added on the phone shows up in the browser and vice‑versa.
 
-Native iOS built in Apple's **Liquid Glass** system (iOS 26): real glass materials (`glassEffect`, `GlassEffectContainer`, `buttonStyle(.glass)`), soft scroll‑edge effects, spring micro‑interactions, SF Pro typography, a calm palette, and haptics. The Figma is the source of truth — the UI mirrors it rather than reinventing it.
+The iOS app is a phone‑native SwiftUI experience; the **web app is desktop‑first**, with its own web‑native design system (sidebar · ledger · summary rail) rather than a port of the iOS screens. Only the presentation differs — the data model, sync engine, and wire format are shared.
 
-## ✦ Tech stack
+## ✦ Full synchronization
 
-| Layer | What |
-| --- | --- |
-| **UI** | SwiftUI (iOS 26) · Liquid Glass APIs |
-| **Persistence** | SwiftData (`Client`, `Entry`, `Heading`) + sync tombstones |
-| **State** | `@Observable` `AppModel` · `UserDefaults` currency settings |
-| **Parsing** | custom, unit‑tested `LineParser` (amounts, currencies, hold dates, status marks) |
-| **Sync** | Supabase Swift · personal no‑login workspace · pinned via XcodeGen |
-| **Project** | generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
+There is no separate server — sync is a set of conventions over four Postgres tables (`earnline_clients`, `earnline_entries`, `earnline_headings`, `earnline_tombstones`), scoped by a `workspace_id`:
 
-## ✦ Project structure
+- **Personal, no‑login** — both clients connect with the project's *publishable* key and a shared workspace ID (entered in each app's Settings). No accounts.
+- **Offline‑first on both platforms** — iOS uses SwiftData, web uses Dexie/IndexedDB. Edits apply instantly and queue for sync.
+- **Last‑write‑wins** on `updated_at`, with **tombstones** so deletes propagate.
+- **Live** — the web app additionally subscribes to Supabase Realtime, so remote changes appear without a manual refresh.
+
+> **Security model:** the publishable/anon key is client‑safe; the `workspace_id` is the only access gate and is a low‑security personal‑sharing identifier. Never put a `service_role` key in either app.
+
+## ✦ Repo structure
 
 ```
 earnline/
-  Models/      Client, Entry, EntryStatus, Heading, SyncState   (SwiftData)
-  Parsing/     LineParser, ParsedLine
-  Theme/       Theme tokens, Color+Hex, CurrencyFormatter, DateFormat
-  Sync/        SyncCoordinator, RemoteRecords, SupabaseProjectDefaults
-  ViewModels/  AppModel  (state, currency, grouping & totals)
-  Views/       LedgerView · SummaryPill · ClientChip · EntryRow · SmartComposer
-               MonthDivider · NewClientSheet · ClientDetailView · EditEntrySheet
-               SettingsView · EmptyStateView · GlassButtons
-  Util/        SampleData, IncomeLedgerImporter, Validation, DeterministicID, FlowLayout
-earnlineTests/ LineParserTests, ValidationTests
-supabase/      schema + migrations
+  ios-app/     SwiftUI app  (Models · Parsing · Theme · Sync · ViewModels · Views · Tests)
+  web/         React + Vite app  (domain · data · sync · state · ui)
+  supabase/    shared Postgres schema + migrations
+  docs/        screenshots
+  .github/     CI workflow + CODEOWNERS
 ```
 
-## ✦ Build & run
+## ✦ Get started
 
-```bash
-xcodegen generate                                   # regenerate earnline.xcodeproj from project.yml
-xcodebuild -scheme earnline \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' build
-xcodebuild -scheme earnline \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' test
-```
-
-Open `earnline.xcodeproj` in **Xcode 26** and run on an **iOS 26** simulator. Launch arg `-demoComposer` opens the composer pre‑filled for the first client (handy for screenshots).
-
-## ✦ Supabase
-
-The app keeps the personal **no-login** sync model: Settings stores a Supabase project URL, publishable key, and workspace ID locally in `UserDefaults`. The tracked source contains placeholders only. Never paste a `service_role` key into the app.
-
-SQL history lives in [`supabase/migrations`](supabase/migrations), with a one-shot current schema at [`supabase/earnline_sync_schema.sql`](supabase/earnline_sync_schema.sql). Before applying the example schema to your own project, replace `your-workspace-id` with a private workspace identifier and keep that value out of public screenshots.
+- **iOS** — see [`ios-app/README.md`](ios-app/README.md)
+- **Web** — see [`web/README.md`](web/README.md)
+- **Backend** — apply [`supabase/earnline_sync_schema.sql`](supabase/earnline_sync_schema.sql) to your Supabase project, replacing `your-workspace-id` with a private workspace identifier, then enter the project URL, publishable key, and that workspace ID in each app's Settings.
 
 ## ✦ CI
 
-The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) regenerates the project with XcodeGen and runs `xcodebuild test` with signing disabled.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs two jobs: the iOS job regenerates the project with XcodeGen and runs `xcodebuild test`; the web job runs the Vitest suite and a production build.
 
-## ✦ Status
+## ✦ Contributing
 
-**v0.0.1** — first tagged build: the income ledger, smart composer, redesigned statuses, rolling totals, responsive rows, confirmation‑guarded deletes, and personal Supabase sync.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the monorepo layout, per‑app dev commands, and the wire‑format contract both apps must uphold. Review ownership is declared in [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
-<div align="center"><sub>Built with SwiftUI, SwiftData, and a lot of glass. ✦</sub></div>
+## ✦ License
+
+Released under the [MIT License](LICENSE).
+
+<div align="center"><sub>Built with SwiftUI, React, and one shared wire format. ✦</sub></div>
