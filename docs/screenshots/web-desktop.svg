@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-label="earn›line desktop web app — sidebar, ledger, and summary rail">
+  <defs>
+    <clipPath id="win"><rect x="24" y="24" width="1152" height="712" rx="18"/></clipPath>
+  </defs>
+
+  <rect width="1200" height="760" rx="26" fill="#eaecef"/>
+
+  <g clip-path="url(#win)" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="24" y="24" width="1152" height="712" fill="#ffffff"/>
+    <rect x="24" y="24" width="248" height="712" fill="#f6f7f9"/>
+    <rect x="271" y="24" width="1" height="712" fill="#e9ebef"/>
+    <rect x="896" y="24" width="280" height="712" fill="#f6f7f9"/>
+    <rect x="895" y="24" width="1" height="712" fill="#e9ebef"/>
+
+    <!-- sidebar -->
+    <text x="48" y="66" font-size="22" font-weight="700" fill="#1a1a1a">earn<tspan fill="#0088ff">›</tspan>line</text>
+    <rect x="40" y="90" width="216" height="34" rx="9" fill="#e8f1ff"/>
+    <text x="56" y="112" font-size="15" font-weight="600" fill="#0088ff">Ledger</text>
+    <text x="56" y="154" font-size="15" fill="#5b6472">Settings</text>
+    <text x="48" y="210" font-size="11" font-weight="650" letter-spacing="0.6" fill="#9aa1ab">CLIENTS</text>
+    <circle cx="52" cy="240" r="5" fill="#0088ff"/>
+    <text x="68" y="245" font-size="13.5" fill="#1a1a1a">Acme Studio</text>
+    <text x="248" y="245" text-anchor="end" font-size="12" fill="#6b7280">$740.50</text>
+    <circle cx="52" cy="274" r="5" fill="#7b00ff"/>
+    <text x="68" y="279" font-size="13.5" fill="#1a1a1a">Northstar Labs</text>
+    <text x="248" y="279" text-anchor="end" font-size="12" fill="#6b7280">$500</text>
+    <rect x="24" y="699" width="248" height="1" fill="#e9ebef"/>
+    <circle cx="52" cy="722" r="6" fill="none" stroke="#9aa1ab" stroke-width="1.4"/>
+    <path d="M52 716 v3 M56 723 h-3" stroke="#9aa1ab" stroke-width="1.4" stroke-linecap="round"/>
+    <text x="68" y="727" font-size="12" fill="#8a929c">Synced</text>
+
+    <!-- ledger topbar -->
+    <text x="300" y="62" font-size="14" fill="#6b7280">Earned in June</text>
+    <text x="426" y="64" font-size="22" font-weight="700" fill="#1a1a1a">$1,240.50</text>
+    <rect x="806" y="44" width="70" height="32" rx="9" fill="#0088ff"/>
+    <text x="841" y="65" text-anchor="middle" font-size="13.5" font-weight="600" fill="#ffffff">+ New</text>
+    <rect x="272" y="92" width="624" height="1" fill="#eef0f2"/>
+
+    <!-- composer -->
+    <rect x="300" y="108" width="576" height="88" rx="14" fill="#ffffff" stroke="#e4e7ec"/>
+    <rect x="316" y="120" width="112" height="28" rx="14" fill="#0088ff"/>
+    <text x="372" y="139" text-anchor="middle" font-size="12.5" font-weight="600" fill="#ffffff">Acme Studio</text>
+    <rect x="436" y="120" width="66" height="28" rx="7" fill="#eef0f2"/>
+    <text x="448" y="139" font-size="13" fill="#1a1a1a">$ 240</text>
+    <rect x="510" y="120" width="80" height="28" rx="7" fill="#f4f5f7"/>
+    <text x="522" y="139" font-size="13" fill="#9aa1ab">Project</text>
+    <rect x="598" y="120" width="72" height="28" rx="7" fill="#eeeff0"/>
+    <circle cx="613" cy="134" r="5" fill="#8e8e93"/>
+    <text x="624" y="139" font-size="12.5" fill="#6b7280">Paid</text>
+    <rect x="316" y="156" width="486" height="30" rx="7" fill="#f5f6f8"/>
+    <text x="330" y="176" font-size="13" fill="#aeb4bc">What was it?</text>
+    <circle cx="852" cy="171" r="17" fill="#0088ff"/>
+    <path d="M852 179 v-16 M845 170 l7 -7 l7 7" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- month divider -->
+    <text x="300" y="238" font-size="17" font-weight="700" fill="#1a1a1a">June</text>
+    <rect x="352" y="232" width="454" height="1" fill="#e4e7ec"/>
+    <text x="876" y="238" text-anchor="end" font-size="13" fill="#6b7280">$1,240.50</text>
+
+    <!-- Acme group -->
+    <rect x="300" y="258" width="104" height="26" rx="13" fill="#0088ff"/>
+    <text x="352" y="275" text-anchor="middle" font-size="12.5" font-weight="600" fill="#ffffff">Acme Studio</text>
+    <text x="420" y="277" font-size="14" fill="#5b6472">$740.50</text>
+
+    <text x="372" y="315" text-anchor="end" font-size="17" font-weight="600" fill="#1a1a1a">+$240</text>
+    <text x="392" y="315" font-size="15" fill="#1a1a1a"><tspan fill="#8a929c">Launch Kit :</tspan> Two homepage screens</text>
+    <text x="700" y="315" font-size="12.5" fill="#9aa1ab">29.06 · hold 25.07</text>
+    <circle cx="864" cy="310" r="8" fill="#ff8a00"/>
+    <path d="M864 306.5 v3.5 l2.5 1.5" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="372" y="352" text-anchor="end" font-size="17" font-weight="600" fill="#1a1a1a">+$300</text>
+    <text x="392" y="352" font-size="15" fill="#1a1a1a"><tspan fill="#8a929c">Launch Kit :</tspan> Landing page</text>
+    <text x="700" y="352" font-size="12.5" fill="#9aa1ab">26.06</text>
+    <circle cx="864" cy="347" r="8" fill="#8e8e93"/>
+    <path d="M860.5 347 l2.5 2.5 l4.5 -5" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="372" y="389" text-anchor="end" font-size="17" font-weight="600" fill="#1a1a1a">+$200.50</text>
+    <text x="392" y="389" font-size="15" fill="#1a1a1a"><tspan fill="#8a929c">Ops Console :</tspan> QA fixes</text>
+    <text x="700" y="389" font-size="12.5" fill="#9aa1ab">22.06</text>
+    <circle cx="864" cy="384" r="8" fill="#8e8e93"/>
+    <path d="M860.5 384 l2.5 2.5 l4.5 -5" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Northstar group -->
+    <rect x="300" y="414" width="118" height="26" rx="13" fill="#7b00ff"/>
+    <text x="359" y="431" text-anchor="middle" font-size="12.5" font-weight="600" fill="#ffffff">Northstar Labs</text>
+    <text x="434" y="433" font-size="14" fill="#5b6472">$500</text>
+
+    <text x="372" y="471" text-anchor="end" font-size="17" font-weight="600" fill="#1a1a1a">+$500</text>
+    <text x="392" y="471" font-size="15" fill="#1a1a1a"><tspan fill="#8a929c">North Portal :</tspan> Integration tweaks</text>
+    <text x="700" y="471" font-size="12.5" fill="#9aa1ab">10.06</text>
+    <circle cx="864" cy="466" r="8" fill="#8e8e93"/>
+    <path d="M860.5 466 l2.5 2.5 l4.5 -5" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="372" y="508" text-anchor="end" font-size="17" font-weight="600" fill="#aab0b8">+$900</text>
+    <text x="392" y="508" font-size="15" fill="#aab0b8"><tspan>North Portal :</tspan> Admin panel</text>
+    <text x="700" y="508" font-size="12.5" fill="#c2c7cd">08.06 · canceled</text>
+    <circle cx="864" cy="503" r="8" fill="#ff3b30"/>
+    <path d="M861 500 l6 6 M867 500 l-6 6" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
+
+    <!-- rail: by status -->
+    <text x="920" y="60" font-size="13" font-weight="650" fill="#46505c">June</text>
+    <rect x="912" y="76" width="248" height="196" rx="14" fill="#ffffff" stroke="#e9ebef"/>
+    <text x="930" y="105" font-size="10.5" font-weight="650" letter-spacing="0.6" fill="#9aa1ab">BY STATUS</text>
+
+    <circle cx="934" cy="128" r="5" fill="#8e8e93"/>
+    <text x="948" y="133" font-size="12.5" fill="#46505c">Paid</text>
+    <text x="1144" y="133" text-anchor="end" font-size="12.5" font-weight="600" fill="#1a1a1a">$1,000.50</text>
+    <rect x="930" y="142" width="214" height="6" rx="3" fill="#ececed"/>
+    <rect x="930" y="142" width="100" height="6" rx="3" fill="#8e8e93"/>
+
+    <circle cx="934" cy="172" r="5" fill="#ff8a00"/>
+    <text x="948" y="177" font-size="12.5" fill="#46505c">In progress</text>
+    <text x="1144" y="177" text-anchor="end" font-size="12.5" font-weight="600" fill="#1a1a1a">$240</text>
+    <rect x="930" y="186" width="214" height="6" rx="3" fill="#ececed"/>
+    <rect x="930" y="186" width="24" height="6" rx="3" fill="#ff8a00"/>
+
+    <circle cx="934" cy="216" r="5" fill="#ff3b30"/>
+    <text x="948" y="221" font-size="12.5" fill="#46505c">Canceled</text>
+    <text x="1144" y="221" text-anchor="end" font-size="12.5" font-weight="600" fill="#1a1a1a">$900</text>
+    <rect x="930" y="230" width="214" height="6" rx="3" fill="#ececed"/>
+    <rect x="930" y="230" width="90" height="6" rx="3" fill="#ff3b30"/>
+
+    <rect x="930" y="250" width="214" height="1" fill="#eef0f2"/>
+    <text x="930" y="267" font-size="12.5" fill="#6b7280">Earned</text>
+    <text x="1144" y="267" text-anchor="end" font-size="14" font-weight="700" fill="#1a1a1a">$1,240.50</text>
+
+    <!-- rail: top clients -->
+    <rect x="912" y="292" width="248" height="104" rx="14" fill="#ffffff" stroke="#e9ebef"/>
+    <text x="930" y="321" font-size="10.5" font-weight="650" letter-spacing="0.6" fill="#9aa1ab">TOP CLIENTS</text>
+    <circle cx="934" cy="345" r="5" fill="#0088ff"/>
+    <text x="948" y="350" font-size="12.5" fill="#1a1a1a">Acme Studio</text>
+    <text x="1144" y="350" text-anchor="end" font-size="12.5" fill="#6b7280">$740.50</text>
+    <circle cx="934" cy="377" r="5" fill="#7b00ff"/>
+    <text x="948" y="382" font-size="12.5" fill="#1a1a1a">Northstar Labs</text>
+    <text x="1144" y="382" text-anchor="end" font-size="12.5" fill="#6b7280">$500</text>
+  </g>
+
+  <rect x="24.5" y="24.5" width="1151" height="711" rx="18" fill="none" stroke="#dde1e6" stroke-width="1"/>
+</svg>
