@@ -1,0 +1,104 @@
+/* earn›line web — design tokens.
+   Neutrals are OKLCH, tinted a touch cool toward the brand blue (hue ~262) so
+   nothing is dead grey and nothing is pure #000/#fff. Brand, status, and client
+   colors keep their exact brand hex (they're identity, not neutrals). */
+
+:root {
+  /* ---- surfaces (cool off-whites; content sits on white, chrome on grey) ---- */
+  --canvas: oklch(0.972 0.005 262); /* app background */
+  --surface: oklch(0.999 0.0012 262); /* white content (ledger, cards) */
+  --surface-2: oklch(0.984 0.004 262); /* raised / subtle panels */
+  --surface-sunken: oklch(0.96 0.006 262); /* inset fields, composer wells */
+  --surface-hover: oklch(0.955 0.007 262); /* neutral hover wash */
+  --sidebar-bg: oklch(0.966 0.006 262);
+  --rail-bg: oklch(0.972 0.005 262);
+  --scrim: oklch(0.28 0.03 262 / 0.42); /* dialog backdrop */
+
+  /* ---- ink ladder (one cool ink at decreasing strength) ---- */
+  --ink: oklch(0.25 0.014 262); /* primary text */
+  --ink-2: oklch(0.435 0.012 262); /* secondary / labels */
+  --ink-3: oklch(0.56 0.011 262); /* captions / datelines */
+  --ink-4: oklch(0.68 0.01 262); /* muted */
+  --ink-5: oklch(0.8 0.008 262); /* placeholder / faint */
+
+  /* ---- hairlines ---- */
+  --border: oklch(0.915 0.006 262);
+  --border-2: oklch(0.875 0.008 262);
+
+  /* ---- brand + accents (brand-exact hex) ---- */
+  --blue: #0088ff;
+  --blue-press: #0072e0;
+  --purple: #7b00ff;
+  --accent: var(--blue);
+  --on-accent: oklch(0.99 0.005 262);
+
+  /* ---- status (brand-exact hex; mirrors Theme.swift) ---- */
+  --paid: #8e8e93;
+  --progress: #ff8a00;
+  --canceled: #ff3b30;
+
+  /* ---- state washes (translucent so they sit on any surface) ---- */
+  --blue-wash: color-mix(in oklab, var(--blue) 10%, transparent);
+  --blue-wash-2: color-mix(in oklab, var(--blue) 16%, transparent);
+  --ink-wash: color-mix(in oklab, var(--ink) 6%, transparent);
+  --ink-wash-2: color-mix(in oklab, var(--ink) 10%, transparent);
+  --danger-wash: color-mix(in oklab, var(--canceled) 12%, transparent);
+
+  /* ---- focus ---- */
+  --focus: color-mix(in oklab, var(--blue) 55%, transparent);
+  --focus-ring: 0 0 0 3px var(--focus);
+
+  /* ---- elevation (cool, soft, never harsh black) ---- */
+  --shadow-sm: 0 1px 2px oklch(0.45 0.03 262 / 0.07), 0 1px 1px oklch(0.45 0.03 262 / 0.05);
+  --shadow-md: 0 6px 16px oklch(0.42 0.04 262 / 0.1), 0 2px 5px oklch(0.42 0.04 262 / 0.06);
+  --shadow-lg: 0 18px 44px oklch(0.4 0.04 262 / 0.16), 0 6px 14px oklch(0.4 0.04 262 / 0.07);
+  --shadow-rail: -1px 0 0 var(--border);
+
+  /* ---- radii ---- */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* ---- spacing (4-based) ---- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 28px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* ---- type ---- */
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* ---- layout ---- */
+  --sidebar-w: 248px;
+  --rail-w: 304px;
+  --content-max: 1080px;
+  --topbar-h: 60px;
+
+  /* ---- motion (ease-out, exponential; no bounce) ---- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+
+  /* ---- z-index ---- */
+  --z-sticky: 20;
+  --z-dropdown: 60;
+  --z-panel: 80;
+  --z-dialog: 100;
+  --z-toast: 120;
+
+  color-scheme: light;
+}
