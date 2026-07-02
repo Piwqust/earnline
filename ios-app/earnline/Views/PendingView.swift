@@ -67,7 +67,7 @@ struct PendingView: View {
             )) {
                 Button("OK", role: .cancel) { saveError = nil }
             } message: {
-                Text(saveError ?? "Try again.")
+                Text(saveError ?? String(localized: "Try again."))
             }
         }
     }
@@ -109,7 +109,7 @@ struct PendingView: View {
         }
     }
 
-    private func badge(_ title: String, systemImage: String, tint: Color) -> some View {
+    private func badge(_ title: LocalizedStringKey, systemImage: String, tint: Color) -> some View {
         Label(title, systemImage: systemImage)
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(tint)

@@ -7,6 +7,27 @@ enum SyncState: String, Codable {
     case failed
 }
 
+/// Shared sync surface of the three row models, so the coordinator can mark
+/// pushed rows generically.
+protocol SyncableModel: PersistentModel {
+    var syncUpdatedAt: Date { get }
+    func markSynced(at date: Date)
+}
+
+/// Versioned schema so future model changes ship with an explicit migration
+/// path instead of a crash-on-launch for existing synced stores.
+enum EarnlineSchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [Client.self, Entry.self, Heading.self, SyncTombstone.self]
+    }
+}
+
+enum EarnlineMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [EarnlineSchemaV1.self] }
+    static var stages: [MigrationStage] { [] }
+}
+
 enum SyncEntity: String, Codable, CaseIterable {
     case client
     case entry
@@ -38,6 +59,10 @@ final class SyncTombstone {
         self.createdAt = createdAt
     }
 }
+
+extension Client: SyncableModel {}
+extension Entry: SyncableModel {}
+extension Heading: SyncableModel {}
 
 extension Client {
     var syncState: SyncState {

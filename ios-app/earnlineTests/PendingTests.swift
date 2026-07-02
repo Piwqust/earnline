@@ -47,4 +47,18 @@ struct PendingTests {
         #expect(requests.first?.dateComponents.day == 5)
         #expect(requests.first?.dateComponents.hour == 9)
     }
+
+    @Test func dueTodayAfterNineAMGetsNoReminder() {
+        let cal = Calendar.current
+        let today = date(2026, 6, 30)
+        let hold = Entry(amount: 1, task: "today", holdUntil: today, status: .inProgress)
+
+        let morning = cal.date(byAdding: .hour, value: 8, to: today)!
+        #expect(PendingNotifications.desiredRequests(for: [hold], now: morning).count == 1)
+
+        // Past 09:00 the calendar trigger would be in the past (fires
+        // immediately, again on every rebuild) — so it must be skipped.
+        let afternoon = cal.date(byAdding: .hour, value: 15, to: today)!
+        #expect(PendingNotifications.desiredRequests(for: [hold], now: afternoon).isEmpty)
+    }
 }

@@ -17,9 +17,9 @@
   /* ---- ink ladder (one cool ink at decreasing strength) ---- */
   --ink: oklch(0.25 0.014 262); /* primary text */
   --ink-2: oklch(0.435 0.012 262); /* secondary / labels */
-  --ink-3: oklch(0.56 0.011 262); /* captions / datelines */
-  --ink-4: oklch(0.68 0.01 262); /* muted */
-  --ink-5: oklch(0.8 0.008 262); /* placeholder / faint */
+  --ink-3: oklch(0.53 0.011 262); /* captions / datelines */
+  --ink-4: oklch(0.562 0.011 262); /* muted labels / dates (AA on white) */
+  --ink-5: oklch(0.74 0.009 262); /* placeholder / faint */
 
   /* ---- hairlines ---- */
   --border: oklch(0.915 0.006 262);
@@ -32,6 +32,9 @@
   --accent: var(--blue);
   --on-accent: oklch(0.99 0.005 262);
 
+  /* ---- gain (calm, money-forward positive; web chrome only, not a status hex) ---- */
+  --gain: oklch(0.53 0.13 152);
+
   /* ---- status (brand-exact hex; mirrors Theme.swift) ---- */
   --paid: #8e8e93;
   --progress: #ff8a00;
@@ -43,6 +46,8 @@
   --ink-wash: color-mix(in oklab, var(--ink) 6%, transparent);
   --ink-wash-2: color-mix(in oklab, var(--ink) 10%, transparent);
   --danger-wash: color-mix(in oklab, var(--canceled) 12%, transparent);
+  --gain-wash: color-mix(in oklab, var(--gain) 13%, transparent);
+  --progress-wash: color-mix(in oklab, var(--progress) 15%, transparent);
 
   /* ---- focus ---- */
   --focus: color-mix(in oklab, var(--blue) 55%, transparent);
@@ -101,4 +106,77 @@
   --z-toast: 120;
 
   color-scheme: light;
+}
+
+/* ============================================================
+   Dark theme.
+     :root                                        → light (above)
+     :root[data-theme="dark"]                     → forced dark
+     @media (dark) :root:not([data-theme="light"]) → auto-follows the OS
+   Only the base tokens are re-declared here; every derived wash
+   (--*-wash, --focus, --scrim…) uses color-mix over --ink / --blue,
+   so it re-derives from these automatically — no duplication needed.
+   Elevation deepens (stronger shadows) and hairlines lighten.
+   ============================================================ */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: oklch(0.165 0.012 262);
+  --surface: oklch(0.215 0.013 262);
+  --surface-2: oklch(0.25 0.014 262);
+  --surface-sunken: oklch(0.145 0.01 262);
+  --surface-hover: oklch(0.275 0.015 262);
+  --sidebar-bg: oklch(0.185 0.012 262);
+  --rail-bg: oklch(0.165 0.012 262);
+  --scrim: oklch(0.08 0.02 262 / 0.62);
+
+  --ink: oklch(0.95 0.008 262);
+  --ink-2: oklch(0.82 0.011 262);
+  --ink-3: oklch(0.675 0.012 262);
+  --ink-4: oklch(0.655 0.012 262);
+  --ink-5: oklch(0.44 0.012 262);
+
+  --border: oklch(0.92 0.01 262 / 0.12);
+  --border-2: oklch(0.92 0.01 262 / 0.2);
+
+  --blue: #2b95ff;
+  --blue-press: #4aa6ff;
+  --gain: oklch(0.74 0.14 155);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4), 0 1px 1px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 8px 20px oklch(0 0 0 / 0.5), 0 2px 6px oklch(0 0 0 / 0.34);
+  --shadow-lg: 0 22px 50px oklch(0 0 0 / 0.62), 0 8px 18px oklch(0 0 0 / 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --canvas: oklch(0.165 0.012 262);
+    --surface: oklch(0.215 0.013 262);
+    --surface-2: oklch(0.25 0.014 262);
+    --surface-sunken: oklch(0.145 0.01 262);
+    --surface-hover: oklch(0.275 0.015 262);
+    --sidebar-bg: oklch(0.185 0.012 262);
+    --rail-bg: oklch(0.165 0.012 262);
+    --scrim: oklch(0.08 0.02 262 / 0.62);
+
+    --ink: oklch(0.95 0.008 262);
+    --ink-2: oklch(0.82 0.011 262);
+    --ink-3: oklch(0.675 0.012 262);
+    --ink-4: oklch(0.655 0.012 262);
+    --ink-5: oklch(0.44 0.012 262);
+
+    --border: oklch(0.92 0.01 262 / 0.12);
+    --border-2: oklch(0.92 0.01 262 / 0.2);
+
+    --blue: #2b95ff;
+    --blue-press: #4aa6ff;
+    --gain: oklch(0.74 0.14 155);
+
+    --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4), 0 1px 1px oklch(0 0 0 / 0.3);
+    --shadow-md: 0 8px 20px oklch(0 0 0 / 0.5), 0 2px 6px oklch(0 0 0 / 0.34);
+    --shadow-lg: 0 22px 50px oklch(0 0 0 / 0.62), 0 8px 18px oklch(0 0 0 / 0.4);
+  }
 }

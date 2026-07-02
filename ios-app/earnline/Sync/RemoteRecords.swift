@@ -14,7 +14,10 @@ struct SyncMoney: Codable, Equatable {
             self.decimal = decimal
             return
         }
-        self.decimal = try container.decode(Decimal.self)
+        // PostgREST serializes numeric columns as JSON numbers, and JSONDecoder
+        // routes those through Double, which can leave binary dust (99.99 →
+        // 99.9899…). Amounts are numeric(14,2) on the wire, so snap to 2 dp.
+        self.decimal = try container.decode(Decimal.self).rounded(2)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -65,10 +68,16 @@ enum SyncDateCodec {
         return formatter
     }
 
+    /// Wire invariant (shared with the web client): a `yyyy-MM-dd` value IS the
+    /// calendar day the user sees — not an instant. So days are formatted from
+    /// and parsed into the *local* calendar. Formatting in UTC shifted every
+    /// local-midnight date (DatePicker, parsed hold dates) to the previous day
+    /// for UTC-positive timezones, and parsing in UTC displayed every synced
+    /// date a day early for UTC-negative ones.
     private static func dayFormatter() -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }
@@ -88,7 +97,7 @@ enum SyncDateCodec {
     }
 
     static func parseDay(_ value: String) -> Date {
-        dayFormatter().date(from: value) ?? Date()
+        dayFormatter().date(from: value) ?? Calendar.current.startOfDay(for: Date())
     }
 }
 

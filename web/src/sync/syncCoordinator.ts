@@ -1,8 +1,12 @@
 // Faithful port of iOS Sync/SyncCoordinator.swift.
 //
-// Order (matters): push tombstones → push dirty rows → pull remote (last-write-
-// wins on updated_at) → prune old tombstones. In this personal no-login model a
-// local delete intentionally wins over a concurrent remote update.
+// Order (matters): push tombstones → apply remote tombstones → push dirty rows
+// → pull remote (last-write-wins on updated_at) → prune old tombstones. In this
+// personal no-login model a local delete intentionally wins over a concurrent
+// remote update. Remote tombstones are applied *before* the push: a client
+// deleted on another device must take its local entries with it now, or
+// pushing those entries would hit the remote FK (their client row is gone) and
+// wedge every retry the same way.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Table } from "dexie";
@@ -38,10 +42,43 @@ export async function sync(
 ): Promise<number> {
   const syncedAt = Date.now();
   await pushDeletes(supabase, workspaceId);
+  const remoteTombstones = await fetchRows<TombstoneRow>(
+    supabase,
+    "earnline_tombstones",
+    workspaceId,
+    "deleted_at",
+    lastPulledMs,
+  );
+  await applyRemoteTombstones(remoteTombstones);
   await pushLocalRows(supabase, workspaceId, syncedAt);
   await pullRemoteRows(supabase, workspaceId, lastPulledMs, syncedAt);
   await pruneRemoteTombstones(supabase, workspaceId, syncedAt);
   return syncedAt;
+}
+
+// --- apply remote deletes (before push, see header) ---
+
+async function applyRemoteTombstones(rows: TombstoneRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  await db.transaction("rw", db.clients, db.headings, db.entries, async () => {
+    for (const row of rows) {
+      const deletedAt = parseTimestamp(row.deleted_at);
+      if (row.entity === "client") {
+        const c = await db.clients.get(row.record_id);
+        if (c && deletedAt >= syncUpdatedAt(c)) {
+          await db.clients.delete(c.id);
+          const owned = await db.entries.where("clientId").equals(c.id).primaryKeys();
+          await db.entries.bulkDelete(owned as string[]);
+        }
+      } else if (row.entity === "heading") {
+        const h = await db.headings.get(row.record_id);
+        if (h && deletedAt >= syncUpdatedAt(h)) await db.headings.delete(h.id);
+      } else if (row.entity === "entry") {
+        const e = await db.entries.get(row.record_id);
+        if (e && deletedAt >= syncUpdatedAt(e)) await db.entries.delete(e.id);
+      }
+    }
+  });
 }
 
 // --- push deletes ---
@@ -127,11 +164,10 @@ async function pullRemoteRows(
   const headingSince = localHeadings === 0 ? null : lastPulledMs;
   const entrySince = localEntries === 0 ? null : lastPulledMs;
 
-  const [remoteClients, remoteHeadings, remoteEntries, remoteTombstones] = await Promise.all([
+  const [remoteClients, remoteHeadings, remoteEntries] = await Promise.all([
     fetchRows<ClientRow>(supabase, "earnline_clients", workspaceId, "updated_at", clientSince),
     fetchRows<HeadingRow>(supabase, "earnline_headings", workspaceId, "updated_at", headingSince),
     fetchRows<EntryRow>(supabase, "earnline_entries", workspaceId, "updated_at", entrySince),
-    fetchRows<TombstoneRow>(supabase, "earnline_tombstones", workspaceId, "deleted_at", lastPulledMs),
   ]);
 
   await db.transaction("rw", db.clients, db.headings, db.entries, async () => {
@@ -214,25 +250,6 @@ async function pullRemoteRows(
         const created = rowToEntry(row, syncedAt);
         await db.entries.put(created);
         entriesById.set(row.id, created);
-      }
-    }
-
-    // Apply remote tombstones last (a local delete still won via pushDeletes).
-    for (const row of remoteTombstones) {
-      const deletedAt = parseTimestamp(row.deleted_at);
-      if (row.entity === "client") {
-        const c = clientsById.get(row.record_id);
-        if (c && deletedAt >= syncUpdatedAt(c)) {
-          await db.clients.delete(c.id);
-          const owned = await db.entries.where("clientId").equals(c.id).primaryKeys();
-          await db.entries.bulkDelete(owned as string[]);
-        }
-      } else if (row.entity === "heading") {
-        const h = headingsById.get(row.record_id);
-        if (h && deletedAt >= syncUpdatedAt(h)) await db.headings.delete(h.id);
-      } else if (row.entity === "entry") {
-        const e = entriesById.get(row.record_id);
-        if (e && deletedAt >= syncUpdatedAt(e)) await db.entries.delete(e.id);
       }
     }
   });

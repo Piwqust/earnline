@@ -60,7 +60,7 @@ struct MoneyAmountText: View {
             .minimumScaleFactor(minimumScaleFactor)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isApproximate ? "\(amountText), approximate" : amountText)
+        .accessibilityLabel(isApproximate ? String(localized: "\(amountText), approximate") : amountText)
         .accessibilityHint(Text("Tap to show \(nextCode)"))
     }
 }

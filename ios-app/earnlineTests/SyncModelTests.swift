@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import earnline
 
@@ -84,6 +85,54 @@ struct SyncModelTests {
         app.secondaryCurrencyCode = "RUB"
         app.rate = 89.125
         #expect(app.secondaryString(Decimal(string: "99.50")!) == "8\u{00A0}867.94 ₽")
+    }
+
+    @Test func dayStringsRoundTripAsCalendarDays() {
+        let cal = Calendar.current
+        // Local midnight — the shape every DatePicker / parsed hold date has.
+        let midnight = date(year: 2026, month: 7, day: 4)
+        #expect(SyncDateCodec.dayString(midnight) == "2026-07-04")
+
+        let parsed = SyncDateCodec.parseDay("2026-07-04")
+        let comps = cal.dateComponents([.year, .month, .day], from: parsed)
+        #expect(comps.year == 2026)
+        #expect(comps.month == 7)
+        #expect(comps.day == 4)
+
+        // Late-evening instants still format as their local calendar day.
+        let evening = cal.date(from: DateComponents(year: 2026, month: 7, day: 4, hour: 23, minute: 30))!
+        #expect(SyncDateCodec.dayString(evening) == "2026-07-04")
+    }
+
+    @Test func syncMoneyDecodesJSONNumbersToTwoDecimalPlaces() throws {
+        struct Row: Codable { let amount: SyncMoney }
+        // PostgREST sends numeric columns as JSON numbers; the Double detour
+        // must not leave binary dust on the decoded Decimal.
+        let row = try JSONDecoder().decode(Row.self, from: Data(#"{"amount": 99.99}"#.utf8))
+        #expect(row.amount.decimal == Decimal(string: "99.99"))
+    }
+
+    @Test @MainActor func autoSeededDemoPurgesBeforeFirstConfiguredSync() throws {
+        let container = try ModelContainer(
+            for: Client.self, Entry.self, Heading.self, SyncTombstone.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let suite = "earnline-tests-purge"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        let inserted = SampleData.importBundledLedgerIfNeeded(context, defaults: defaults)
+        #expect(inserted > 0)
+        #expect(defaults.bool(forKey: SampleData.autoSeededDemoKey))
+
+        let removed = SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults)
+        #expect(removed == inserted)
+        #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
+        // One-shot: a second call must be a no-op.
+        #expect(SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults) == 0)
+        defaults.removePersistentDomain(forName: suite)
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {

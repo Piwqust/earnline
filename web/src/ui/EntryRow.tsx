@@ -39,7 +39,7 @@ export function EntryRow({
         }
       }}
     >
-      <MoneyAmountText baseAmount={base} approximate={approximate} className="entry__amount tabular" />
+      <MoneyAmountText baseAmount={base} approximate={approximate} dim className="entry__amount tabular" />
 
       <div className="entry__desc" title={entry.task}>
         {entry.project && <span className="entry__project">{entry.project}</span>}
@@ -60,7 +60,7 @@ export function EntryRow({
       <span className="entry__status" onClick={(e) => e.stopPropagation()}>
         <Dropdown
           ariaLabel="Change status"
-          triggerClassName="entry__statusbtn"
+          triggerClassName={"entry__statusbtn is-" + entry.status}
           trigger={<StatusIcon status={entry.status} size={18} />}
         >
           {STATUS_ORDER.map((s) => (

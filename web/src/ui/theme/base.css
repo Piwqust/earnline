@@ -106,10 +106,10 @@ p {
   background-clip: content-box;
 }
 
-/* native date/select controls inherit our type and tint */
+/* native date/select controls inherit our type and tint (and the root's
+   color-scheme, so the calendar popup matches light/dark) */
 input[type="date"] {
   font-family: var(--font-sans);
-  color-scheme: light;
   accent-color: var(--blue);
 }
 input[type="checkbox"],

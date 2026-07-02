@@ -7,6 +7,7 @@ enum SampleData {
     private static let bundledLedgerImportKey = "bundledIncomeLedgerImportVersion"
     private static let legacyDemoCleanupVersion = 1
     private static let legacyDemoCleanupKey = "legacyDemoCleanupVersion"
+    static let autoSeededDemoKey = "bundledLedgerAutoSeeded"
 
     static func seedIfNeeded(_ context: ModelContext) {
         let existing = try? context.fetch(FetchDescriptor<Client>())
@@ -21,10 +22,51 @@ enum SampleData {
         do {
             let inserted = try IncomeLedgerImporter.importBundledLedger(into: context)
             defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
+            if inserted > 0 { defaults.set(true, forKey: autoSeededDemoKey) }
             return inserted
         } catch {
             return 0
         }
+    }
+
+    /// The bundled demo ledger only auto-seeds while sync is unconfigured. If
+    /// the user then points the app at a real workspace, drop whatever demo
+    /// rows never synced so sample data doesn't push into real data. Runs once,
+    /// before the first configured sync. Demo rows the user already synced (or
+    /// clients they hung real lines on) are left alone.
+    @discardableResult
+    static func purgeAutoSeededDemoIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+        guard defaults.bool(forKey: autoSeededDemoKey) else { return 0 }
+        defaults.set(false, forKey: autoSeededDemoKey)
+
+        // Bundled IDs are deterministic per year; cover the seed possibly
+        // happening in the previous calendar year.
+        let year = Calendar.current.component(.year, from: .now)
+        var demoEntryIDs = Set<UUID>()
+        var demoClientIDs = Set<UUID>()
+        for candidateYear in [year, year - 1] {
+            for record in IncomeLedgerImporter.parse(IncomeLedgerImporter.bundledLedger, year: candidateYear) {
+                demoEntryIDs.insert(record.id)
+                demoClientIDs.insert(IncomeLedgerImporter.clientID(record.clientName))
+            }
+        }
+
+        var removed = 0
+        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        for entry in entries where demoEntryIDs.contains(entry.id) && entry.lastSyncedAt == nil {
+            context.delete(entry)
+            removed += 1
+        }
+        let clients = (try? context.fetch(FetchDescriptor<Client>())) ?? []
+        for client in clients where demoClientIDs.contains(client.id) && client.lastSyncedAt == nil {
+            let hasRealEntries = client.entries.contains { !demoEntryIDs.contains($0.id) }
+            if !hasRealEntries {
+                context.delete(client)
+                removed += 1
+            }
+        }
+        if removed > 0 { try? context.save() }
+        return removed
     }
 
     @discardableResult

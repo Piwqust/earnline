@@ -15,6 +15,18 @@ enum SyncCoordinator {
         // Push tombstones before pulling rows: in this personal no-login model,
         // a local delete intentionally wins over a concurrent remote update.
         try await pushDeletes(context: context, client: client, workspaceID: workspaceID)
+
+        // Apply remote deletes *before* pushing rows: a client deleted on
+        // another device must take its local entries with it now — otherwise
+        // pushing those entries hits the remote FK (their client row is gone),
+        // the sync throws before the tombstone pull, and every retry wedges
+        // the same way.
+        let remoteTombstones = try await fetchTombstones(client: client,
+                                                         workspaceID: workspaceID,
+                                                         deletedAfter: lastPulledAt)
+        try applyRemoteTombstones(remoteTombstones, context: context)
+        try context.save() // materialize cascade deletes so doomed rows aren't pushed
+
         try await pushLocalRows(context: context, client: client, workspaceID: workspaceID, syncedAt: syncedAt)
         try await pullRemoteRows(context: context,
                                  client: client,
@@ -56,22 +68,47 @@ enum SyncCoordinator {
         let headings = try context.fetch(FetchDescriptor<Heading>())
         let entries = try context.fetch(FetchDescriptor<Entry>())
 
-        let dirtyClients = clients.filter(\.needsSync).map { RemoteClient($0, workspaceID: workspaceID) }
+        // Snapshot the dirty rows *and their edit stamps* before each upsert:
+        // the UI stays live while the request is on the wire, so only the rows
+        // (at the versions) that were actually pushed may be marked synced —
+        // re-filtering after the await would swallow mid-flight edits, and the
+        // next pull would then visibly revert them.
+        let dirtyClients = clients.filter(\.needsSync)
         if !dirtyClients.isEmpty {
-            try await client.from("earnline_clients").upsert(dirtyClients).execute()
-            clients.filter(\.needsSync).forEach { $0.markSynced(at: syncedAt) }
+            let payload = dirtyClients.map { RemoteClient($0, workspaceID: workspaceID) }
+            let stamps = dirtyClients.map(\.syncUpdatedAt)
+            try await client.from("earnline_clients").upsert(payload).execute()
+            markSynced(dirtyClients, stamps: stamps, at: syncedAt)
         }
 
-        let dirtyHeadings = headings.filter(\.needsSync).map { RemoteHeading($0, workspaceID: workspaceID) }
+        let dirtyHeadings = headings.filter(\.needsSync)
         if !dirtyHeadings.isEmpty {
-            try await client.from("earnline_headings").upsert(dirtyHeadings).execute()
-            headings.filter(\.needsSync).forEach { $0.markSynced(at: syncedAt) }
+            let payload = dirtyHeadings.map { RemoteHeading($0, workspaceID: workspaceID) }
+            let stamps = dirtyHeadings.map(\.syncUpdatedAt)
+            try await client.from("earnline_headings").upsert(payload).execute()
+            markSynced(dirtyHeadings, stamps: stamps, at: syncedAt)
         }
 
-        let dirtyEntries = entries.filter(\.needsSync).compactMap { RemoteEntry($0, workspaceID: workspaceID) }
-        if !dirtyEntries.isEmpty {
-            try await client.from("earnline_entries").upsert(dirtyEntries).execute()
-            entries.filter(\.needsSync).forEach { $0.markSynced(at: syncedAt) }
+        var dirtyEntries: [Entry] = []
+        var entryPayload: [RemoteEntry] = []
+        for entry in entries where entry.needsSync {
+            guard let record = RemoteEntry(entry, workspaceID: workspaceID) else { continue }
+            dirtyEntries.append(entry)
+            entryPayload.append(record)
+        }
+        if !entryPayload.isEmpty {
+            let stamps = dirtyEntries.map(\.syncUpdatedAt)
+            try await client.from("earnline_entries").upsert(entryPayload).execute()
+            markSynced(dirtyEntries, stamps: stamps, at: syncedAt)
+        }
+    }
+
+    /// Mark exactly the pushed rows synced — skipping any that were edited or
+    /// deleted while the upsert was in flight, so they stay dirty for the next
+    /// pass instead of being silently dropped.
+    private static func markSynced<Model: SyncableModel>(_ models: [Model], stamps: [Date], at syncedAt: Date) {
+        for (model, stamp) in zip(models, stamps) where !model.isDeleted && model.syncUpdatedAt == stamp {
+            model.markSynced(at: syncedAt)
         }
     }
 
@@ -91,7 +128,6 @@ enum SyncCoordinator {
         let remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
         let remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
         let remoteEntries = try await fetchEntries(client: client, workspaceID: workspaceID, updatedAfter: entrySince)
-        let remoteTombstones = try await fetchTombstones(client: client, workspaceID: workspaceID, deletedAfter: lastPulledAt)
 
         var clientsByID = Dictionary(uniqueKeysWithValues: localClients.map { ($0.id, $0) })
 
@@ -184,18 +220,14 @@ enum SyncCoordinator {
             }
         }
 
-        try applyRemoteTombstones(remoteTombstones,
-                                  clientsByID: clientsByID,
-                                  headingsByID: headingsByID,
-                                  entriesByID: entriesByID,
-                                  context: context)
     }
 
     private static func applyRemoteTombstones(_ records: [RemoteTombstone],
-                                              clientsByID: [UUID: Client],
-                                              headingsByID: [UUID: Heading],
-                                              entriesByID: [UUID: Entry],
                                               context: ModelContext) throws {
+        guard !records.isEmpty else { return }
+        let clientsByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Client>()).map { ($0.id, $0) })
+        let headingsByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Heading>()).map { ($0.id, $0) })
+        let entriesByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Entry>()).map { ($0.id, $0) })
         for record in records {
             guard let entity = SyncEntity(rawValue: record.entity) else { continue }
             let deletedAt = SyncDateCodec.parseTimestamp(record.deletedAt)

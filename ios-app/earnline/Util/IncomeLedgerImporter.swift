@@ -130,7 +130,7 @@ enum IncomeLedgerImporter {
         let isIncomeHeading = line.localizedCaseInsensitiveContains("Доходы за")
             || line.localizedCaseInsensitiveContains("Income for")
         guard isIncomeHeading,
-              let month = monthMap.first(where: { line.localizedCaseInsensitiveContains($0.key) })?.value,
+              let month = LineParser.monthMap.first(where: { line.localizedCaseInsensitiveContains($0.key) })?.value,
               let range = line.range(of: " from ", options: [.caseInsensitive, .diacriticInsensitive])
                 ?? line.range(of: " от ", options: [.caseInsensitive, .diacriticInsensitive]) else {
             return nil
@@ -140,35 +140,7 @@ enum IncomeLedgerImporter {
         return client.isEmpty ? nil : (month, client)
     }
 
-    private static let monthMap: [String: Int] = [
-        "январ": 1,
-        "феврал": 2,
-        "март": 3,
-        "апрел": 4,
-        "май": 5,
-        "мая": 5,
-        "июн": 6,
-        "июл": 7,
-        "август": 8,
-        "сентябр": 9,
-        "октябр": 10,
-        "ноябр": 11,
-        "декабр": 12,
-        "january": 1,
-        "february": 2,
-        "march": 3,
-        "april": 4,
-        "may": 5,
-        "june": 6,
-        "july": 7,
-        "august": 8,
-        "september": 9,
-        "october": 10,
-        "november": 11,
-        "december": 12,
-    ]
-
-    private static func clientID(_ name: String) -> UUID {
+    static func clientID(_ name: String) -> UUID {
         DeterministicID.uuid("earnline-client:\(name.normalizedLedgerKey)")
     }
 

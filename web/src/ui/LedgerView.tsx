@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Client, Entry, EntryStatus, Heading } from "../domain/types";
 import { clientsWithEntries, entriesOf, monthTotal, monthsWithData, totalOf } from "../domain/totals";
+import { formatMoney } from "../domain/money";
 import { monthNameOfDay, monthStartDayMs, sameMonthDay, todayDayMs } from "../domain/dateFormat";
 import { Limits, trimmed } from "../domain/validation";
 import { useClients, useEntries, useHeadings } from "../state/data";
@@ -57,9 +58,51 @@ export function LedgerView() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const monthEls = useRef(new Map<number, HTMLElement | null>());
+  const didInit = useRef(false);
 
   const months = useMemo(() => monthsWithData(entries), [entries]);
   const showEmpty = clients.length === 0 && entries.length === 0 && headings.length === 0;
+  const base = settings.baseCurrencyCode;
+
+  // The "never-dead" landing target: the most recent month that actually earned
+  // something, so the app never opens on a tucked-away $0.
+  const firstFundedMonth = useMemo(() => {
+    for (const m of months) if (monthTotal(clients, entries, m, cs) > 0) return m;
+    return months[0];
+  }, [months, clients, entries, cs]);
+
+  // Hero figures for the displayed month: total, line count, and the delta vs the
+  // previous month that had earnings.
+  const heroStats = useMemo(() => {
+    const total = monthTotal(clients, entries, displayedMonth, cs);
+    const lineCount = entries.filter((e) => sameMonthDay(e.date, displayedMonth)).length;
+    const idx = months.indexOf(displayedMonth);
+    let prev: { month: number; total: number } | null = null;
+    if (idx >= 0) {
+      for (let i = idx + 1; i < months.length; i++) {
+        const t = monthTotal(clients, entries, months[i], cs);
+        if (t > 0) {
+          prev = { month: months[i], total: t };
+          break;
+        }
+      }
+    }
+    // A calm month-over-month read. Huge swings (a quiet month → a big invoice)
+    // collapse into a "×N" multiplier instead of a four-digit percentage.
+    let delta: { dir: "up" | "down"; label: string } | null = null;
+    if (prev && prev.total > 0) {
+      const ref = monthNameOfDay(prev.month);
+      const ratio = total / prev.total;
+      if (ratio >= 1) {
+        const pct = Math.round((ratio - 1) * 100);
+        delta = { dir: "up", label: pct >= 1000 ? `${Math.round(ratio)}× vs ${ref}` : `${pct}% vs ${ref}` };
+      } else {
+        delta = { dir: "down", label: `${Math.round((1 - ratio) * 100)}% vs ${ref}` };
+      }
+    }
+    return { total, lineCount, prev, delta };
+  }, [clients, entries, displayedMonth, months, cs]);
+  const heroEmpty = heroStats.total === 0;
 
   // Keep the composer aimed at a valid (most-recent) client.
   useEffect(() => {
@@ -73,9 +116,18 @@ export function LedgerView() {
     }
   }, [clients, composerClientId]);
 
+  // Land on the most recent funded month once data has loaded (once only, so it
+  // never fights the scroll spy afterwards).
   useEffect(() => {
-    if (months.length && !months.includes(displayedMonth)) setDisplayedMonth(months[0]);
-  }, [months, displayedMonth]);
+    if (didInit.current) return;
+    if (clients.length === 0 && entries.length === 0) return;
+    didInit.current = true;
+    setDisplayedMonth(firstFundedMonth);
+  }, [clients.length, entries.length, firstFundedMonth]);
+
+  useEffect(() => {
+    if (months.length && !months.includes(displayedMonth)) setDisplayedMonth(firstFundedMonth);
+  }, [months, displayedMonth, firstFundedMonth]);
 
   function blocksIn(month: number): Block[] {
     const hs: Block[] = headings
@@ -116,44 +168,72 @@ export function LedgerView() {
     queueSync();
   }
 
-  const displayedTotal = monthTotal(clients, entries, displayedMonth, cs);
-
   return (
     <div className={"ledger-layout" + (railOpen ? " has-rail" : "")}>
       <div className="ledger-main">
-        <header className="topbar ledger-topbar">
-          <div className="ledger-topbar__title">
-            <span className="ledger-topbar__label">Earned in {monthNameOfDay(displayedMonth)}</span>
-            <MoneyAmountText baseAmount={displayedTotal} className="ledger-topbar__total tabular" />
-          </div>
-          <span className="topbar__spacer" />
-          <Dropdown
-            ariaLabel="Add"
-            triggerClassName="btn btn--primary btn--md ledger-topbar__new"
-            trigger={
+        <header className="topbar ledger-hero">
+          <div className="ledger-hero__lead">
+            <span className="ledger-hero__kicker">Earned in {monthNameOfDay(displayedMonth)}</span>
+            {heroEmpty ? (
+              <div className="ledger-hero__emptyline">
+                <span className="ledger-hero__prompt">Nothing logged yet</span>
+                {heroStats.prev && (
+                  <span className="ledger-hero__ref">
+                    {monthNameOfDay(heroStats.prev.month)} brought in{" "}
+                    <span className="tabular">{formatMoney(heroStats.prev.total, base)}</span>
+                  </span>
+                )}
+              </div>
+            ) : (
               <>
-                <PlusIcon size={15} />
-                <span>New</span>
-                <ChevronDownIcon size={12} />
+                <MoneyAmountText baseAmount={heroStats.total} className="ledger-hero__total tabular" />
+                <div className="ledger-hero__context">
+                  {heroStats.delta && (
+                    <span className={"ledger-hero__delta is-" + heroStats.delta.dir}>
+                      {heroStats.delta.dir === "up" ? "▲" : "▼"} {heroStats.delta.label}
+                    </span>
+                  )}
+                  {heroStats.delta && (
+                    <span className="ledger-hero__dot" aria-hidden>
+                      ·
+                    </span>
+                  )}
+                  <span className="ledger-hero__lines">
+                    {heroStats.lineCount} {heroStats.lineCount === 1 ? "line" : "lines"}
+                  </span>
+                </div>
               </>
-            }
-          >
-            <DropdownItem onClick={() => setShowNewClient(true)}>
-              <PersonPlusIcon size={16} />
-              <span>New client</span>
-            </DropdownItem>
-            <DropdownItem onClick={() => setHeadingDraft({ heading: null })}>
-              <HeadingIcon size={16} />
-              <span>New heading</span>
-            </DropdownItem>
-          </Dropdown>
-          <IconButton
-            label={railOpen ? "Hide summary" : "Show summary"}
-            className={"ledger-topbar__railtoggle" + (railOpen ? " is-active" : "")}
-            onClick={() => setRailOpen((o) => !o)}
-          >
-            <PanelRightIcon />
-          </IconButton>
+            )}
+          </div>
+          <div className="ledger-hero__actions">
+            <Dropdown
+              ariaLabel="Add"
+              triggerClassName="btn btn--primary btn--md ledger-hero__new"
+              trigger={
+                <>
+                  <PlusIcon size={15} />
+                  <span>New</span>
+                  <ChevronDownIcon size={12} />
+                </>
+              }
+            >
+              <DropdownItem onClick={() => setShowNewClient(true)}>
+                <PersonPlusIcon size={16} />
+                <span>New client</span>
+              </DropdownItem>
+              <DropdownItem onClick={() => setHeadingDraft({ heading: null })}>
+                <HeadingIcon size={16} />
+                <span>New heading</span>
+              </DropdownItem>
+            </Dropdown>
+            <IconButton
+              label={railOpen ? "Hide summary" : "Show summary"}
+              className={"ledger-hero__railtoggle" + (railOpen ? " is-active" : "")}
+              onClick={() => setRailOpen((o) => !o)}
+            >
+              <PanelRightIcon />
+            </IconButton>
+          </div>
         </header>
 
         <div className="ledger-scroll" ref={scrollRef} onScroll={onScroll}>
@@ -171,44 +251,57 @@ export function LedgerView() {
               </div>
 
               <div className="ledger-content">
-                {months.map((month) => (
-                  <section
-                    key={month}
-                    className="month"
-                    ref={(el) => {
-                      monthEls.current.set(month, el);
-                    }}
-                  >
-                    <MonthDivider monthMs={month} total={monthTotal(clients, entries, month, cs)} />
-                    {blocksIn(month).map((block) =>
-                      block.kind === "heading" ? (
-                        <HeadingRow
-                          key={"h-" + block.heading.id}
-                          heading={block.heading}
-                          onDelete={() => setDeletingHeading(block.heading)}
-                        />
-                      ) : (
-                        <div key={"c-" + block.client.id} className="client-group">
-                          <ClientChip
-                            client={block.client}
-                            total={totalOf(block.client.id, entries, month, cs)}
-                            onOpen={() => navigate(`/client/${block.client.id}`)}
-                            onAdd={() => setComposerClientId(block.client.id)}
-                          />
-                          {entriesOf(block.client.id, entries, month).map((e) => (
-                            <EntryRow
-                              key={e.id}
-                              entry={e}
-                              onSetStatus={(s) => void changeStatus(e, s)}
-                              onEdit={() => setEditingEntry(e)}
-                              onDelete={() => setDeletingEntry(e)}
-                            />
-                          ))}
+                {months.map((month) => {
+                  const blocks = blocksIn(month);
+                  return (
+                    <section
+                      key={month}
+                      className="month"
+                      ref={(el) => {
+                        monthEls.current.set(month, el);
+                      }}
+                    >
+                      {blocks.length === 0 ? (
+                        <div className="month-empty">
+                          <span className="month-empty__name">{monthNameOfDay(month)}</span>
+                          <span className="month-empty__rule" />
+                          <span className="month-empty__hint">Nothing logged yet</span>
                         </div>
-                      ),
-                    )}
-                  </section>
-                ))}
+                      ) : (
+                        <>
+                          <MonthDivider monthMs={month} total={monthTotal(clients, entries, month, cs)} />
+                          {blocks.map((block) =>
+                            block.kind === "heading" ? (
+                              <HeadingRow
+                                key={"h-" + block.heading.id}
+                                heading={block.heading}
+                                onDelete={() => setDeletingHeading(block.heading)}
+                              />
+                            ) : (
+                              <div key={"c-" + block.client.id} className="client-group">
+                                <ClientChip
+                                  client={block.client}
+                                  total={totalOf(block.client.id, entries, month, cs)}
+                                  onOpen={() => navigate(`/client/${block.client.id}`)}
+                                  onAdd={() => setComposerClientId(block.client.id)}
+                                />
+                                {entriesOf(block.client.id, entries, month).map((e) => (
+                                  <EntryRow
+                                    key={e.id}
+                                    entry={e}
+                                    onSetStatus={(s) => void changeStatus(e, s)}
+                                    onEdit={() => setEditingEntry(e)}
+                                    onDelete={() => setDeletingEntry(e)}
+                                  />
+                                ))}
+                              </div>
+                            ),
+                          )}
+                        </>
+                      )}
+                    </section>
+                  );
+                })}
               </div>
             </>
           )}

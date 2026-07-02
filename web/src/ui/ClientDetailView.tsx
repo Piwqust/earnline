@@ -60,6 +60,10 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
   const totalAll = clientTotalAll(client.id, entries, cs);
   const projects = projectTotals(client.id, entries, cs);
   const showProjects = projects.length > 1 || (projects[0]?.name ?? "—") !== "—";
+  const realProjectCount = projects.filter((p) => p.name !== "—").length;
+  const statusRows = STATUS_ORDER.map((s) => ({ status: s, ...statusTotal(client.id, entries, s, cs) })).filter(
+    (r) => r.count > 0,
+  );
 
   async function changeName(v: string) {
     const capped2 = capped(v, Limits.maxClientNameLength);
@@ -93,25 +97,38 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
       <div className="page__body detail">
         <div className="detail-hero">
           <ClientTag name={client.name} color={client.colorHex} size="lg" />
-          <div className="detail-hero__total">
-            <span className="detail-hero__label">Earned, all time</span>
-            <MoneyAmountText baseAmount={totalAll} className="detail-hero__amount tabular" />
+          <MoneyAmountText baseAmount={totalAll} className="detail-hero__amount tabular" />
+          <div className="detail-hero__meta">
+            <span>Earned all time</span>
+            <span className="detail-hero__dot" aria-hidden>
+              ·
+            </span>
+            <span>
+              {list.length} {list.length === 1 ? "line" : "lines"}
+            </span>
+            {realProjectCount > 0 && (
+              <>
+                <span className="detail-hero__dot" aria-hidden>
+                  ·
+                </span>
+                <span>
+                  {realProjectCount} {realProjectCount === 1 ? "project" : "projects"}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
         <div className="detail-grid">
           <Card className="detail-card">
             <h3 className="detail-card__title">By status</h3>
-            {STATUS_ORDER.map((s) => {
-              const t = statusTotal(client.id, entries, s, cs);
-              return (
-                <div className="detail-line" key={s}>
-                  <StatusBadge status={s} />
-                  <span className="detail-line__count">{t.count}</span>
-                  <MoneyAmountText baseAmount={t.sum} className="detail-line__amount tabular" />
-                </div>
-              );
-            })}
+            {statusRows.map((r) => (
+              <div className="detail-line" key={r.status}>
+                <StatusBadge status={r.status} />
+                <span className="detail-line__count">{r.count}</span>
+                <MoneyAmountText baseAmount={r.sum} className="detail-line__amount tabular" />
+              </div>
+            ))}
           </Card>
 
           {showProjects && (

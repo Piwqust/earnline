@@ -12,6 +12,8 @@ import {
   type CurrencySettings,
 } from "../domain/currency";
 
+export type ThemePref = "auto" | "light" | "dark";
+
 export interface Settings {
   baseCurrencyCode: string;
   secondaryCurrencyCode: string;
@@ -20,6 +22,7 @@ export interface Settings {
   supabaseKey: string;
   workspaceId: string;
   lastSyncAt: number | null;
+  theme: ThemePref;
 }
 
 const STORAGE_KEY = "earnline.settings";
@@ -37,6 +40,7 @@ function defaults(): Settings {
     supabaseKey: envDefault("VITE_SUPABASE_ANON_KEY"),
     workspaceId: envDefault("VITE_WORKSPACE_ID"),
     lastSyncAt: null,
+    theme: "auto",
   };
 }
 
@@ -53,6 +57,7 @@ function normalize(s: Settings): Settings {
     supabaseKey: s.supabaseKey.trim(),
     workspaceId: s.workspaceId.trim(),
     lastSyncAt: s.lastSyncAt ?? null,
+    theme: s.theme === "light" || s.theme === "dark" ? s.theme : "auto",
   };
 }
 

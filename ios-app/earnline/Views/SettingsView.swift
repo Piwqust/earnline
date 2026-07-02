@@ -18,6 +18,10 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    Toggle("Dark mode", isOn: $app.prefersDarkMode)
+                } header: { Text("Appearance") }
+
+                Section {
                     Picker("Primary", selection: $app.baseCurrencyCode) {
                         ForEach(currencies, id: \.self) { Text(label(for: $0)).tag($0) }
                     }
@@ -27,7 +31,7 @@ struct SettingsView: View {
                         }
                     }
                     if unsupportedCurrencyCount > 0 {
-                        Label("\(unsupportedCurrencyCount) line\(unsupportedCurrencyCount == 1 ? "" : "s") in an unsupported currency — counted at par (1:1).",
+                        Label("\(unsupportedCurrencyCount) line(s) in an unsupported currency — counted at par (1:1).",
                               systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote)
                             .foregroundStyle(.orange)
@@ -74,8 +78,8 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("Mode", value: "Personal")
-                    LabeledContent("Workspace", value: app.workspaceID.isEmpty ? "Not set" : app.workspaceID)
+                    LabeledContent("Mode", value: String(localized: "Personal"))
+                    LabeledContent("Workspace", value: app.workspaceID.isEmpty ? String(localized: "Not set") : app.workspaceID)
                     LabeledContent("Status", value: app.syncMessage)
                     LabeledContent("Pending", value: "\(pendingSyncCount)")
                     if let lastSyncAt = app.lastSyncAt {
@@ -86,8 +90,10 @@ struct SettingsView: View {
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
-                    Button(app.isSyncing ? "Syncing..." : "Sync now") {
+                    Button {
                         Task { await app.syncNow(context: context) }
+                    } label: {
+                        Text(app.isSyncing ? String(localized: "Syncing...") : String(localized: "Sync now"))
                     }
                     .disabled(app.isSyncing || !app.isSupabaseConfigured)
                     Button("Import sample ledger", action: importSampleLedger)
@@ -107,7 +113,7 @@ struct SettingsView: View {
         )) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: {
-            Text(saveError ?? "Try again.")
+            Text(saveError ?? String(localized: "Try again."))
         }
     }
 

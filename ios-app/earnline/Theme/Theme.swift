@@ -1,18 +1,31 @@
 import SwiftUI
 
-/// Central design tokens lifted from the earn›line Figma.
+/// Central design tokens lifted from the earn›line Figma. Light values are the
+/// Figma originals; dark counterparts mirror the web client's dark tokens
+/// (near-black desaturated surface, near-white ink). Dark mode is opt-in via
+/// Settings, so every token must resolve per trait.
 enum Theme {
     // MARK: Surfaces
-    static let background = Color(hex: "#F2F2F7")
-    static let card = Color(hex: "#1A1A1A").opacity(0.02)
+    static let background = dynamic(light: "#F2F2F7", dark: "#0C0C0F")
+    static let card = label.opacity(0.03)
 
     // MARK: Labels (vibrant primary, used with opacity steps)
-    static let label = Color(hex: "#1A1A1A")
+    static let label = dynamic(light: "#1A1A1A", dark: "#F2F2F4")
     static func label(_ opacity: Double) -> Color { label.opacity(opacity) }
 
-    static let hairline = Color.black.opacity(0.10)
-    static let fillQuaternary = Color(hex: "#74748014")
-    static let chipStroke = Color(hex: "#EBEBEB")
+    static let hairline = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.12)
+            : UIColor.black.withAlphaComponent(0.10)
+    })
+    static let fillQuaternary = dynamic(light: "#74748014", dark: "#76768030")
+    static let chipStroke = dynamic(light: "#EBEBEB", dark: "#2C2C2E")
+
+    private static func dynamic(light: String, dark: String) -> Color {
+        Color(UIColor { trait in
+            UIColor(Color(hex: trait.userInterfaceStyle == .dark ? dark : light))
+        })
+    }
 
     // MARK: Accents
     static let blue = Color(hex: "#0088FF")

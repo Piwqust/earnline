@@ -83,7 +83,7 @@ struct SmartComposer: View {
         )) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: {
-            Text(saveError ?? "Try again.")
+            Text(saveError ?? String(localized: "Try again."))
         }
     }
 
@@ -230,7 +230,7 @@ struct SmartComposer: View {
             chip(height: 22) {
                 HStack(spacing: 3) {
                     Image(systemName: "calendar").font(.system(size: 10)).foregroundStyle(Theme.label(0.5))
-                    Text(holdUntil.map { DateFormat.dotted($0) } ?? "hold date")
+                    Text(holdUntil.map { DateFormat.dotted($0) } ?? String(localized: "hold date"))
                         .font(.system(size: 14))
                         .foregroundStyle(holdUntil != nil ? Theme.label(0.8) : Theme.label(0.4))
                 }
@@ -331,10 +331,10 @@ struct SmartComposer: View {
 
 /// A compact graphical date picker shown as an anchored popover (tooltip), not a sheet.
 struct DatePickerPopover: View {
-    let title: String
+    let title: LocalizedStringKey
     @Binding var date: Date
     var minimumDate: Date?
-    var clearTitle: String?
+    var clearTitle: LocalizedStringKey?
     var onClear: (() -> Void)?
     var onDone: () -> Void
 

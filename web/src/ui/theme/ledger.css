@@ -9,40 +9,116 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklab, black 10%, transparent);
 }
 
-/* ---------------- ledger topbar ---------------- */
+/* ---------------- ledger hero (topbar) ---------------- */
 
-.ledger-topbar__title {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
+.ledger-hero {
+  align-items: flex-start;
+  gap: var(--s-4);
+  padding: 13px clamp(16px, 4vw, 40px) 14px;
 }
-.ledger-topbar__label {
-  font-size: 14px;
-  font-weight: 540;
-  color: var(--ink-3);
+.ledger-hero__lead {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 1px;
+}
+.ledger-hero__kicker {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-4);
   white-space: nowrap;
 }
-.ledger-topbar__total {
-  font-size: 22px;
-  font-weight: 680;
-  letter-spacing: -0.02em;
+/* tier 1 — the loudest figure on the screen */
+.ledger-hero__total {
+  font-size: 38px;
+  font-weight: 720;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
   color: var(--ink);
 }
-.ledger-topbar__new {
+.ledger-hero__context {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.ledger-hero__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 560;
+  font-size: 12.5px;
+}
+.ledger-hero__delta.is-up {
+  color: var(--gain);
+}
+.ledger-hero__delta.is-down {
+  color: var(--ink-3);
+}
+.ledger-hero__dot {
+  color: var(--ink-5);
+}
+
+/* empty-month hero — a prompt + a previous-month reference, never a lone $0 */
+.ledger-hero__emptyline {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 3px 0 2px;
+}
+.ledger-hero__prompt {
+  font-size: 22px;
+  font-weight: 660;
+  letter-spacing: -0.02em;
+  color: var(--ink-2);
+}
+.ledger-hero__ref {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.ledger-hero__ref .tabular {
+  color: var(--ink-2);
+  font-weight: 560;
+}
+
+.ledger-hero__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+}
+.ledger-hero__new {
   gap: 6px;
 }
-.ledger-topbar__new svg:last-child {
+.ledger-hero__new svg:last-child {
   opacity: 0.85;
   margin-left: -1px;
 }
-.ledger-topbar__railtoggle.is-active {
+.ledger-hero__railtoggle.is-active {
   color: var(--blue);
   background: var(--blue-wash);
 }
 @media (max-width: 1139px) {
-  .ledger-topbar__railtoggle {
+  .ledger-hero__railtoggle {
     display: none;
+  }
+}
+@media (max-width: 640px) {
+  .ledger-hero {
+    padding: 11px 16px 12px;
+  }
+  .ledger-hero__total {
+    font-size: 30px;
+  }
+  .ledger-hero__prompt {
+    font-size: 19px;
   }
 }
 
@@ -78,6 +154,134 @@
   color: var(--ink-3);
   font-size: 14px;
 }
+
+/* ---- notepad (smart) composer: one plain line, options behind an icon ---- */
+.composer--smart {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+}
+.composer__note {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: 16px;
+  color: var(--ink);
+  padding: 8px 2px;
+}
+.composer__note::placeholder {
+  color: var(--ink-5);
+}
+
+/* options icon (status · date · currency) — quiet until something is set */
+.composer__opts-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--r-sm);
+  color: var(--ink-4);
+  transition:
+    background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+.composer__opts-btn:hover,
+.composer__opts-btn[aria-expanded="true"] {
+  background: var(--ink-wash);
+  color: var(--ink-2);
+}
+.composer__opts-btn.is-set {
+  color: var(--ink-2);
+}
+.composer__opts-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* options popover contents (rendered inside the shared .dropdown panel) */
+.composer-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 258px;
+  padding: 4px 6px 2px;
+}
+.composer-opts__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.composer-opts__label {
+  font-size: 13px;
+  color: var(--ink-3);
+  width: 64px;
+  flex: none;
+}
+.composer-opts__row > .composer-opts__seg,
+.composer-opts__row > .composer-opts__date,
+.composer-opts__row > .select-wrap {
+  margin-left: auto;
+}
+.composer-opts__seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.composer-opts__seg-opt {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 26px;
+  border-radius: 6px;
+  opacity: 0.45;
+  transition:
+    background var(--dur-1) var(--ease-out),
+    opacity var(--dur-1) var(--ease-out);
+}
+.composer-opts__seg-opt:hover {
+  opacity: 0.8;
+}
+.composer-opts__seg-opt.is-active {
+  opacity: 1;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.composer-opts__date {
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  border-radius: var(--r-sm);
+  padding: 6px 9px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.composer-opts__tip {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  line-height: 1.55;
+  margin-top: 2px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+.composer-opts__tip b {
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
 .composer__fields {
   display: flex;
   align-items: center;
@@ -279,25 +483,50 @@
 
 .month-divider {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
-  padding: 24px 2px 10px;
+  padding: 26px 2px 10px;
 }
 .month-divider__title {
-  font-size: 18px;
-  font-weight: 690;
-  letter-spacing: -0.02em;
-  color: var(--ink);
+  font-size: 16px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  color: var(--ink-2);
 }
 .month-divider__rule {
   flex: 1;
   height: 1px;
   background: var(--border);
+  align-self: center;
 }
+/* tier 2 — section subtotal */
 .month-divider__total {
+  font-size: 20px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+/* compact leading empty month — a quiet prompt, not a hero-sized divider */
+.month-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 2px 4px;
+}
+.month-empty__name {
   font-size: 14px;
-  font-weight: 560;
+  font-weight: 600;
   color: var(--ink-3);
+}
+.month-empty__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.month-empty__hint {
+  font-size: 12.5px;
+  color: var(--ink-4);
 }
 
 /* ---------------- heading row ---------------- */
@@ -359,10 +588,12 @@
   gap: 12px;
   padding: 12px 2px 4px;
 }
+/* tier 3 — client group subtotal (anchored by the colored tag beside it) */
 .client-group__total {
-  font-size: 15px;
-  font-weight: 560;
-  color: var(--ink-2);
+  font-size: 16px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 .client-group__add {
   display: inline-flex;
@@ -384,6 +615,14 @@
 
 /* ---------------- entry row ---------------- */
 
+/* A committed line settles in; existing rows keep their DOM so only the new
+   one animates. Auto-gated by the reduced-motion rule in base.css. */
+@keyframes entry-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
 .entry {
   display: grid;
   grid-template-columns: minmax(92px, auto) minmax(0, 1fr) auto 30px 30px;
@@ -393,6 +632,7 @@
   border-radius: var(--r-md);
   cursor: pointer;
   transition: background var(--dur-1) var(--ease-out);
+  animation: entry-in var(--dur-2) var(--ease-out);
 }
 .entry:hover {
   background: var(--ink-wash);
@@ -401,18 +641,23 @@
   background: var(--ink-wash);
   box-shadow: var(--focus-ring);
 }
+/* tier 4 — individual line amount; the currency symbol steps back from the digits */
 .entry__amount {
   justify-self: end;
-  font-size: 18px;
-  font-weight: 560;
+  font-size: 15px;
+  font-weight: 540;
   color: var(--ink);
+}
+.entry__amount .money__sym {
+  color: var(--ink-4);
+  font-weight: 500;
 }
 .entry__desc {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
+  font-size: 15px;
   color: var(--ink);
 }
 .entry__project {
@@ -431,11 +676,12 @@
   font-variant-numeric: tabular-nums;
   justify-self: end;
 }
+/* hold reads as pending — it wants attention more than a plain grey date */
 .entry__hold {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--ink-3);
+  color: color-mix(in oklab, var(--progress) 78%, var(--ink-3));
 }
 .entry__statusbtn {
   display: inline-grid;
@@ -445,8 +691,19 @@
   border-radius: var(--r-sm);
   transition: background var(--dur-1) var(--ease-out);
 }
+/* paid (the common case) stays quiet at rest; the states that need attention
+   carry a faint wash so the eye lands on them, not on a sea of grey checks. */
+.entry__statusbtn.is-inProgress {
+  background: var(--progress-wash);
+}
+.entry__statusbtn.is-canceled {
+  background: var(--danger-wash);
+}
 .entry__statusbtn:hover {
   background: var(--ink-wash-2);
+}
+.entry__statusbtn.is-paid:hover {
+  background: var(--gain-wash); /* a subtle positive read on the win */
 }
 .entry__morebtn {
   display: inline-grid;

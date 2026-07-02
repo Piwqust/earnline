@@ -27,6 +27,11 @@ enum DateFormat {
         monthName.string(from: date).capitalized
     }
 
+    /// "July 2026" — used where the bare month name would be ambiguous.
+    static func monthAndYear(_ date: Date) -> String {
+        monthYear.string(from: date).capitalized
+    }
+
     /// First day of the month containing `date` — used as a grouping key.
     static func monthStart(of date: Date) -> Date {
         let cal = Calendar.current

@@ -20,11 +20,15 @@ struct InsightsView: View {
             .reduce(Decimal.zero) { $0 + $1.total }
     }
     private var windowTotal: Decimal { series.reduce(Decimal.zero) { $0 + $1.total } }
+    /// Months in the window that actually earned something — averaging over
+    /// the fixed 12 would understate short histories.
+    private var activeMonthCount: Int { series.count { $0.total > 0 } }
     private var averageMonth: Decimal {
-        series.isEmpty ? 0 : windowTotal / Decimal(series.count)
+        activeMonthCount == 0 ? 0 : windowTotal / Decimal(activeMonthCount)
     }
     private var bestMonth: (month: Date, total: Decimal)? {
-        series.max { $0.total < $1.total }
+        guard windowTotal > 0 else { return nil }
+        return series.max { $0.total < $1.total }
     }
 
     var body: some View {
@@ -77,6 +81,18 @@ struct InsightsView: View {
                 }
             }
             .frame(height: 180)
+            .overlay {
+                if windowTotal == 0 {
+                    VStack(spacing: 6) {
+                        Image(systemName: "chart.bar")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(Theme.label(0.3))
+                        Text("No earned income in the last 12 months")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.label(0.45))
+                    }
+                }
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,9 +105,10 @@ struct InsightsView: View {
         let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             statCard("This year", app.primaryString(ytdTotal))
-            statCard("Avg / month", app.primaryString(averageMonth.rounded()))
+            statCard("Avg / month", app.primaryString(averageMonth.rounded()),
+                     caption: activeMonthCount > 0 ? String(localized: "Active months: \(activeMonthCount)") : nil)
             statCard("Best month", bestMonth.map { app.primaryString($0.total) } ?? "—",
-                     caption: bestMonth.map { DateFormat.month($0.month) })
+                     caption: bestMonth.map { DateFormat.monthAndYear($0.month) })
             statCard("12-mo total", app.primaryString(windowTotal))
         }
     }

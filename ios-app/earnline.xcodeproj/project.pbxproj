@@ -11,7 +11,6 @@
 		089E3EC6BE904283607DD1C4 /* SupabaseProjectDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 151FA53FE5F4C19E1C534018 /* SupabaseProjectDefaults.swift */; };
 		0B64CAFFAE07047B17039889 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A871324D0289D0C90B7F6F59 /* Theme.swift */; };
 		0CE2F8C503A9D1C602BFCCF0 /* GlassButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE801B1A80A6CBE06F53FB5 /* GlassButtons.swift */; };
-		101FEEBF4DED3C1EC00F3DC9 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383B9ABD7DA1911F20C6F8BA /* FlowLayout.swift */; };
 		205CC0BDABC6A78F169C3D8A /* SyncModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4B5D260A8BB987EDE42871 /* SyncModelTests.swift */; };
 		21E87A8247C04C867DA6B2B0 /* SyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFC8544B974B558F4C88F8C6 /* SyncState.swift */; };
 		32BADBAEC895A6E0E0FA1AEB /* PasteLinesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B401FD9C73B125C52EEB97F5 /* PasteLinesSheet.swift */; };
@@ -82,7 +81,6 @@
 		2D73A7203ADA906880BF3ECB /* Client.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Client.swift; sourceTree = "<group>"; };
 		2EB161E3E96D48C67987A255 /* ParsedLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParsedLine.swift; sourceTree = "<group>"; };
 		32839318AD65467B747F50D7 /* InsightsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsTests.swift; sourceTree = "<group>"; };
-		383B9ABD7DA1911F20C6F8BA /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		3CE4400DE5171E33FDB2EF6B /* IncomeLedgerImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomeLedgerImporter.swift; sourceTree = "<group>"; };
 		3CE94D847BE925A734A98105 /* EntryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryRow.swift; sourceTree = "<group>"; };
 		3EF52DF486BF776CD0284740 /* MoneyAmountText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyAmountText.swift; sourceTree = "<group>"; };
@@ -159,7 +157,6 @@
 			children = (
 				CCFA8FC0B2CD2EC391908D19 /* DeterministicID.swift */,
 				A2D7BB1BA5D43A868804F33C /* EntrySearch.swift */,
-				383B9ABD7DA1911F20C6F8BA /* FlowLayout.swift */,
 				3CE4400DE5171E33FDB2EF6B /* IncomeLedgerImporter.swift */,
 				8270CF78D7AB6E931F047188 /* PendingNotifications.swift */,
 				5E85CC7161B0DF4E705DA113 /* SampleData.swift */,
@@ -406,7 +403,6 @@
 				A6DFA36DF5C023551E3ADB92 /* EntryRow.swift in Sources */,
 				33B80C2C25B777D5E5F9DE99 /* EntrySearch.swift in Sources */,
 				85D430D9A174BB398E8799DC /* EntryStatus.swift in Sources */,
-				101FEEBF4DED3C1EC00F3DC9 /* FlowLayout.swift in Sources */,
 				0CE2F8C503A9D1C602BFCCF0 /* GlassButtons.swift in Sources */,
 				B4C1746068B2CDC3E27980E8 /* Heading.swift in Sources */,
 				5E0E0C46C7103D566E1AA7D7 /* IncomeLedgerImporter.swift in Sources */,

@@ -54,6 +54,29 @@ export function SettingsView() {
 
       <div className="page__body settings">
         <section className="settings-group">
+          <h2 className="settings-group__title">Appearance</h2>
+          <Card className="settings-card">
+            <div className="setting-row">
+              <span className="setting-row__label">Theme</span>
+              <div className="segmented" role="group" aria-label="Theme">
+                {(["light", "dark", "auto"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className={"segmented__opt" + (settings.theme === t ? " is-active" : "")}
+                    aria-pressed={settings.theme === t}
+                    onClick={() => setSettings({ theme: t })}
+                  >
+                    {t === "light" ? "Light" : t === "dark" ? "Dark" : "Auto"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Card>
+          <p className="settings-note">Auto follows your system appearance.</p>
+        </section>
+
+        <section className="settings-group">
           <h2 className="settings-group__title">Currency</h2>
           <Card className="settings-card">
             <div className="setting-row">

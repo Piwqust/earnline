@@ -77,6 +77,7 @@ struct LedgerView: View {
                 scrollContent
                 fab
             }
+            .overlay(alignment: .bottomLeading) { navBar }
             .navigationDestination(item: $detailClient) { ClientDetailView(client: $0) }
             .safeAreaInset(edge: .top) { header }
             .toolbar(.hidden, for: .navigationBar)
@@ -132,9 +133,8 @@ struct LedgerView: View {
         )) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: {
-            Text(saveError ?? "Try again.")
+            Text(saveError ?? String(localized: "Try again."))
         }
-        .preferredColorScheme(.light)
     }
 
     // MARK: Header
@@ -143,9 +143,6 @@ struct LedgerView: View {
         SummaryPill(month: app.displayedMonth, total: displayedTotal)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
-            .contextMenu {
-                Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-            }
             .animation(.snappy, value: app.displayedMonth)
     }
 
@@ -184,17 +181,23 @@ struct LedgerView: View {
 
     @ViewBuilder
     private func rowView(_ row: Row) -> some View {
+        // Every row reports its month, not just the dividers: List recycles
+        // offscreen rows, so a long month whose divider has scrolled away would
+        // otherwise stop feeding the summary pill and leave it stale.
         switch row {
         case .month(let m):
             monthRow(m)
         case .heading(let h):
             headingRow(h)
+                .background(monthAnchorReader(DateFormat.monthStart(of: h.date)))
         case .client(let c, let m):
             clientHeaderRow(c, month: m)
+                .background(monthAnchorReader(m))
         case .composer(let c):
             composerRow(c)
         case .entry(let e):
             entryRow(e)
+                .background(monthAnchorReader(DateFormat.monthStart(of: e.date)))
         }
     }
 
@@ -217,14 +220,16 @@ struct LedgerView: View {
             title: DateFormat.month(month),
             total: app.monthTotal(clients, in: month)
         )
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: MonthAnchorKey.self,
-                    value: [MonthAnchor(month: month, y: geo.frame(in: .named("ledger")).minY)]
-                )
-            }
-        )
+        .background(monthAnchorReader(month))
+    }
+
+    private func monthAnchorReader(_ month: Date) -> some View {
+        GeometryReader { geo in
+            Color.clear.preference(
+                key: MonthAnchorKey.self,
+                value: [MonthAnchor(month: month, y: geo.frame(in: .named("ledger")).minY)]
+            )
+        }
     }
 
     private func entryRow(_ entry: Entry) -> some View {
@@ -243,7 +248,7 @@ struct LedgerView: View {
 
     private func headingRow(_ h: Heading) -> some View {
         HStack(spacing: 8) {
-            Text(h.title.isEmpty ? "Untitled" : h.title)
+            Text(h.title.isEmpty ? String(localized: "Untitled") : h.title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.label(0.85))
                 .lineLimit(1)
@@ -270,7 +275,7 @@ struct LedgerView: View {
         }
     }
 
-    // MARK: FAB
+    // MARK: FAB (creation only — navigation lives in `navBar`)
 
     private var fab: some View {
         Menu {
@@ -290,15 +295,6 @@ struct LedgerView: View {
             if !clients.isEmpty {
                 Button { showPaste = true } label: { Label("Paste lines", systemImage: "doc.on.clipboard") }
             }
-            Divider()
-            let pendingCount = app.pendingEntries(clients).count
-            Button { showPending = true } label: {
-                Label(pendingCount > 0 ? "Pending (\(pendingCount))" : "Pending", systemImage: "clock")
-            }
-            Button { showSearch = true } label: { Label("Search", systemImage: "magnifyingglass") }
-            Button { showInsights = true } label: { Label("Insights", systemImage: "chart.bar") }
-            Divider()
-            Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 22, weight: .medium))
@@ -310,6 +306,53 @@ struct LedgerView: View {
         .accessibilityIdentifier("ledger.fab")
         .padding(.trailing, 20)
         .padding(.bottom, 28)
+    }
+
+    // MARK: Navigation bar (bottom-leading glass cluster)
+
+    private var navBar: some View {
+        HStack(spacing: 0) {
+            navButton("magnifyingglass", label: "Search") { showSearch = true }
+            navButton("chart.bar", label: "Insights") { showInsights = true }
+            pendingNavButton
+            navButton("gearshape", label: "Settings") { showSettings = true }
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 52)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.leading, 20)
+        .padding(.bottom, 30)
+    }
+
+    private func navButton(_ systemImage: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(Theme.label(0.8))
+                .frame(width: 42, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+    }
+
+    private var pendingNavButton: some View {
+        let count = app.pendingEntries(clients).count
+        return navButton("clock", label: "Pending") { showPending = true }
+            .overlay(alignment: .topTrailing) {
+                if count > 0 {
+                    Text("\(min(count, 99))")
+                        .font(.system(size: 10, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 15, minHeight: 15)
+                        .background(Theme.statusProgress, in: .capsule)
+                        .offset(x: 4, y: 3)
+                        .allowsHitTesting(false)
+                }
+            }
+            .accessibilityValue(count > 0 ? Text("\(count)") : Text(""))
     }
 
     // MARK: Entry actions

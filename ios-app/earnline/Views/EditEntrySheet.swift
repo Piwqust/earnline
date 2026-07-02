@@ -102,7 +102,7 @@ struct EditEntrySheet: View {
         )) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: {
-            Text(saveError ?? "Try again.")
+            Text(saveError ?? String(localized: "Try again."))
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -168,7 +168,7 @@ struct EditEntrySheet: View {
 
     /// Live "≈ secondary currency" preview, echoing the ledger's dual-currency display.
     private var secondaryHint: String {
-        guard let amount = amountDecimal else { return "Enter an amount" }
+        guard let amount = amountDecimal else { return String(localized: "Enter an amount") }
         let base = app.toBase(amount, code: currencyCode)
         return "≈ \(app.secondaryString(base))"
     }

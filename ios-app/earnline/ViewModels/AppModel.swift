@@ -69,12 +69,19 @@ final class AppModel {
                 workspaceID = trimmed
                 return
             }
+            guard workspaceID != oldValue else { return }
             defaults.set(workspaceID, forKey: "workspaceID")
-            if realtimeContext != nil { restartRealtime() }
+            // A different workspace invalidates the incremental pull cursor.
+            lastSyncAt = nil
+            scheduleConfigRefresh()
         }
     }
+    /// Dark mode is an explicit in-app choice (Settings), not tied to the system.
+    var prefersDarkMode: Bool {
+        didSet { defaults.set(prefersDarkMode, forKey: "prefersDarkMode") }
+    }
     var isSyncing = false
-    var syncMessage = "Offline"
+    var syncMessage = String(localized: "Offline")
     var syncError: String?
     var lastSyncAt: Date? {
         didSet { defaults.set(lastSyncAt, forKey: "lastSyncAt") }
@@ -87,8 +94,13 @@ final class AppModel {
     @ObservationIgnored private var supabaseClient: SupabaseClient?
     @ObservationIgnored private var queuedSyncTask: Task<Void, Never>?
     @ObservationIgnored private var realtimeChannel: RealtimeChannelV2?
+    /// The client that owns `realtimeChannel` — kept so teardown can remove the
+    /// channel even after `supabaseClient` has been reset to nil.
+    @ObservationIgnored private var realtimeClient: SupabaseClient?
     @ObservationIgnored private var realtimeTask: Task<Void, Never>?
     @ObservationIgnored private var realtimeContext: ModelContext?
+    @ObservationIgnored private var configRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var followUpSyncRequested = false
 
     init() {
         let resolvedBaseCurrencyCode = Self.normalizedCurrencyCode(defaults.string(forKey: "baseCurrencyCode"),
@@ -105,7 +117,8 @@ final class AppModel {
         supabaseKey = defaults.string(forKey: "supabaseKey") ?? SupabaseProjectDefaults.publishableKey
         workspaceID = defaults.string(forKey: "workspaceID") ?? SupabaseProjectDefaults.workspaceID
         lastSyncAt = defaults.object(forKey: "lastSyncAt") as? Date
-        syncMessage = isSupabaseConfigured ? "Ready" : "Offline"
+        prefersDarkMode = defaults.bool(forKey: "prefersDarkMode")
+        syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
     }
 
     // MARK: Currency
@@ -251,34 +264,46 @@ final class AppModel {
     // MARK: Supabase
 
     var isSupabaseConfigured: Bool {
-        URL(string: supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
-            && !supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: urlText),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              url.host() != nil else { return false }
+        return !supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func refreshSupabaseSession() async {
         guard isSupabaseConfigured else {
-            syncMessage = "Offline"
+            syncMessage = String(localized: "Offline")
             return
         }
         do {
             _ = try supabase()
-            syncMessage = "Ready"
+            syncMessage = String(localized: "Ready")
             syncError = nil
         } catch {
-            syncMessage = "Needs setup"
+            syncMessage = String(localized: "Needs setup")
             syncError = error.localizedDescription
         }
     }
 
     func syncNow(context: ModelContext) async {
         guard isSupabaseConfigured else {
-            syncMessage = "Offline"
+            syncMessage = String(localized: "Offline")
             return
         }
-        guard !isSyncing else { return }
+        guard !isSyncing else {
+            // A pass is already on the wire — run another when it finishes so
+            // edits made mid-flight are pushed rather than dropped.
+            followUpSyncRequested = true
+            return
+        }
+        // Demo rows seeded while sync was unconfigured must not leak into a
+        // real workspace — drop the never-synced ones before the first push.
+        SampleData.purgeAutoSeededDemoIfNeeded(context)
         isSyncing = true
-        syncMessage = "Syncing..."
+        syncMessage = String(localized: "Syncing...")
         syncError = nil
         do {
             let completedAt = try await SyncCoordinator.sync(context: context,
@@ -286,23 +311,27 @@ final class AppModel {
                                                              workspaceID: workspaceID,
                                                              lastPulledAt: lastSyncAt)
             lastSyncAt = completedAt
-            syncMessage = "Synced"
+            syncMessage = String(localized: "Synced")
             try context.save()
             refreshPendingReminders(context: context)
         } catch {
-            syncMessage = "Needs sync"
+            syncMessage = String(localized: "Needs sync")
             syncError = error.localizedDescription
         }
         isSyncing = false
+        if followUpSyncRequested {
+            followUpSyncRequested = false
+            await syncNow(context: context)
+        }
     }
 
     func queueSync(context: ModelContext) {
-        refreshPendingReminders(context: context)
         queuedSyncTask?.cancel()
         queuedSyncTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled else { return }
-            await self?.syncNow(context: context)
+            guard !Task.isCancelled, let self else { return }
+            self.refreshPendingReminders(context: context)
+            await self.syncNow(context: context)
         }
     }
 
@@ -320,11 +349,24 @@ final class AppModel {
 
     private func resetSupabaseClient() {
         supabaseClient = nil
-        syncMessage = isSupabaseConfigured ? "Ready" : "Offline"
-        // Config (URL/key/workspace) changed — rebuild the realtime subscription
-        // against the new client/filter if we were already listening.
-        if realtimeContext != nil {
-            restartRealtime()
+        syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
+        scheduleConfigRefresh()
+    }
+
+    /// The Settings fields fire their didSets on every keystroke — debounce
+    /// before rebuilding the realtime subscription, and kick off a sync so a
+    /// freshly configured workspace pulls without waiting for a manual "Sync
+    /// now" or the next edit.
+    private func scheduleConfigRefresh() {
+        guard realtimeContext != nil else { return }
+        configRefreshTask?.cancel()
+        configRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            self.restartRealtime()
+            if let context = self.realtimeContext, self.isSupabaseConfigured {
+                await self.syncNow(context: context)
+            }
         }
     }
 
@@ -339,6 +381,7 @@ final class AppModel {
         let workspace = workspaceID
         let channel = client.channel("earnline:\(workspace)")
         realtimeChannel = channel
+        realtimeClient = client
         let stream = channel.postgresChange(
             AnyAction.self,
             schema: "public",
@@ -366,9 +409,13 @@ final class AppModel {
     private func stopRealtime() {
         realtimeTask?.cancel()
         realtimeTask = nil
+        // Tear down against the client that created the channel — after a
+        // config change `supabaseClient` is already nil, and skipping the
+        // removal leaked a live subscription per change.
+        let client = realtimeClient
+        realtimeClient = nil
         if let channel = realtimeChannel {
             realtimeChannel = nil
-            let client = supabaseClient
             Task { await client?.removeChannel(channel) }
         }
     }

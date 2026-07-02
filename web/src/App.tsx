@@ -1,15 +1,41 @@
 import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { syncController } from "./state/store";
+import { useSettings } from "./state/settings";
 import { AppShell } from "./ui/components/AppShell";
 import { LedgerView } from "./ui/LedgerView";
 import { ClientDetailView } from "./ui/ClientDetailView";
 import { SettingsView } from "./ui/SettingsView";
 
+const THEME_COLOR = { light: "#F4F5F7", dark: "#14161b" };
+
 export default function App() {
+  const theme = useSettings().theme;
+
   useEffect(() => {
     syncController.start();
   }, []);
+
+  // Apply the theme preference (omit the attribute for "auto" so the OS drives
+  // it via prefers-color-scheme) and keep the browser chrome color in sync.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "auto") delete root.dataset.theme;
+    else root.dataset.theme = theme;
+
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const paint = () => {
+      const dark = theme === "dark" || (theme === "auto" && mq.matches);
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute("content", dark ? THEME_COLOR.dark : THEME_COLOR.light);
+    };
+    paint();
+    if (theme === "auto") {
+      mq.addEventListener("change", paint);
+      return () => mq.removeEventListener("change", paint);
+    }
+  }, [theme]);
 
   return (
     <Routes>

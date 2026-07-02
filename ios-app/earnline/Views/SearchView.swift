@@ -37,7 +37,7 @@ struct SearchView: View {
                     ForEach(sections, id: \.client) { section in
                         Section(section.client.name) {
                             ForEach(section.entries) { entry in
-                                NavigationLink(value: section.client) {
+                                NavigationLink(value: SearchTarget(client: section.client, entryID: entry.id)) {
                                     SearchResultRow(entry: entry)
                                 }
                             }
@@ -47,7 +47,9 @@ struct SearchView: View {
             }
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: Client.self) { ClientDetailView(client: $0) }
+            .navigationDestination(for: SearchTarget.self) {
+                ClientDetailView(client: $0.client, highlightedEntryID: $0.entryID)
+            }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                         prompt: "Client, project, task, or amount")
             .toolbar {
@@ -55,6 +57,12 @@ struct SearchView: View {
             }
         }
     }
+}
+
+/// Where a tapped result lands: the client screen, scrolled to the hit line.
+private struct SearchTarget: Hashable {
+    let client: Client
+    let entryID: UUID
 }
 
 private struct SearchResultRow: View {

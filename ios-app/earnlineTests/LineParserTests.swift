@@ -131,6 +131,48 @@ struct LineParserTests {
         #expect(lines.filter(\.isCommittable).count == 2) // the note has no amount
     }
 
+    @Test func rejectsImpossibleHoldDates() {
+        // The lenient calendar must not roll these into a different real date.
+        #expect(LineParser.parse("$140 Acme: Logo hold until 31.02").holdUntil == nil)
+        #expect(LineParser.parse("$140 Acme: Logo hold until 07.25").holdUntil == nil) // US-style month 25
+        #expect(LineParser.parse("$140 Acme: Logo hold until 14.03.26").holdUntil != nil)
+    }
+
+    @Test func recognizesMonthSectionHeadings() {
+        let ref = date(year: 2026, month: 7, day: 2)
+        let cal = Calendar.current
+
+        let april = LineParser.sectionMonth("— Income for April", referenceDate: ref)
+        let aprilComps = cal.dateComponents([.year, .month, .day], from: april!)
+        #expect(aprilComps.year == 2026)
+        #expect(aprilComps.month == 4)
+        #expect(aprilComps.day == 1)
+
+        // A month "after" the reference month reads as last year…
+        let december = LineParser.sectionMonth("— Доходы за декабрь", referenceDate: ref)
+        #expect(cal.component(.year, from: december!) == 2025)
+        // …unless the year is explicit.
+        let explicit = LineParser.sectionMonth("— Income for December 2024", referenceDate: ref)
+        #expect(cal.component(.year, from: explicit!) == 2024)
+
+        // Ordinary income lines are not sections, even if they name a month.
+        #expect(LineParser.sectionMonth("+$240 April campaign: banners", referenceDate: ref) == nil)
+    }
+
+    @Test func ledgerBlockDatesLinesToTheirSection() {
+        let ref = date(year: 2026, month: 7, day: 2)
+        let block = """
+        +$10 Before any section
+
+        — Income for April
+        +$220 Landing page
+        """
+        let lines = LineParser.parseLedgerBlock(block, referenceDate: ref)
+        #expect(lines.count == 2)
+        #expect(lines[0].date == nil)
+        #expect(Calendar.current.component(.month, from: lines[1].date!) == 4)
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day))!
     }

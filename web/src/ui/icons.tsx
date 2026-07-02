@@ -230,6 +230,43 @@ export function MenuIcon({ size = 20, className, strokeWidth = 2 }: IconProps) {
   );
 }
 
+export function SlidersIcon({ size = 16, className, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M4 9h8M16 9h4M4 15h4M12 15h8" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" />
+      <circle cx="14" cy="9" r="2.3" stroke="currentColor" strokeWidth={strokeWidth} />
+      <circle cx="10" cy="15" r="2.3" stroke="currentColor" strokeWidth={strokeWidth} />
+    </svg>
+  );
+}
+
+export function SunIcon({ size = 16, className, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <circle cx="12" cy="12" r="4.4" stroke="currentColor" strokeWidth={strokeWidth} />
+      <path
+        d="M12 2.4v2.3M12 19.3v2.3M21.6 12h-2.3M4.7 12H2.4M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6M18.8 18.8l-1.6-1.6M6.8 6.8 5.2 5.2"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function MoonIcon({ size = 16, className, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path
+        d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Filled status dot (checkmark / clock / xmark), tinted by status. */
 export function StatusIcon({ status, size = 16 }: { status: EntryStatus; size?: number }) {
   const color = STATUS_COLOR[status];

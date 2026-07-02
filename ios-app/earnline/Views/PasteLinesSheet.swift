@@ -17,7 +17,7 @@ struct PasteLinesSheet: View {
     @State private var saveError: String?
 
     private var drafts: [ParsedLine] {
-        LineParser.parseBlock(text, defaultCurrency: app.baseCurrencyCode)
+        LineParser.parseLedgerBlock(text, defaultCurrency: app.baseCurrencyCode)
     }
     private var validDrafts: [ParsedLine] { drafts.filter(\.isCommittable) }
 
@@ -36,7 +36,7 @@ struct PasteLinesSheet: View {
                         .font(.system(size: 16))
                         .accessibilityLabel("Lines to import")
                 } header: { Text("Paste lines") } footer: {
-                    Text("One income line per row — e.g. \u{201C}+$240 Project: task\u{201D}. Each line is parsed; rows without an amount are skipped.")
+                    Text("One income line per row — e.g. \u{201C}+$240 Project: task\u{201D}. A heading like \u{201C}— Income for April\u{201D} dates the lines under it to that month. Rows without an amount are skipped.")
                 }
 
                 if !drafts.isEmpty {
@@ -71,7 +71,7 @@ struct PasteLinesSheet: View {
         )) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: {
-            Text(saveError ?? "Try again.")
+            Text(saveError ?? String(localized: "Try again."))
         }
         .presentationDetents([.large])
         .presentationBackground(Theme.background)
@@ -93,6 +93,11 @@ struct PasteLinesSheet: View {
                     Text(describe(draft))
                         .foregroundStyle(Theme.label(0.65))
                         .lineLimit(1)
+                }
+                if let date = draft.date {
+                    Text(DateFormat.month(date))
+                        .font(.caption)
+                        .foregroundStyle(Theme.label(0.45))
                 }
                 if !valid {
                     Text("No amount — will be skipped")
@@ -122,6 +127,7 @@ struct PasteLinesSheet: View {
                 currencyCode: draft.currencyCode,
                 project: (project?.isEmpty == false) ? project : nil,
                 task: Validation.trimmed(draft.task, max: Limits.maxTaskLength),
+                date: draft.date ?? .now,
                 holdUntil: draft.holdUntil,
                 status: draft.status ?? .paid,
                 sortIndex: minIndex - 1 - offset

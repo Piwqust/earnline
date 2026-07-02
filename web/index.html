@@ -10,6 +10,19 @@
       content="earn›line — an income-only notebook for freelancers. Type a line, get a clean self-totalling ledger."
     />
     <title>earn›line</title>
+    <!-- Resolve theme before first paint to avoid a light/dark flash. -->
+    <script>
+      (function () {
+        try {
+          var s = JSON.parse(localStorage.getItem("earnline.settings") || "{}");
+          var t = s.theme;
+          if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+          var dark = t === "dark" || (t !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute("content", dark ? "#14161b" : "#F4F5F7");
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

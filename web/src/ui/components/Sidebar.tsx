@@ -4,11 +4,11 @@ import { NavLink } from "react-router-dom";
 import { clientTotalAll } from "../../domain/totals";
 import { formatMoney } from "../../domain/money";
 import { useClients, useEntries } from "../../state/data";
-import { useSettings, currencySettings } from "../../state/settings";
+import { useSettings, setSettings, currencySettings } from "../../state/settings";
 import { useSyncStatus } from "../../state/store";
 import { NewClientDialog } from "../NewClientDialog";
 import { IconButton } from "./Button";
-import { GearIcon, PlusIcon, ReceiptIcon, SyncIcon } from "../icons";
+import { GearIcon, MoonIcon, PlusIcon, ReceiptIcon, SunIcon, SyncIcon } from "../icons";
 
 export function Wordmark() {
   return (
@@ -33,6 +33,12 @@ export function Sidebar() {
   const [newClient, setNewClient] = useState(false);
 
   const sorted = [...clients].sort((a, b) => a.sortIndex - b.sortIndex);
+
+  const resolvedDark =
+    settings.theme === "dark" ||
+    (settings.theme === "auto" &&
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   return (
     <aside className="sidebar">
@@ -75,11 +81,22 @@ export function Sidebar() {
         </div>
       </div>
 
-      <NavLink to="/settings" className="sidebar__sync" title="Sync settings">
-        <SyncIcon size={15} className={sync.isSyncing ? "is-spinning" : undefined} />
-        <span className="sidebar__sync-msg">{sync.message}</span>
-        {sync.error && <span className="sidebar__sync-dot" aria-hidden />}
-      </NavLink>
+      <div className="sidebar__foot">
+        <NavLink to="/settings" className="sidebar__sync" title="Sync settings">
+          <SyncIcon size={15} className={sync.isSyncing ? "is-spinning" : undefined} />
+          <span className="sidebar__sync-msg">{sync.message}</span>
+          {sync.error && <span className="sidebar__sync-dot" aria-hidden />}
+        </NavLink>
+        <button
+          type="button"
+          className="sidebar__theme"
+          onClick={() => setSettings({ theme: resolvedDark ? "light" : "dark" })}
+          title={`Switch to ${resolvedDark ? "light" : "dark"} mode`}
+          aria-label={`Switch to ${resolvedDark ? "light" : "dark"} mode`}
+        >
+          {resolvedDark ? <SunIcon size={16} /> : <MoonIcon size={15} />}
+        </button>
+      </div>
 
       {newClient && (
         <NewClientDialog existingClients={clients} onClose={() => setNewClient(false)} />

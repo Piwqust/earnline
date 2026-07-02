@@ -81,7 +81,7 @@ struct EntryRow: View {
         if !entry.task.isEmpty { parts.append(entry.task) }
         parts.append(entry.status.title)
         parts.append(DateFormat.dotted(entry.date))
-        if let hold = entry.holdUntil { parts.append("hold until \(DateFormat.dotted(hold))") }
+        if let hold = entry.holdUntil { parts.append(String(localized: "hold until \(DateFormat.dotted(hold))")) }
         return parts.joined(separator: ", ")
     }
 

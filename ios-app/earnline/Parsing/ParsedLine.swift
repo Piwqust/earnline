@@ -7,6 +7,8 @@ struct ParsedLine: Equatable {
     var currencyCode: String = "USD"
     var project: String?
     var task: String = ""
+    /// Month-section date from `parseLedgerBlock`; nil means "dated today".
+    var date: Date?
     var holdUntil: Date?
     var status: EntryStatus?
 

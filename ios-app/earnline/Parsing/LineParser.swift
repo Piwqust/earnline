@@ -24,6 +24,68 @@ enum LineParser {
             .map { parse($0, defaultCurrency: defaultCurrency, referenceDate: referenceDate) }
     }
 
+    /// Like `parseBlock`, but understands Notes-style month headings between
+    /// lines ("— Income for April", "Доходы за май 2025"): income lines under a
+    /// heading are dated to that month instead of today.
+    static func parseLedgerBlock(_ raw: String,
+                                 defaultCurrency: String = "USD",
+                                 referenceDate: Date = .now) -> [ParsedLine] {
+        var currentMonth: Date?
+        var result: [ParsedLine] = []
+        for rawLine in raw.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { continue }
+            if let month = sectionMonth(line, referenceDate: referenceDate) {
+                currentMonth = month
+                continue
+            }
+            var parsed = parse(line, defaultCurrency: defaultCurrency, referenceDate: referenceDate)
+            parsed.date = currentMonth
+            result.append(parsed)
+        }
+        return result
+    }
+
+    /// A month-section heading, or nil when the line is a normal income line.
+    /// Returns the first day of the named month. A heading is a line that looks
+    /// like one (leading dash or an "income for" phrase) and names a month.
+    static func sectionMonth(_ line: String,
+                             referenceDate: Date = .now,
+                             calendar: Calendar = .current) -> Date? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        let looksLikeHeading = trimmed.hasPrefix("—") || trimmed.hasPrefix("–") || trimmed.hasPrefix("-")
+            || trimmed.localizedCaseInsensitiveContains("Income for")
+            || trimmed.localizedCaseInsensitiveContains("Доходы за")
+            || trimmed.localizedCaseInsensitiveContains("Дохід за")
+        guard looksLikeHeading,
+              let month = monthMap.first(where: { trimmed.localizedCaseInsensitiveContains($0.key) })?.value else {
+            return nil
+        }
+        let year: Int
+        if let match = trimmed.range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression),
+           let explicit = Int(trimmed[match]) {
+            year = explicit
+        } else {
+            // Pasted ledgers are history — a month "after" the current one
+            // means the previous year, not the future.
+            let currentYear = calendar.component(.year, from: referenceDate)
+            year = month > calendar.component(.month, from: referenceDate) ? currentYear - 1 : currentYear
+        }
+        return calendar.date(from: DateComponents(year: year, month: month, day: 1))
+    }
+
+    /// Month-name fragments → month number, EN and RU (shared with the bundled
+    /// ledger importer).
+    static let monthMap: [String: Int] = [
+        "январ": 1, "феврал": 2, "март": 3, "апрел": 4, "май": 5, "мая": 5,
+        "июн": 6, "июл": 7, "август": 8, "сентябр": 9, "октябр": 10,
+        "ноябр": 11, "декабр": 12,
+        "january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
+        "june": 6, "july": 7, "august": 8, "september": 9, "october": 10,
+        "november": 11, "december": 12,
+    ]
+
     static func parse(_ raw: String, defaultCurrency: String = "USD", referenceDate: Date = .now) -> ParsedLine {
         var result = ParsedLine(currencyCode: defaultCurrency)
         var working = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -115,7 +177,9 @@ enum LineParser {
             }
         }
 
-        // Fallback: a leading bare number (2+ digits), e.g. "240 Acme: ..."
+        // Fallback: a leading bare number (2+ digits), e.g. "240 Acme: ...".
+        // A single bare digit stays text on purpose — "2 screens" is a count,
+        // not $2 (single-digit amounts still parse with a symbol: "$5").
         if let regex = try? NSRegularExpression(pattern: "^([0-9][0-9.,\u{2009}\u{00A0} ]*[0-9])(?=\\s)"),
            let m = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
            let whole = Range(m.range, in: s),
@@ -168,6 +232,11 @@ enum LineParser {
               let day = Int(s[dRange]),
               let month = Int(s[mRange]) else { return nil }
 
+        // Reject impossible day/month values instead of letting the lenient
+        // calendar roll them into a different real date ("31.02" → March 3,
+        // US-style "07/25" → a random month next year).
+        guard (1...12).contains(month), (1...31).contains(day) else { return nil }
+
         let calendar = Calendar.current
         var year = calendar.component(.year, from: referenceDate)
         var hasExplicitYear = false
@@ -177,12 +246,20 @@ enum LineParser {
         }
         var comps = DateComponents()
         comps.day = day; comps.month = month; comps.year = year
-        guard var date = calendar.date(from: comps) else { return nil }
+        guard var date = calendar.date(from: comps), isExactDate(date, comps, calendar) else { return nil }
         if !hasExplicitYear, date < calendar.startOfDay(for: referenceDate) {
             comps.year = year + 1
-            guard let rolloverDate = calendar.date(from: comps) else { return nil }
+            guard let rolloverDate = calendar.date(from: comps),
+                  isExactDate(rolloverDate, comps, calendar) else { return nil }
             date = rolloverDate
         }
         return (date, whole)
+    }
+
+    /// True when the calendar didn't normalize the components into a different
+    /// day (e.g. Feb 30 → Mar 2).
+    private static func isExactDate(_ date: Date, _ comps: DateComponents, _ calendar: Calendar) -> Bool {
+        calendar.component(.day, from: date) == comps.day
+            && calendar.component(.month, from: date) == comps.month
     }
 }

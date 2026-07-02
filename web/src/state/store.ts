@@ -38,6 +38,7 @@ class SyncController {
   private channelSupabase: SupabaseClient | undefined;
   private started = false;
   private lastConfigKey = "";
+  private followUpRequested = false;
 
   constructor() {
     const s = getSettings();
@@ -67,7 +68,12 @@ class SyncController {
       this.set({ message: "Offline" });
       return;
     }
-    if (this.status.isSyncing) return;
+    if (this.status.isSyncing) {
+      // A pass is already on the wire — run another when it finishes so edits
+      // made mid-flight are pushed rather than dropped.
+      this.followUpRequested = true;
+      return;
+    }
     this.set({ isSyncing: true, message: "Syncing…", error: null });
     try {
       const supabase = getSupabase(s.supabaseUrl, s.supabaseKey);
@@ -76,6 +82,10 @@ class SyncController {
       this.set({ isSyncing: false, message: "Synced", lastSyncAt: completedAt });
     } catch (e) {
       this.set({ isSyncing: false, message: "Needs sync", error: errorMessage(e) });
+    }
+    if (this.followUpRequested) {
+      this.followUpRequested = false;
+      await this.syncNow();
     }
   }
 

@@ -20,9 +20,9 @@ enum ClientNameValidation: Equatable {
         case .valid:
             return nil
         case .empty:
-            return "Enter a client name."
+            return String(localized: "Enter a client name.")
         case .duplicate:
-            return "A client with this name already exists."
+            return String(localized: "A client with this name already exists.")
         }
     }
 
