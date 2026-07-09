@@ -3,21 +3,57 @@ import SwiftData
 
 enum IncomeLedgerImporter {
     static let bundledLedger = """
-    — Income for April from Acme Studio
+    — Доходы за апрель +- от Mikita
 
-    + $220 Landing page wireframes
-    + $180 Brand polish
-    + $99.50 QA fixes
+    + $220 desc + blur image
+    + $230 remake screens
+    + $80 pop-up stars
+    + $230 desc anim
 
-    — Income for May from Northstar Labs
+    $760 / 55k ₽
 
-    + €320 Design review
-    + $450 Dashboard prototype
+    — Доходы за май от Mikita
 
-    — Income for June from River House
+    + $480 pres
+    + $45 video cut
+    + $490 music download – ava+desc+anim
+    + $250 anim savebot
+    + $30 stories
+    + $400 anim post + stories
+    + $170 updated design for screens
+    + $50 updated liquid glass buttons
+    + $240 anim post + stories
+    + $170 AI-desc anim (-55$ ai plan)
+    + $550 Escort UI update
+    + $250 LunaAI: desc anim AI
 
-    + 24k ₽ Event banners
-    + 11k₽ Key visuals
+    3125$ / 240k ₽
+
+    — Доходы за май от bóra
+    +  24k ₽
+
+    Доходы за май. Итого:   $3428 / 264 000 ₽
+
+
+    — Доходы за июнь от blackwave
+    + $900 Black Resell: design profile & admin & etc
+    + $100 Black Resell: additional tasks
+
+    — Доходы за июнь от Mikita
+    + $60 BuyTGStars: Background channel
+    + $70 BuyTGStars: New avatar channel
+    + $420 Chatus: Onboarding. UI update
+    + $140 BuyTGStars: buying tg stars video
+    + $160 LunaAI: Logo
+    + $35 NearMe: some edits
+    + $50 NearMe: banners
+    + $190 NearMe: Intro animation
+    + $150 LunaAI: Tab + Gifts
+
+    $2125
+
+    — Доходы за июнь от bóra
+    + 11k₽ Winline: KVs
     """
 
     struct ParsedEntry: Equatable {

@@ -111,12 +111,12 @@ struct LineParserTests {
 
     @Test func parsesBundledIncomeLedger() {
         let entries = IncomeLedgerImporter.parse(IncomeLedgerImporter.bundledLedger, year: 2026)
-        #expect(entries.count == 7)
-        #expect(entries.filter { $0.clientName == "Acme Studio" }.count == 3)
-        #expect(entries.filter { $0.clientName == "Northstar Labs" }.count == 2)
-        #expect(entries.filter { $0.clientName == "River House" }.count == 2)
+        #expect(entries.count == 29)
+        #expect(entries.filter { $0.clientName == "Mikita" }.count == 25)
+        #expect(entries.filter { $0.clientName == "bóra" }.count == 2)
+        #expect(entries.filter { $0.clientName == "blackwave" }.count == 2)
         #expect(entries.filter { $0.currencyCode == "RUB" }.reduce(Decimal.zero) { $0 + $1.amount } == 35000)
-        #expect(entries.filter { $0.currencyCode == "USD" }.reduce(Decimal.zero) { $0 + $1.amount } == Decimal(string: "949.50")!)
+        #expect(entries.filter { $0.currencyCode == "USD" }.reduce(Decimal.zero) { $0 + $1.amount } == 6160)
     }
 
     @Test func parseBlockSplitsLinesAndFlagsCommittable() {
@@ -136,6 +136,94 @@ struct LineParserTests {
         #expect(LineParser.parse("$140 Acme: Logo hold until 31.02").holdUntil == nil)
         #expect(LineParser.parse("$140 Acme: Logo hold until 07.25").holdUntil == nil) // US-style month 25
         #expect(LineParser.parse("$140 Acme: Logo hold until 14.03.26").holdUntil != nil)
+    }
+
+    @Test func readsEUFormatAmounts() {
+        // Dot-grouped thousands with comma decimals, and the US form still works.
+        #expect(LineParser.decimal(from: "1.000,50") == Decimal(string: "1000.50"))
+        #expect(LineParser.decimal(from: "1.000.000,50") == Decimal(string: "1000000.50"))
+        #expect(LineParser.decimal(from: "1,000.50") == Decimal(string: "1000.50"))
+        #expect(LineParser.decimal(from: "1,000,000.50") == Decimal(string: "1000000.50"))
+
+        let p = LineParser.parse("€1.000,50 Acme: Retainer")
+        #expect(p.currencyCode == "EUR")
+        #expect(p.amount == Decimal(string: "1000.50"))
+    }
+
+    @Test func doesNotTreatDueInsideAWordAsHold() {
+        let p = LineParser.parse("$140 Acme: residue 12.05 cleanup")
+        #expect(p.holdUntil == nil)
+    }
+
+    @Test func parsesTextCurrencyCodes() {
+        let usd = LineParser.parse("Client 500 usd")
+        #expect(usd.amount == 500)
+        #expect(usd.currencyCode == "USD")
+        #expect(usd.task == "Client")
+
+        let eur = LineParser.parse("24k eur Acme: retainer", defaultCurrency: "USD")
+        #expect(eur.amount == 24000)
+        #expect(eur.currencyCode == "EUR")
+        #expect(eur.project == "Acme")
+    }
+
+    @Test func parsesTrailingStatusWord() {
+        let p = LineParser.parse("$500 Acme: Site pending")
+        #expect(p.status == .inProgress)
+        #expect(p.amount == 500)
+        #expect(p.task == "Site")
+    }
+
+    @Test func parsesLeadingStatusWord() {
+        let p = LineParser.parse("paid $300 Acme: Site")
+        #expect(p.status == .paid)
+        #expect(p.amount == 300)
+    }
+
+    @Test func emojiStatusWinsOverStatusWord() {
+        let p = LineParser.parse("✅ $300 Acme: Site pending")
+        #expect(p.status == .paid)
+    }
+
+    @Test func statusWordInsideTaskTextIsKept() {
+        // "Paid search" is ad jargon, not a status marker — only standalone
+        // words at the line's edges count, and this one is followed by text.
+        let p = LineParser.parse("$300 Client: Paid search ads audit pending")
+        #expect(p.status == .inProgress) // trailing "pending" is a marker…
+        #expect(p.task == "Paid search ads audit") // …"Paid search" is not
+    }
+
+    @Test func parsesRussianStatusWord() {
+        let p = LineParser.parse("оплачено 5 000 ₽ Acme: баннер")
+        #expect(p.status == .paid)
+        #expect(p.amount == 5000)
+        #expect(p.currencyCode == "RUB")
+    }
+
+    @Test func midProseAmountIsNotCaptured() {
+        // An amount leads or trails an income line; digits buried mid-prose
+        // belong to the text.
+        let p = LineParser.parse("refund the $500 deposit next week")
+        #expect(p.amount == nil)
+        #expect(p.task == "refund the $500 deposit next week")
+    }
+
+    @Test func zeroAmountIsNotCommittable() {
+        #expect(!LineParser.parse("$0 Acme: comp work").isCommittable)
+    }
+
+    @Test func recognizesUkrainianMonthSectionHeadings() {
+        let ref = date(year: 2026, month: 7, day: 2)
+        let cal = Calendar.current
+
+        let may = LineParser.sectionMonth("— Дохід за травень", referenceDate: ref)
+        #expect(cal.component(.month, from: may!) == 5)
+        #expect(cal.component(.year, from: may!) == 2026)
+
+        // Genitive form + explicit year.
+        let genitive = LineParser.sectionMonth("— Дохід за травня 2025", referenceDate: ref)
+        #expect(cal.component(.month, from: genitive!) == 5)
+        #expect(cal.component(.year, from: genitive!) == 2025)
     }
 
     @Test func recognizesMonthSectionHeadings() {

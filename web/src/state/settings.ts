@@ -21,11 +21,16 @@ export interface Settings {
   supabaseUrl: string;
   supabaseKey: string;
   workspaceId: string;
+  /** When the last sync completed — display only ("Last sync" in Settings). */
   lastSyncAt: number | null;
+  /** Incremental pull cursor: the newest server `updated_at`/`deleted_at` seen.
+   *  Kept distinct from `lastSyncAt` so a client clock can't skew the cursor. */
+  syncCursorMs: number | null;
   theme: ThemePref;
 }
 
 const STORAGE_KEY = "earnline.settings";
+const RATE_MIGRATION_KEY = "earnline.didApplyDefaultRate83";
 
 function envDefault(key: keyof ImportMetaEnv): string {
   return (import.meta.env[key] ?? "").toString().trim();
@@ -40,6 +45,7 @@ function defaults(): Settings {
     supabaseKey: envDefault("VITE_SUPABASE_ANON_KEY"),
     workspaceId: envDefault("VITE_WORKSPACE_ID"),
     lastSyncAt: null,
+    syncCursorMs: null,
     theme: "auto",
   };
 }
@@ -57,6 +63,7 @@ function normalize(s: Settings): Settings {
     supabaseKey: s.supabaseKey.trim(),
     workspaceId: s.workspaceId.trim(),
     lastSyncAt: s.lastSyncAt ?? null,
+    syncCursorMs: s.syncCursorMs ?? null,
     theme: s.theme === "light" || s.theme === "dark" ? s.theme : "auto",
   };
 }
@@ -64,8 +71,26 @@ function normalize(s: Settings): Settings {
 function load(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return normalize(defaults());
-    return normalize({ ...defaults(), ...JSON.parse(raw) });
+    if (!raw) {
+      localStorage.setItem(RATE_MIGRATION_KEY, "1");
+      return normalize(defaults());
+    }
+    const rawObj = JSON.parse(raw) as Partial<Settings>;
+    const parsed = normalize({ ...defaults(), ...rawObj });
+    // Migrate installs from before the cursor/display split: their `lastSyncAt`
+    // doubled as the pull cursor, so seed `syncCursorMs` from it once.
+    if (!("syncCursorMs" in rawObj)) {
+      parsed.syncCursorMs = parsed.lastSyncAt;
+    }
+    // One-time reset to the current shipped rate (mirrors AppModel.init):
+    // values carried over from older builds move to the new default on first
+    // load; afterwards whatever the user types always wins.
+    if (localStorage.getItem(RATE_MIGRATION_KEY) === null) {
+      parsed.rate = DEFAULT_EXCHANGE_RATE;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      localStorage.setItem(RATE_MIGRATION_KEY, "1");
+    }
+    return parsed;
   } catch {
     return normalize(defaults());
   }
@@ -83,7 +108,15 @@ export function getSettings(): Settings {
 }
 
 export function setSettings(patch: Partial<Settings>): void {
+  const prev = current;
   const next = normalize({ ...current, ...patch });
+  // A different workspace invalidates the incremental pull cursor (mirrors
+  // AppModel.workspaceID.didSet on iOS): otherwise a non-empty local DB keeps
+  // the old workspace's cursor and never pulls the new workspace's older rows.
+  if (next.workspaceId !== prev.workspaceId) {
+    next.lastSyncAt = null;
+    next.syncCursorMs = null;
+  }
   current = next;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));

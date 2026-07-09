@@ -45,9 +45,23 @@ targets:
       - path: earnlineTests
     dependencies:
       - target: earnline
+      - package: Supabase
+        product: Supabase
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.earnline.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+  earnlineUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: earnlineUITests
+    dependencies:
+      - target: earnline
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.earnline.uitests
         GENERATE_INFOPLIST_FILE: "YES"
 schemes:
   earnline:
@@ -55,6 +69,8 @@ schemes:
       targets:
         earnline: all
         earnlineTests: [test]
+        earnlineUITests: [test]
     test:
       targets:
         - earnlineTests
+        - earnlineUITests

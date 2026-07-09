@@ -5,7 +5,7 @@ import { SUPPORTED_CURRENCY_CODES } from "./money";
 
 export const DEFAULT_BASE_CURRENCY = "USD";
 export const DEFAULT_SECONDARY_CURRENCY = "RUB";
-export const DEFAULT_EXCHANGE_RATE = 98;
+export const DEFAULT_EXCHANGE_RATE = 83;
 
 const SUPPORTED: readonly string[] = SUPPORTED_CURRENCY_CODES;
 

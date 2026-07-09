@@ -3,7 +3,8 @@ import SwiftData
 
 /// Paste a block of text (as if from Notes) and turn each line into an income
 /// line for one client. Parsing reuses `LineParser.parseBlock`; the live preview
-/// shows which rows will commit and which are skipped.
+/// shows which rows will commit and which are skipped. Chrome follows the
+/// ChatGPT "Report bug" sheet: title + ✕, labeled input cards, black pill CTA.
 struct PasteLinesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -22,67 +23,105 @@ struct PasteLinesSheet: View {
     private var validDrafts: [ParsedLine] { drafts.filter(\.isCommittable) }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Picker("Client", selection: $selectedClient) {
-                        ForEach(clients) { Text($0.name).tag(Optional($0)) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 0) {
+                    CardHeader("Add to")
+                    ChromeCard {
+                        ChromeRow(icon: "person.crop.circle") {
+                            Text("Client").foregroundStyle(Theme.label)
+                            Spacer()
+                            clientMenu
+                        }
                     }
-                } header: { Text("Add to") }
+                }
 
-                Section {
-                    TextEditor(text: $text)
-                        .frame(minHeight: 120)
-                        .font(.system(size: 16))
-                        .accessibilityLabel("Lines to import")
-                } header: { Text("Paste lines") } footer: {
-                    Text("One income line per row — e.g. \u{201C}+$240 Project: task\u{201D}. A heading like \u{201C}— Income for April\u{201D} dates the lines under it to that month. Rows without an amount are skipped.")
+                VStack(alignment: .leading, spacing: 0) {
+                    CardHeader("Paste lines")
+                    ChromeCard {
+                        TextEditor(text: $text)
+                            .appFont(16)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 120)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .accessibilityLabel("Lines to import")
+                    }
+                    CardFootnote {
+                        Text("One income line per row — e.g. \u{201C}+$240 Project: task\u{201D}. A heading like \u{201C}— Income for April\u{201D} dates the lines under it to that month. Rows without an amount are skipped.")
+                    }
                 }
 
                 if !drafts.isEmpty {
-                    Section {
-                        ForEach(Array(drafts.enumerated()), id: \.offset) { _, draft in
-                            draftRow(draft)
+                    VStack(alignment: .leading, spacing: 0) {
+                        CardHeader(verbatim: String(localized: "Preview — \(validDrafts.count) of \(drafts.count) will be added"))
+                        ChromeCard {
+                            ForEach(Array(drafts.enumerated()), id: \.offset) { index, draft in
+                                draftRow(draft)
+                                if index < drafts.count - 1 {
+                                    ChromeDivider()
+                                }
+                            }
                         }
-                    } header: {
-                        Text("Preview — \(validDrafts.count) of \(drafts.count) will be added")
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.background)
-            .navigationTitle("Paste lines")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add \(validDrafts.count)", action: commit)
-                        .fontWeight(.semibold)
-                        .disabled(validDrafts.isEmpty || selectedClient == nil)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+        }
+        .background(Theme.background)
+        .scrollDismissesKeyboard(.interactively)
+        .sheetHeader("Paste lines", onClose: { dismiss() })
+        .sheetFooter {
+            PillCTA("Add \(validDrafts.count)",
+                    isEnabled: !validDrafts.isEmpty && selectedClient != nil,
+                    action: commit)
+        }
+        .onAppear {
+            if selectedClient == nil { selectedClient = defaultClient ?? clients.first }
+        }
+        .saveErrorAlert($saveError, title: "Could not import lines")
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.background)
+    }
+
+    /// Client picker with a truncating label — long names shorten instead of
+    /// wrapping the row. Menu content stays a native inline picker.
+    private var clientMenu: some View {
+        Menu {
+            Picker("Client", selection: $selectedClient) {
+                ForEach(clients) { client in
+                    Text(client.name).tag(Optional(client))
                 }
             }
-            .onAppear {
-                if selectedClient == nil { selectedClient = defaultClient ?? clients.first }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 5) {
+                Text(selectedClient?.name ?? String(localized: "Choose"))
+                    .foregroundStyle(Theme.label(0.45))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.label(0.35))
             }
+            .frame(maxWidth: 190, alignment: .trailing)
         }
-        .alert("Could not import lines", isPresented: Binding(
-            get: { saveError != nil },
-            set: { if !$0 { saveError = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveError = nil }
-        } message: {
-            Text(saveError ?? String(localized: "Try again."))
-        }
-        .presentationDetents([.large])
-        .presentationBackground(Theme.background)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Client")
+        .accessibilityValue(selectedClient?.name ?? "")
     }
 
     @ViewBuilder
     private func draftRow(_ draft: ParsedLine) -> some View {
         let valid = draft.isCommittable
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: valid ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(valid ? Theme.statusPaid : Theme.statusProgress)
+                .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     if let amount = draft.amount {
@@ -96,17 +135,20 @@ struct PasteLinesSheet: View {
                 }
                 if let date = draft.date {
                     Text(DateFormat.month(date))
-                        .font(.caption)
+                        .appFont(14)
                         .foregroundStyle(Theme.label(0.45))
                 }
                 if !valid {
                     Text("No amount — will be skipped")
-                        .font(.caption)
+                        .appFont(14)
                         .foregroundStyle(Theme.statusProgress)
                 }
             }
+            Spacer(minLength: 0)
         }
-        .font(.system(size: 15))
+        .appFont(15)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private func describe(_ draft: ParsedLine) -> String {
@@ -118,7 +160,6 @@ struct PasteLinesSheet: View {
     private func commit() {
         guard let client = selectedClient else { return }
         let minIndex = client.entries.map(\.sortIndex).min() ?? 0
-        var inserted: [Entry] = []
         for (offset, draft) in validDrafts.enumerated() {
             guard let amount = draft.amount else { continue }
             let project = draft.project.map { Validation.trimmed($0, max: Limits.maxProjectLength) }
@@ -134,16 +175,13 @@ struct PasteLinesSheet: View {
             )
             entry.client = client
             context.insert(entry)
-            inserted.append(entry)
         }
-        do {
-            try context.save()
-            app.queueSync(context: context)
+        if let error = app.save(context) {
+            // `AppModel.save` rolls the entire failed transaction back.
+            saveError = error
+        } else {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             dismiss()
-        } catch {
-            inserted.forEach(context.delete)
-            saveError = error.localizedDescription
         }
     }
 }

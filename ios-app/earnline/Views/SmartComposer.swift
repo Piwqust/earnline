@@ -7,8 +7,12 @@ import SwiftData
 struct SmartComposer: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let client: Client
+    /// The month this composer is anchored to, so a new line lands in the
+    /// section the user tapped "+ Line" in — not in today's month.
+    var month: Date = .now
     var initialText: String = ""
 
     @Query(sort: \Entry.createdAt, order: .reverse) private var allEntries: [Entry]
@@ -37,12 +41,21 @@ struct SmartComposer: View {
         amountDecimal != nil && !Validation.trimmed(task, max: Limits.maxTaskLength).isEmpty
     }
 
+    /// Where the date picker starts: today when composing in the current month,
+    /// otherwise the first of the anchored month so the line lands in the right
+    /// section.
+    private var defaultDate: Date {
+        Calendar.current.isDate(month, equalTo: .now, toGranularity: .month)
+            ? Date()
+            : DateFormat.monthStart(of: month)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Chips — single row: amount · project · status
             HStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, .semibold)
                     .foregroundStyle(Theme.label(0.5))
                     .frame(height: 28)
                 amountChip
@@ -57,10 +70,10 @@ struct SmartComposer: View {
             // Date row + Submit
             HStack(spacing: 6) {
                 Image(systemName: "arrow.turn.down.right")
-                    .font(.system(size: 10))
+                    .appFont(10)
                     .foregroundStyle(Theme.label(0.4))
                 dateChip
-                Text("·").font(.system(size: 14)).foregroundStyle(Theme.label(0.6))
+                Text("·").appFont(14).foregroundStyle(Theme.label(0.6))
                 holdChip
                 Spacer(minLength: 8)
                 submitButton
@@ -77,14 +90,7 @@ struct SmartComposer: View {
         .onChange(of: entryDate) { _, newValue in
             if let holdUntil, holdUntil < newValue { self.holdUntil = newValue }
         }
-        .alert("Could not save line", isPresented: Binding(
-            get: { saveError != nil },
-            set: { if !$0 { saveError = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveError = nil }
-        } message: {
-            Text(saveError ?? String(localized: "Try again."))
-        }
+        .saveErrorAlert($saveError, title: "Could not save line")
     }
 
     // MARK: Chips
@@ -93,11 +99,14 @@ struct SmartComposer: View {
         chip(bg: Theme.label(0.10)) {
             HStack(spacing: 1) {
                 Menu {
-                    ForEach(AppModel.supportedCurrencyCodes, id: \.self) { code in
-                        Button { currencyCode = code } label: {
-                            Text("\(CurrencyFormatter.symbol(for: code)) \(code)")
+                    // Native inline picker — the system carries the selection
+                    // checkmark in the Liquid Glass menu.
+                    Picker("Currency", selection: $currencyCode) {
+                        ForEach(AppModel.supportedCurrencyCodes, id: \.self) { code in
+                            Label(code, systemImage: CurrencyFormatter.symbolName(for: code)).tag(code)
                         }
                     }
+                    .pickerStyle(.inline)
                 } label: {
                     Text(symbol)
                         .foregroundStyle(amountText.isEmpty ? Theme.label(0.4) : Theme.label)
@@ -117,7 +126,7 @@ struct SmartComposer: View {
                     .onSubmit { focus = .project }
                     .accessibilityLabel("Amount")
             }
-            .font(.system(size: 18))
+            .appFont(18)
         }
     }
 
@@ -135,7 +144,7 @@ struct SmartComposer: View {
                     .accessibilityLabel("Project")
                 projectMenu
             }
-            .font(.system(size: 18))
+            .appFont(18)
         }
     }
 
@@ -143,18 +152,24 @@ struct SmartComposer: View {
     @ViewBuilder private var projectMenu: some View {
         if existingProjects.isEmpty {
             Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .appFont(9, .semibold)
                 .foregroundStyle(Theme.label(0.35))
         } else {
             Menu {
                 Section("Existing projects") {
-                    ForEach(existingProjects, id: \.self) { name in
-                        Button { project = name; focus = .task } label: { Text(name) }
+                    Picker("Existing projects", selection: Binding(
+                        get: { project },
+                        set: { project = $0; focus = .task }
+                    )) {
+                        ForEach(existingProjects, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
                     }
+                    .pickerStyle(.inline)
                 }
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, .semibold)
                     .foregroundStyle(Theme.label(0.45))
                     .frame(width: 22, height: 24)
                     .contentShape(.rect)
@@ -177,17 +192,24 @@ struct SmartComposer: View {
 
     private var statusChip: some View {
         Menu {
-            ForEach(EntryStatus.allCases) { s in
-                Button { status = s } label: { Label(s.title, systemImage: s.symbol) }
+            // Native inline picker — the system draws the selection checkmark
+            // in the Liquid Glass menu (same idiom as EntryRow).
+            Section("Status") {
+                Picker("Status", selection: $status) {
+                    ForEach(EntryStatus.allCases) { s in
+                        Text(s.title).tag(s)
+                    }
+                }
+                .pickerStyle(.inline)
             }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: status.symbol)
-                    .font(.system(size: 13))
+                    .appFont(13)
                     .foregroundStyle(status.tint)
                     .contentTransition(.symbolEffect(.replace))
                     .animation(.snappy(duration: 0.3), value: status)
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.label(0.4))
+                Image(systemName: "chevron.down").appFont(9, .semibold).foregroundStyle(Theme.label(0.4))
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
@@ -200,7 +222,7 @@ struct SmartComposer: View {
 
     private var taskField: some View {
         TextField("Task", text: $task, axis: .vertical)
-            .font(.system(size: 18))
+            .appFont(18)
             .foregroundStyle(Theme.label)
             .lineLimit(1...5)
             .focused($focus, equals: .task)
@@ -215,7 +237,7 @@ struct SmartComposer: View {
     private var dateChip: some View {
         Button { showDatePicker = true } label: {
             chip(height: 22) {
-                Text(DateFormat.dotted(entryDate)).font(.system(size: 14)).foregroundStyle(Theme.label(0.7))
+                Text(DateFormat.dotted(entryDate)).appFont(14).foregroundStyle(Theme.label(0.7))
             }
         }
         .buttonStyle(.plain)
@@ -229,9 +251,9 @@ struct SmartComposer: View {
         Button { showHoldPicker = true } label: {
             chip(height: 22) {
                 HStack(spacing: 3) {
-                    Image(systemName: "calendar").font(.system(size: 10)).foregroundStyle(Theme.label(0.5))
+                    Image(systemName: "calendar").appFont(10).foregroundStyle(Theme.label(0.5))
                     Text(holdUntil.map { DateFormat.dotted($0) } ?? String(localized: "hold date"))
-                        .font(.system(size: 14))
+                        .appFont(14)
                         .foregroundStyle(holdUntil != nil ? Theme.label(0.8) : Theme.label(0.4))
                 }
             }
@@ -255,8 +277,14 @@ struct SmartComposer: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(canCommit ? .white : Theme.label(0.3))
                 .frame(width: 34, height: 34)
-                .background(canCommit ? Theme.blue : Theme.label(0.10), in: .circle)
-                .symbolEffect(.bounce, value: canCommit)
+                .background(canCommit ? app.accentColor : Theme.label(0.10), in: .circle)
+                // The trigger value is frozen under Reduce Motion, so the
+                // bounce simply never fires.
+                .symbolEffect(.bounce, value: reduceMotion ? false : canCommit)
+                // 44 pt hit region around the 34 pt visual circle.
+                .padding(5)
+                .contentShape(.circle)
+                .padding(-5)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Add line")
@@ -269,7 +297,7 @@ struct SmartComposer: View {
                                      @ViewBuilder _ content: () -> Content) -> some View {
         content()
             .padding(.horizontal, 7)
-            .frame(minWidth: 44, minHeight: height, maxHeight: height)
+            .frame(minWidth: 44, minHeight: height)
             .background(bg, in: .rect(cornerRadius: 6))
     }
 
@@ -279,6 +307,7 @@ struct SmartComposer: View {
         guard !primed else { return }
         primed = true
         currencyCode = app.baseCurrencyCode
+        entryDate = defaultDate
         if !initialText.isEmpty {
             let parsed = LineParser.parse(initialText, defaultCurrency: app.baseCurrencyCode)
             if let amt = parsed.amount { amountText = NSDecimalNumber(decimal: amt).stringValue }
@@ -309,20 +338,19 @@ struct SmartComposer: View {
         )
         entry.client = client
         context.insert(entry)
-        do {
-            try context.save()
-            app.queueSync(context: context)
+        if let error = app.save(context) {
+            // `AppModel.save` has already rolled the failed transaction back.
+            // Do not mutate the context again here, or this error path itself
+            // becomes a new pending delete.
+            saveError = error
+        } else {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-
             withAnimation(.snappy) {
                 amountText = ""; project = ""; task = ""
-                holdUntil = nil; status = .paid; entryDate = Date()
+                holdUntil = nil; status = .paid; entryDate = defaultDate
                 currencyCode = app.baseCurrencyCode
             }
             focus = .amount
-        } catch {
-            context.delete(entry)
-            saveError = error.localizedDescription
         }
     }
 
@@ -342,19 +370,18 @@ struct DatePickerPopover: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(15, .semibold)
                     .foregroundStyle(Theme.label(0.85))
                 Spacer()
                 Button("Done", action: onDone)
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(15, .semibold)
             }
             picker
                 .datePickerStyle(.graphical)
-                .tint(Theme.blue)
             if let clearTitle, let onClear {
                 Button(role: .destructive, action: onClear) {
                     Label(clearTitle, systemImage: "xmark.circle")
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, .medium)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

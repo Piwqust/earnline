@@ -8,22 +8,41 @@ struct LedgerView: View {
     @Query(sort: \Heading.sortIndex) private var headings: [Heading]
 
     @State private var composerClient: Client?
+    /// The month the open composer is anchored to — set from the section whose
+    /// "+ Line" was tapped, so the composer shows there (not always the current
+    /// month) and its new line defaults into that month.
+    @State private var composerMonth = DateFormat.monthStart(of: .now)
     @State private var showNewClient = false
     @State private var showPaste = false
-    @State private var showSearch = false
+    /// Drives the system `.searchable` field (`isPresented`). When true the
+    /// ledger filters in place and the bottom-toolbar actions yield to the
+    /// iOS 26 Liquid Glass search bar at the bottom.
+    @State private var isSearching = false
+    @State private var searchQuery = ""
     @State private var showInsights = false
     @State private var showPending = false
-    @State private var showSettings = false
     @State private var detailClient: Client?
     @State private var editingEntry: Entry?
     @State private var renamingHeading: Heading?
     @State private var showHeadingEditor = false
     @State private var headingTitle = ""
     @State private var pendingDelete: Entry?
+    @State private var pendingDeleteHeading: Heading?
+    @State private var confirmEditorHeadingDelete = false
     @State private var didRunDemo = false
     @State private var saveError: String?
+    @FocusState private var headingFieldFocused: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     // MARK: Derived
+
+    /// `composerClient` survives in view state while a sync pull can delete
+    /// the client underneath it; reading even `.id` on the invalidated model
+    /// traps, so every row-building read goes through this nil-ing accessor.
+    private var activeComposerClient: Client? {
+        guard let composerClient, !composerClient.isInvalidated else { return nil }
+        return composerClient
+    }
 
     private var months: [Date] { app.monthsWithData(clients) }
 
@@ -33,7 +52,7 @@ struct LedgerView: View {
 
     private func sectionClients(in month: Date) -> [Client] {
         var list = app.clientsWithEntries(clients, in: month)
-        if let cc = composerClient, isCurrentMonth(month), !list.contains(where: { $0.id == cc.id }) {
+        if let cc = activeComposerClient, isComposerMonth(month), !list.contains(where: { $0.id == cc.id }) {
             list.append(cc)
         }
         return list
@@ -46,6 +65,7 @@ struct LedgerView: View {
     }
 
     private var ledgerRows: [Row] {
+        if isSearching { return searchLedgerRows }
         var rows: [Row] = []
         for month in months {
             rows.append(.month(month))
@@ -54,7 +74,7 @@ struct LedgerView: View {
                 case .heading(let h): rows.append(.heading(h))
                 case .client(let c):
                     rows.append(.client(c, month))
-                    if isCurrentMonth(month), composerClient?.id == c.id {
+                    if isComposerMonth(month), activeComposerClient?.id == c.id {
                         rows.append(.composer(c))
                     }
                     for e in app.entries(of: c, in: month) { rows.append(.entry(e)) }
@@ -64,55 +84,83 @@ struct LedgerView: View {
         return rows
     }
 
+    /// Matching entries grouped under their month/client, newest months first
+    /// (same order as the idle ledger). Headings and the composer are omitted.
+    private var searchLedgerRows: [Row] {
+        guard !EntrySearch.normalized(searchQuery).isEmpty else { return [] }
+        var rows: [Row] = []
+        for month in months {
+            var monthRows: [Row] = []
+            for block in blocks(in: month) {
+                guard case .client(let c) = block, !c.isInvalidated else { continue }
+                let matches = app.entries(of: c, in: month).filter { entry in
+                    guard !entry.isInvalidated else { return false }
+                    return EntrySearch.matches(entry, query: searchQuery, clientName: c.name)
+                }
+                guard !matches.isEmpty else { continue }
+                monthRows.append(.client(c, month))
+                for e in matches { monthRows.append(.entry(e)) }
+            }
+            if !monthRows.isEmpty {
+                rows.append(.month(month))
+                rows.append(contentsOf: monthRows)
+            }
+        }
+        return rows
+    }
+
+    /// Live hits for the compact header total (canceled excluded).
+    private var searchHits: [Entry] {
+        guard isSearching, !EntrySearch.normalized(searchQuery).isEmpty else { return [] }
+        return clients.flatMap { client -> [Entry] in
+            guard !client.isInvalidated else { return [] }
+            return client.entries.filter { entry in
+                guard !entry.isInvalidated else { return false }
+                return EntrySearch.matches(entry, query: searchQuery, clientName: client.name)
+            }
+        }
+    }
+
+    private var searchEarnedTotal: Decimal {
+        searchHits
+            .filter { $0.status.isIncludedInEarnedTotals }
+            .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
+    }
+
     private var hasContent: Bool {
         !headings.isEmpty || clients.contains { !$0.entries.isEmpty }
     }
 
-    private var displayedTotal: Decimal { app.monthTotal(clients, in: app.displayedMonth) }
+    private var hasSearchQuery: Bool {
+        !EntrySearch.normalized(searchQuery).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottomTrailing) {
-                Theme.background.ignoresSafeArea()
-                scrollContent
-                fab
-            }
-            .overlay(alignment: .bottomLeading) { navBar }
-            .navigationDestination(item: $detailClient) { ClientDetailView(client: $0) }
-            .safeAreaInset(edge: .top) { header }
-            .toolbar(.hidden, for: .navigationBar)
-            .onAppear(perform: runDemoIfNeeded)
+            ledgerNavigationContent
         }
-        .sheet(isPresented: $showSettings) { SettingsView() }
+        // Settings is presented by `WorkspaceContainerHost` (bound to
+        // `app.showSettings`) so it survives the `.id` reset on a workspace
+        // switch; every other sheet is scoped to this ledger's lifetime.
         .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
         .sheet(isPresented: $showNewClient) {
             NewClientSheet(existingClients: clients) { newClient in
-                openComposer(for: newClient)
+                openComposer(for: newClient, month: app.displayedMonth)
             }
         }
         .sheet(isPresented: $showPaste) {
             PasteLinesSheet(clients: clients, defaultClient: mostRecentClient)
         }
-        .sheet(isPresented: $showSearch) { SearchView() }
         .sheet(isPresented: $showInsights) { InsightsView() }
         .sheet(isPresented: $showPending) { PendingView() }
-        .alert("Heading", isPresented: Binding(
+        .sheet(isPresented: Binding(
             get: { showHeadingEditor },
             set: {
                 showHeadingEditor = $0
                 if !$0 { renamingHeading = nil }
             }
         )) {
-            TextField("Title", text: $headingTitle)
-            Button("Save") { saveHeading() }
-                .disabled(Validation.trimmed(headingTitle, max: Limits.maxHeadingLength).isEmpty)
-            if renamingHeading != nil {
-                Button("Delete", role: .destructive) { deleteRenamingHeading() }
-            }
-            Button("Cancel", role: .cancel) {
-                renamingHeading = nil
-                showHeadingEditor = false
-            }
+            headingEditorSheet
         }
         .alert(
             "Delete income line?",
@@ -127,30 +175,83 @@ struct LedgerView: View {
         } message: { entry in
             Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)")
         }
-        .alert("Could not save changes", isPresented: Binding(
-            get: { saveError != nil },
-            set: { if !$0 { saveError = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveError = nil }
-        } message: {
-            Text(saveError ?? String(localized: "Try again."))
+        .alert(
+            "Delete heading?",
+            isPresented: Binding(get: { pendingDeleteHeading != nil },
+                                 set: { if !$0 { pendingDeleteHeading = nil } }),
+            presenting: pendingDeleteHeading
+        ) { heading in
+            Button("Delete", role: .destructive) {
+                delete(heading)
+                pendingDeleteHeading = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteHeading = nil }
+        } message: { heading in
+            Text(heading.title.isEmpty ? String(localized: "Untitled") : heading.title)
         }
+        .saveErrorAlert($saveError)
+    }
+
+    /// The inner navigation surface is kept separate from the sheet tree so
+    /// SwiftUI can type-check toolbar and search modifiers independently.
+    private var ledgerNavigationContent: some View {
+        ledgerCore
+            .navigationDestination(item: $detailClient) { ClientDetailView(client: $0) }
+            .toolbar(.hidden, for: .navigationBar)
+            // Keep the action controls in the system bottom bar. A `Menu`
+            // already owns a native button; adding another glass effect to its
+            // label created the previous button-inside-a-button look.
+            .toolbar { bottomToolbar }
+            // System search owns its focus, cancel affordance, keyboard, and
+            // Liquid Glass presentation. There is no custom text field layered
+            // on top of the toolbar anymore.
+            .searchable(text: $searchQuery,
+                        isPresented: $isSearching,
+                        placement: .automatic,
+                        prompt: "Search income")
+            .searchToolbarBehavior(.minimize)
+            .onChange(of: isSearching) { _, searching in
+                if searching { composerClient = nil }
+                else { searchQuery = "" }
+            }
+            .onAppear(perform: runDemoIfNeeded)
+    }
+
+    /// Ledger list + undo toast. Bottom chrome lives in the system toolbar
+    /// (see `body`) so search, Add, and More share one Liquid Glass surface.
+    private var ledgerCore: some View {
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            scrollContent
+        }
+        .undoToastHost()
     }
 
     // MARK: Header
 
+    // Kept in its own view so a scroll-driven `displayedMonth` change re-renders
+    // only the summary cards. Reading `displayedMonth` (or the totals derived
+    // from it) directly here would register the whole `LedgerView.body` as an
+    // observer, rebuilding `ledgerRows` — every month, client, and entry — each
+    // time the top month ticks over. That rebuild was the scroll hitch.
     private var header: some View {
-        SummaryPill(month: app.displayedMonth, total: displayedTotal)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-            .animation(.snappy, value: app.displayedMonth)
+        LedgerSummaryHeader(
+            clients: clients,
+            isSearching: isSearching,
+            searchHitCount: searchHits.count,
+            searchEarnedTotal: searchEarnedTotal,
+            hasSearchQuery: hasSearchQuery,
+            onOpenStats: { showInsights = true }
+        )
     }
 
     // MARK: Scroll content (List → native swipe actions)
 
     private var scrollContent: some View {
         List {
-            if !hasContent {
+            if isSearching {
+                searchListContent
+            } else if !hasContent {
                 EmptyStateView(onStart: startFirstLine)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -164,14 +265,27 @@ struct LedgerView: View {
                 }
             }
             Color.clear
-                .frame(height: 80)
+                .frame(height: 24)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 1)
+        // Pull-to-refresh mirrors the standard syncable-list affordance; a
+        // no-op while Supabase isn't configured. Disabled in search mode so
+        // a pull doesn't fight the keyboard.
+        .refreshable {
+            guard !isSearching, app.isSupabaseConfigured else { return }
+            await app.syncNow(context: context)
+        }
         .coordinateSpace(name: "ledger")
+        // The floating summary cards sit in a pinned top inset; the native soft
+        // scroll edge effect frosts rows as they slide up behind them — Figma's
+        // "Scroll Edge Effect - Soft" — progressively, and stays put at rest.
+        // (`safeAreaInset`, not `safeAreaBar`: the bar variant re-measured its
+        // content width on first render and let the cards drift off-edge.)
+        .safeAreaInset(edge: .top) { header }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollDismissesKeyboard(.interactively)
         .onPreferenceChange(MonthAnchorKey.self) { anchors in
@@ -180,7 +294,45 @@ struct LedgerView: View {
     }
 
     @ViewBuilder
+    private var searchListContent: some View {
+        if !hasSearchQuery {
+            ContentUnavailableView(
+                "Search income",
+                systemImage: "magnifyingglass",
+                description: Text("Find lines by client, project, task, or amount.")
+            )
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        } else if searchHits.isEmpty {
+            ContentUnavailableView.search(text: searchQuery)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        } else {
+            ForEach(ledgerRows) { row in
+                rowView(row)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(insets(for: row))
+            }
+        }
+    }
+
+    @ViewBuilder
     private func rowView(_ row: Row) -> some View {
+        // A sync pull (remote tombstone, store reset) can delete a model after
+        // `ledgerRows` was built but while its row is still in the List; one
+        // more render of that row would trap reading the invalidated model
+        // (the switch-workspaces-twice crash). Skip it — the next @Query
+        // update removes the row for real.
+        if row.isInvalidated {
+            EmptyView()
+        } else {
+            liveRowView(row)
+        }
+    }
+
+    @ViewBuilder
+    private func liveRowView(_ row: Row) -> some View {
         // Every row reports its month, not just the dividers: List recycles
         // offscreen rows, so a long month whose divider has scrolled away would
         // otherwise stop feeding the summary pill and leave it stale.
@@ -204,23 +356,42 @@ struct LedgerView: View {
     private func clientHeaderRow(_ client: Client, month: Date) -> some View {
         ClientChip(
             client: client,
-            total: app.total(of: client, in: month),
+            total: isSearching
+                ? app.entries(of: client, in: month)
+                    .filter { EntrySearch.matches($0, query: searchQuery, clientName: client.name) }
+                    .filter { $0.status.isIncludedInEarnedTotals }
+                    .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
+                : app.total(of: client, in: month),
+            isComposing: !isSearching && activeComposerClient?.id == client.id,
+            showsAdd: !isSearching,
             onOpen: { detailClient = client },
-            onAdd: { toggleComposer(client) }
+            onAdd: { toggleComposer(client, month: month) }
         )
     }
 
     private func composerRow(_ client: Client) -> some View {
-        SmartComposer(client: client)
+        SmartComposer(client: client, month: composerMonth)
             .transition(.opacity)
     }
 
     private func monthRow(_ month: Date) -> some View {
         MonthDivider(
             title: DateFormat.month(month),
-            total: app.monthTotal(clients, in: month)
+            total: isSearching
+                ? searchMonthTotal(month)
+                : app.monthTotal(clients, in: month)
         )
         .background(monthAnchorReader(month))
+    }
+
+    private func searchMonthTotal(_ month: Date) -> Decimal {
+        clients.reduce(Decimal.zero) { sum, client in
+            guard !client.isInvalidated else { return sum }
+            return sum + app.entries(of: client, in: month)
+                .filter { EntrySearch.matches($0, query: searchQuery, clientName: client.name) }
+                .filter { $0.status.isIncludedInEarnedTotals }
+                .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
+        }
     }
 
     private func monthAnchorReader(_ month: Date) -> some View {
@@ -240,16 +411,20 @@ struct LedgerView: View {
             onDelete: { pendingDelete = entry }
         )
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            // The app-wide `.tint(accentColor)` cascades into swipe actions, so
+            // the destructive button has to reclaim the system red explicitly —
+            // otherwise Delete renders in the accent color like Edit.
             Button(role: .destructive) { pendingDelete = entry } label: { Label("Delete", systemImage: "trash") }
+                .tint(Theme.statusCanceled)
             Button { editingEntry = entry } label: { Label("Edit", systemImage: "pencil") }
-                .tint(Theme.blue)
+                .tint(app.accentColor)
         }
     }
 
     private func headingRow(_ h: Heading) -> some View {
         HStack(spacing: 8) {
             Text(h.title.isEmpty ? String(localized: "Untitled") : h.title)
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, .semibold)
                 .foregroundStyle(Theme.label(0.85))
                 .lineLimit(1)
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -261,7 +436,12 @@ struct LedgerView: View {
             showHeadingEditor = true
         }
         .contextMenu {
-            Button(role: .destructive) { delete(h) } label: { Label("Delete", systemImage: "trash") }
+            Button { moveHeading(h, by: -1) } label: { Label("Move Up", systemImage: "arrow.up") }
+                .disabled(!canMoveHeading(h, by: -1))
+            Button { moveHeading(h, by: 1) } label: { Label("Move Down", systemImage: "arrow.down") }
+                .disabled(!canMoveHeading(h, by: 1))
+            Divider()
+            Button(role: .destructive) { pendingDeleteHeading = h } label: { Label("Delete", systemImage: "trash") }
         }
     }
 
@@ -275,84 +455,141 @@ struct LedgerView: View {
         }
     }
 
-    // MARK: FAB (creation only — navigation lives in `navBar`)
+    // MARK: Bottom toolbar
 
-    private var fab: some View {
+    /// The system owns the bar's glass and the hit regions. `Menu` labels stay
+    /// as plain symbols here; applying a second glass effect around the label
+    /// makes a system control look like a decorative image nested in a button.
+    @ToolbarContentBuilder
+    private var bottomToolbar: some ToolbarContent {
+        if !isSearching {
+            ToolbarItemGroup(placement: .bottomBar) {
+                moreMenu
+                Spacer()
+                addMenu
+            }
+        }
+    }
+
+    /// Trailing "+" — create actions only.
+    private var addMenu: some View {
         Menu {
             if clients.isEmpty {
-                Button { showNewClient = true } label: { Label("Income", systemImage: "dollarsign") }
+                Button { showNewClient = true } label: { MenuRowLabel("Income", glyph: "dollarsign") }
             } else {
                 Menu {
                     ForEach(clients) { client in
-                        Button { openComposer(for: client) } label: { Text(client.name) }
+                        Button { openComposer(for: client, month: app.displayedMonth) } label: { Text(client.name) }
                     }
                 } label: {
-                    Label("Income", systemImage: "dollarsign")
+                    MenuRowLabel("Income", glyph: "dollarsign")
                 }
             }
-            Button { showNewClient = true } label: { Label("Client", systemImage: "person.crop.circle.badge.plus") }
-            Button { startNewHeading() } label: { Label("Heading", systemImage: "text.alignleft") }
+            Button { showNewClient = true } label: { MenuRowLabel("Client", glyph: "person.crop.circle.badge.plus") }
+            Button { startNewHeading() } label: { MenuRowLabel("Heading", glyph: "text.alignleft") }
             if !clients.isEmpty {
-                Button { showPaste = true } label: { Label("Paste lines", systemImage: "doc.on.clipboard") }
+                Button { showPaste = true } label: { MenuRowLabel("Paste lines", glyph: "doc.on.clipboard") }
             }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(Theme.label)
-                .frame(width: 56, height: 56)
-                .glassEffect(.regular.interactive(), in: .circle)
+            toolbarMenuSymbol("plus")
         }
+        .tint(.primary)
         .accessibilityLabel("Add")
         .accessibilityIdentifier("ledger.fab")
-        .padding(.trailing, 20)
-        .padding(.bottom, 28)
     }
 
-    // MARK: Navigation bar (bottom-leading glass cluster)
-
-    private var navBar: some View {
-        HStack(spacing: 0) {
-            navButton("magnifyingglass", label: "Search") { showSearch = true }
-            navButton("chart.bar", label: "Insights") { showInsights = true }
-            pendingNavButton
-            navButton("gearshape", label: "Settings") { showSettings = true }
+    /// Leading "…" — navigation, Search, and Settings live behind one clear
+    /// overflow menu so the resting toolbar remains a two-action surface.
+    private var moreMenu: some View {
+        Menu {
+            Button { isSearching = true } label: { MenuRowLabel("Search", glyph: "magnifyingglass") }
+            Button { showInsights = true } label: { MenuRowLabel("Insights", glyph: "chart.bar") }
+            Button { showPending = true } label: { MenuRowLabel(verbatim: pendingLabel, glyph: "clock") }
+            Button { app.showSettings = true } label: { MenuRowLabel("Settings", glyph: "gearshape") }
+        } label: {
+            toolbarMenuSymbol("ellipsis")
         }
-        .padding(.horizontal, 6)
-        .frame(height: 52)
-        .glassEffect(.regular, in: .capsule)
-        .padding(.leading, 20)
-        .padding(.bottom, 30)
+        .tint(.primary)
+        .accessibilityLabel("More")
+        .accessibilityValue(pendingLabel)
+        .accessibilityIdentifier("ledger.menu")
     }
 
-    private func navButton(_ systemImage: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(Theme.label(0.8))
-                .frame(width: 42, height: 44)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(label))
+    private func toolbarMenuSymbol(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 17, weight: .semibold))
     }
 
-    private var pendingNavButton: some View {
+    /// "Pending" with the outstanding count folded into the title, since a
+    /// plain system menu row can't carry a separate badge overlay.
+    private var pendingLabel: String {
         let count = app.pendingEntries(clients).count
-        return navButton("clock", label: "Pending") { showPending = true }
-            .overlay(alignment: .topTrailing) {
-                if count > 0 {
-                    Text("\(min(count, 99))")
-                        .font(.system(size: 10, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 15, minHeight: 15)
-                        .background(Theme.statusProgress, in: .capsule)
-                        .offset(x: 4, y: 3)
-                        .allowsHitTesting(false)
+        return count > 0 ? String(localized: "Pending (\(count))") : String(localized: "Pending")
+    }
+
+    // MARK: Heading editor (compact card sheet, replaces the old text alert)
+
+    /// Compact form sheet on the system header template: an inline navigation
+    /// title with the system `Button(role: .close)`, the field in a white
+    /// card, one pill CTA. Deleting an existing heading is the red trash in
+    /// the leading toolbar slot.
+    private var headingEditorSheet: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                ChromeCard {
+                    ChromeRow(icon: "text.alignleft") {
+                        TextField("Title", text: $headingTitle)
+                            .focused($headingFieldFocused)
+                            .submitLabel(.done)
+                            .onSubmit(saveHeading)
+                            .appFont(17)
+                    }
+                }
+
+                PillCTA("Save",
+                        isEnabled: !Validation.trimmed(headingTitle, max: Limits.maxHeadingLength).isEmpty,
+                        action: saveHeading)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Theme.background)
+            .navigationTitle("Heading")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if renamingHeading != nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { confirmEditorHeadingDelete = true } label: {
+                            Image(systemName: "trash")
+                        }
+                        .tint(Theme.statusCanceled)
+                        .accessibilityLabel("Delete")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .close) { showHeadingEditor = false }
+                        .tint(.primary)
                 }
             }
-            .accessibilityValue(count > 0 ? Text("\(count)") : Text(""))
+            // Same confirm-before-destroy contract as entry and client deletes.
+            .alert("Delete heading?", isPresented: $confirmEditorHeadingDelete) {
+                Button("Delete", role: .destructive, action: deleteRenamingHeading)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                if let heading = renamingHeading {
+                    Text(heading.title.isEmpty ? String(localized: "Untitled") : heading.title)
+                }
+            }
+        }
+        // The compact card height can't hold accessibility-size text.
+        .presentationDetents(typeSize.isAccessibilitySize ? [.medium] : [.height(240)])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.background)
+        .task {
+            // Focus once the sheet has settled.
+            try? await Task.sleep(for: .milliseconds(400))
+            headingFieldFocused = true
+        }
     }
 
     // MARK: Entry actions
@@ -365,28 +602,36 @@ struct LedgerView: View {
     }
 
     private func delete(_ e: Entry) {
-        SyncDeleteQueue.enqueue(.entry, id: e.id, in: context)
-        withAnimation(.snappy) { context.delete(e) }
-        if saveChanges() {
+        saveError = app.delete(e, context: context)
+        if saveError == nil {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
     }
 
     // MARK: Add income
 
-    private func toggleComposer(_ client: Client) {
+    private func toggleComposer(_ client: Client, month: Date) {
+        let m = DateFormat.monthStart(of: month)
         withAnimation(.smooth(duration: 0.3)) {
-            composerClient = (composerClient?.id == client.id) ? nil : client
+            if activeComposerClient?.id == client.id, isComposerMonth(m) {
+                composerClient = nil
+            } else {
+                composerClient = client
+                composerMonth = m
+            }
         }
     }
 
-    private func openComposer(for client: Client) {
-        withAnimation(.smooth(duration: 0.3)) { composerClient = client }
+    private func openComposer(for client: Client, month: Date) {
+        withAnimation(.smooth(duration: 0.3)) {
+            composerClient = client
+            composerMonth = DateFormat.monthStart(of: month)
+        }
     }
 
     private func newProject() {
         if clients.isEmpty { showNewClient = true; return }
-        if let c = mostRecentClient { openComposer(for: c) }
+        if let c = mostRecentClient { openComposer(for: c, month: app.displayedMonth) }
     }
 
     private func startFirstLine() {
@@ -397,11 +642,27 @@ struct LedgerView: View {
         clients.max { $0.createdAt < $1.createdAt } ?? clients.first
     }
 
+    /// Launch-argument hooks for UI automation: each opens one surface
+    /// directly so visual checks don't depend on scripted taps.
     private func runDemoIfNeeded() {
         guard !didRunDemo else { return }
-        guard ProcessInfo.processInfo.arguments.contains("-demoComposer") else { return }
-        didRunDemo = true
-        composerClient = clients.first
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-demoComposer") {
+            didRunDemo = true
+            composerClient = clients.first
+        } else if args.contains("-demoSettings") {
+            didRunDemo = true
+            app.showSettings = true
+        } else if args.contains("-demoHeadingEditor") {
+            didRunDemo = true
+            showHeadingEditor = true
+        } else if args.contains("-demoEdit") {
+            didRunDemo = true
+            editingEntry = clients.first(where: { !$0.entries.isEmpty })?.entries.first
+        } else if args.contains("-demoSearch") {
+            didRunDemo = true
+            isSearching = true
+        }
     }
 
     // MARK: Headings
@@ -436,25 +697,50 @@ struct LedgerView: View {
     }
 
     private func delete(_ h: Heading) {
+        let snapshot = UndoableDelete.heading(HeadingSnapshot(h))
         SyncDeleteQueue.enqueue(.heading, id: h.id, in: context)
         withAnimation(.snappy) { context.delete(h) }
-        _ = saveChanges()
+        if saveChanges() { app.stageUndo(snapshot) }
     }
 
     private func nextHeadingSortIndex(in month: Date) -> Int {
         (blocks(in: month).map(\.sortIndex).max() ?? -1) + 1
     }
 
+    /// Whether the heading has a neighbouring block to trade places with in
+    /// the given direction (-1 up, +1 down).
+    private func canMoveHeading(_ h: Heading, by offset: Int) -> Bool {
+        let ordered = blocks(in: DateFormat.monthStart(of: h.date))
+        guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return false }
+        return ordered.indices.contains(idx + offset)
+    }
+
+    /// Reorders a heading among its month's blocks by swapping sort indices with
+    /// the adjacent block. Only the two swapped blocks are touched, so the rest
+    /// of the ledger's order is left intact.
+    private func moveHeading(_ h: Heading, by offset: Int) {
+        let ordered = blocks(in: DateFormat.monthStart(of: h.date))
+        guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return }
+        let target = idx + offset
+        guard ordered.indices.contains(target) else { return }
+
+        let indices = ordered.map(\.sortIndex)
+        var reordered = ordered
+        reordered.swapAt(idx, target)
+        withAnimation(.snappy) {
+            for (position, block) in reordered.enumerated() where block.sortIndex != indices[position] {
+                block.applySortIndex(indices[position])
+            }
+        }
+        if saveChanges() {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
     @discardableResult
     private func saveChanges() -> Bool {
-        do {
-            try context.save()
-            app.queueSync(context: context)
-            return true
-        } catch {
-            saveError = error.localizedDescription
-            return false
-        }
+        saveError = app.save(context)
+        return saveError == nil
     }
 
     // MARK: Month tracking
@@ -468,8 +754,8 @@ struct LedgerView: View {
         }
     }
 
-    private func isCurrentMonth(_ month: Date) -> Bool {
-        Calendar.current.isDate(month, equalTo: .now, toGranularity: .month)
+    private func isComposerMonth(_ month: Date) -> Bool {
+        Calendar.current.isDate(month, equalTo: composerMonth, toGranularity: .month)
     }
 }
 
@@ -489,6 +775,19 @@ private enum Row: Identifiable {
         case .client(let c, let d): return "c-\(c.id)-\(d.timeIntervalSinceReferenceDate)"
         case .composer(let c): return "composer-\(c.id)"
         case .entry(let e): return "e-\(e.id)"
+        }
+    }
+
+    /// Whether the wrapped model was deleted out from under the row (see
+    /// `rowView`). Only registration metadata is read, which stays safe on an
+    /// invalidated model.
+    var isInvalidated: Bool {
+        switch self {
+        case .month: return false
+        case .heading(let h): return h.isInvalidated
+        case .client(let c, _): return c.isInvalidated
+        case .composer(let c): return c.isInvalidated
+        case .entry(let e): return e.isInvalidated
         }
     }
 }
@@ -518,6 +817,14 @@ private enum Block: Identifiable {
         }
     }
 
+    /// Writes a new sort index onto the wrapped model and flags it for sync.
+    func applySortIndex(_ index: Int) {
+        switch self {
+        case .heading(let h): h.sortIndex = index; h.markDirty()
+        case .client(let c): c.sortIndex = index; c.markDirty()
+        }
+    }
+
     func isOrderedBefore(_ other: Block) -> Bool {
         if sortIndex == other.sortIndex {
             return createdAt < other.createdAt
@@ -535,5 +842,90 @@ struct MonthAnchorKey: PreferenceKey {
     static let defaultValue: [MonthAnchor] = []
     static func reduce(value: inout [MonthAnchor], nextValue: () -> [MonthAnchor]) {
         value.append(contentsOf: nextValue())
+    }
+}
+
+// MARK: - Summary header
+
+/// The floating summary cards, split out from `LedgerView` so that scrolling —
+/// which retitles the header as the top month changes — only invalidates this
+/// small view. It owns the `displayedMonth` read and derives the earned total
+/// and six-month trend from it, keeping that dependency off the row list.
+///
+/// In search mode the full two-card header collapses to a slim glass bar so
+/// the top chrome stays visible without covering results.
+private struct LedgerSummaryHeader: View {
+    @Environment(AppModel.self) private var app
+    let clients: [Client]
+    var isSearching: Bool = false
+    var searchHitCount: Int = 0
+    var searchEarnedTotal: Decimal = 0
+    var hasSearchQuery: Bool = false
+    let onOpenStats: () -> Void
+
+    private var displayedTotal: Decimal {
+        app.monthTotal(clients, in: app.displayedMonth)
+    }
+
+    /// Earned totals for the six months ending at the displayed month, oldest
+    /// first — feeds the Stats card's sparkline and its growth figure.
+    private var displayedTrend: [Decimal] {
+        let calendar = Calendar.current
+        return (0..<6).reversed().compactMap { offset in
+            calendar.date(byAdding: .month, value: -offset, to: app.displayedMonth)
+                .map { app.monthTotal(clients, in: $0) }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if isSearching {
+                compactSearchHeader
+            } else {
+                SummaryCards(month: app.displayedMonth,
+                             total: displayedTotal,
+                             trend: displayedTrend,
+                             onOpenStats: onOpenStats)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .animation(.snappy, value: app.displayedMonth)
+        .animation(.snappy, value: isSearching)
+    }
+
+    /// Slim single glass bar: month + earned on the left; hit count / earned
+    /// total of matches on the right once the query is non-empty.
+    private var compactSearchHeader: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(DateFormat.month(app.displayedMonth))
+                    .appFont(13, .medium)
+                    .foregroundStyle(Theme.label(0.55))
+                Text(app.primaryString(displayedTotal))
+                    .appFont(17, .semibold, design: .rounded)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.label)
+                    .contentTransition(.numericText())
+            }
+            Spacer(minLength: 8)
+            if hasSearchQuery {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("^[\(searchHitCount) result](inflect: true)")
+                        .appFont(13, .medium)
+                        .foregroundStyle(Theme.label(0.55))
+                    Text(app.primaryString(searchEarnedTotal))
+                        .appFont(17, .semibold, design: .rounded)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.label)
+                        .contentTransition(.numericText())
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
+        .accessibilityElement(children: .combine)
     }
 }

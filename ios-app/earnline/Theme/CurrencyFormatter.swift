@@ -9,7 +9,10 @@ enum CurrencyFormatter {
 
     private static func formatter(for code: String) -> NumberFormatter {
         let f = NumberFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
+        // Follow the user's region for the decimal separator ("3 222,50" in
+        // Berlin, "3 222.50" in New York); the thousands grouping stays the
+        // app's no-break space idiom from the design.
+        f.locale = .autoupdatingCurrent
         f.numberStyle = .decimal
         f.groupingSeparator = "\u{00A0}" // no-break space (consistent, visible)
         f.usesGroupingSeparator = true
@@ -44,4 +47,17 @@ enum CurrencyFormatter {
     }
 
     static func symbol(for code: String) -> String { symbols[code] ?? code }
+
+    /// SF Symbol for a currency, used as the leading glyph in menu rows —
+    /// the iOS 26 menu idiom puts an icon on every row's leading edge.
+    static func symbolName(for code: String) -> String {
+        switch code {
+        case "USD": "dollarsign"
+        case "EUR": "eurosign"
+        case "GBP": "sterlingsign"
+        case "RUB": "rublesign"
+        case "UAH": "hryvniasign"
+        default: "coloncurrencysign"
+        }
+    }
 }

@@ -42,7 +42,12 @@ export function parseDecimalString(raw: string): number | null {
   const hasComma = s.includes(",");
   const hasDot = s.includes(".");
   if (hasComma && hasDot) {
-    s = s.replace(/,/g, ""); // comma = thousands
+    // Both separators present: the last-occurring one is the decimal point
+    // (works for US "1,000.50" and EU "1.000,50"); strip the other as grouping.
+    const decimalSep = s.lastIndexOf(",") > s.lastIndexOf(".") ? "," : ".";
+    const groupingSep = decimalSep === "," ? "." : ",";
+    s = s.split(groupingSep).join("");
+    if (decimalSep === ",") s = s.replace(",", ".");
   } else if (hasComma) {
     const parts = s.split(",");
     if (parts.length === 2 && parts[1].length <= 2) {

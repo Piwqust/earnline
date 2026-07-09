@@ -1,0 +1,381 @@
+import Foundation
+import SwiftData
+import Supabase
+import Testing
+@testable import earnline
+
+/// End-to-end `SyncCoordinator.sync` passes against a canned PostgREST
+/// transport: a `URLProtocol` mock serves each table's rows and records every
+/// request, locking in the push/pull/tombstone ordering without a live server.
+///
+/// Serialized because the mock transport is process-global (URLProtocol has no
+/// per-instance routing).
+@MainActor
+@Suite(.serialized)
+struct SyncCoordinatorTests {
+    // MARK: Mock transport
+
+    /// Routes PostgREST requests by "METHOD table" and records them in order.
+    final class MockTransport: URLProtocol {
+        struct Recorded: Sendable {
+            let method: String
+            let table: String
+            let query: String
+            let body: String
+        }
+
+        private static let lock = NSLock()
+        nonisolated(unsafe) private static var responses: [String: Data] = [:]
+        nonisolated(unsafe) private static var recordedRequests: [Recorded] = []
+
+        static func reset() {
+            lock.lock(); defer { lock.unlock() }
+            responses = [:]
+            recordedRequests = []
+        }
+
+        static func respond(_ method: String, _ table: String, json: String) {
+            lock.lock(); defer { lock.unlock() }
+            responses["\(method) \(table)"] = Data(json.utf8)
+        }
+
+        static var recorded: [Recorded] {
+            lock.lock(); defer { lock.unlock() }
+            return recordedRequests
+        }
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func stopLoading() {}
+
+        override func startLoading() {
+            let method = request.httpMethod ?? "GET"
+            let table = request.url?.lastPathComponent ?? ""
+            let record = Recorded(method: method,
+                                  table: table,
+                                  query: request.url?.query ?? "",
+                                  body: Self.bodyString(of: request))
+            let data: Data
+            Self.lock.lock()
+            Self.recordedRequests.append(record)
+            data = Self.responses["\(method) \(table)"] ?? Data("[]".utf8)
+            Self.lock.unlock()
+
+            let response = HTTPURLResponse(url: request.url!,
+                                           statusCode: 200,
+                                           httpVersion: nil,
+                                           headerFields: ["Content-Type": "application/json"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        /// URLSession moves `httpBody` into a stream before the protocol sees
+        /// it, so read whichever is populated.
+        private static func bodyString(of request: URLRequest) -> String {
+            if let body = request.httpBody { return String(decoding: body, as: UTF8.self) }
+            guard let stream = request.httpBodyStream else { return "" }
+            stream.open(); defer { stream.close() }
+            var data = Data()
+            let bufferSize = 4096
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { buffer.deallocate() }
+            while stream.hasBytesAvailable {
+                let read = stream.read(buffer, maxLength: bufferSize)
+                guard read > 0 else { break }
+                data.append(buffer, count: read)
+            }
+            return String(decoding: data, as: UTF8.self)
+        }
+    }
+
+    // MARK: Fixtures
+
+    private func makeContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: Client.self, Entry.self, Heading.self, SyncTombstone.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+    }
+
+    private func makeClient() -> SupabaseClient {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockTransport.self]
+        return SupabaseClient(
+            supabaseURL: URL(string: "https://mock.supabase.co")!,
+            supabaseKey: "test-key",
+            options: SupabaseClientOptions(
+                auth: .init(autoRefreshToken: false),
+                global: .init(session: URLSession(configuration: configuration))
+            )
+        )
+    }
+
+    private let workspace = "test-workspace"
+
+    private func timestamp(_ value: String) -> Date {
+        SyncDateCodec.parseTimestamp(value)!
+    }
+
+    // MARK: Pull
+
+    @Test func pullInsertsRemoteRowsAndAdvancesCursor() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let clientID = UUID()
+        let entryID = UUID()
+        MockTransport.respond("GET", "earnline_clients", json: """
+        [{"id":"\(clientID.uuidString)","workspace_id":"\(workspace)","name":"Acme",
+          "color_hex":"#0088FF","sort_index":1,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-01T10:00:00.000Z"}]
+        """)
+        MockTransport.respond("GET", "earnline_entries", json: """
+        [{"id":"\(entryID.uuidString)","workspace_id":"\(workspace)",
+          "client_id":"\(clientID.uuidString)","amount":"99.50","currency_code":"USD",
+          "project":"Site","task":"Landing page","date":"2026-06-15","hold_until":null,
+          "status":"paid","sort_index":0,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-02T10:00:00.000Z"}]
+        """)
+
+        let cursor = try await SyncCoordinator.sync(context: context,
+                                                    client: makeClient(),
+                                                    workspaceID: workspace)
+
+        let client = try #require(try context.fetch(FetchDescriptor<Client>()).first)
+        #expect(client.id == clientID)
+        #expect(client.name == "Acme")
+        #expect(client.syncState == .synced)
+
+        let entry = try #require(try context.fetch(FetchDescriptor<Entry>()).first)
+        #expect(entry.id == entryID)
+        #expect(entry.amount == Decimal(string: "99.50"))
+        #expect(entry.client?.id == clientID)
+        #expect(entry.status == .paid)
+        #expect(entry.syncState == .synced)
+        let day = Calendar.current.dateComponents([.year, .month, .day], from: entry.date)
+        #expect(day.year == 2026 && day.month == 6 && day.day == 15)
+
+        // Cursor is the newest observed server stamp, not the local clock.
+        #expect(cursor.rowUpdatedAt == timestamp("2026-07-02T10:00:00.000Z"))
+    }
+
+    @Test func pulledEntryWithoutItsClientIsSkipped() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        MockTransport.respond("GET", "earnline_entries", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)",
+          "client_id":"\(UUID().uuidString)","amount":"10.00","currency_code":"USD",
+          "project":null,"task":"Orphan","date":"2026-06-15","hold_until":null,
+          "status":"paid","sort_index":0,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-01T10:00:00.000Z"}]
+        """)
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace)
+        #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
+    }
+
+    @Test func malformedRemoteRowsAreSkippedNotDefaulted() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let goodID = UUID()
+        MockTransport.respond("GET", "earnline_clients", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)","name":"Broken",
+          "color_hex":"#000000","sort_index":0,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"not-a-date"},
+         {"id":"\(goodID.uuidString)","workspace_id":"\(workspace)","name":"Valid",
+          "color_hex":"#0088FF","sort_index":1,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-03T08:00:00.000Z"}]
+        """)
+
+        let cursor = try await SyncCoordinator.sync(context: context,
+                                                    client: makeClient(),
+                                                    workspaceID: workspace)
+
+        let clients = try context.fetch(FetchDescriptor<Client>())
+        #expect(clients.count == 1)
+        #expect(clients.first?.name == "Valid")
+        // The malformed stamp must not poison the cursor either.
+        #expect(cursor.rowUpdatedAt == timestamp("2026-07-03T08:00:00.000Z"))
+    }
+
+    // MARK: Push
+
+    @Test func pushUpsertsDirtyRowsAndMarksThemSynced() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let client = Client(name: "Acme")
+        let entry = Entry(amount: 240, task: "2 screens")
+        entry.client = client
+        context.insert(client)
+        context.insert(entry)
+        try context.save()
+
+        let cursor = try await SyncCoordinator.sync(context: context,
+                                                    client: makeClient(),
+                                                    workspaceID: workspace)
+
+        let posts = MockTransport.recorded.filter { $0.method == "POST" }
+        #expect(posts.contains { $0.table == "earnline_clients" && $0.body.contains("Acme") })
+        #expect(posts.contains { $0.table == "earnline_entries" && $0.body.contains("2 screens") })
+
+        #expect(try context.fetch(FetchDescriptor<Client>()).first?.syncState == .synced)
+        #expect(try context.fetch(FetchDescriptor<Entry>()).first?.syncState == .synced)
+        // Nothing was pulled, so there is no observed server stamp to advance to.
+        #expect(cursor.rowUpdatedAt == nil)
+    }
+
+    @Test func localTombstoneIsPushedThenCleared() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let deletedEntryID = UUID()
+        SyncDeleteQueue.enqueue(.entry, id: deletedEntryID, in: context)
+        try context.save()
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace)
+
+        let recorded = MockTransport.recorded
+        #expect(recorded.contains {
+            $0.method == "POST" && $0.table == "earnline_tombstones"
+                && $0.body.lowercased().contains(deletedEntryID.uuidString.lowercased())
+        })
+        #expect(recorded.contains {
+            $0.method == "DELETE" && $0.table == "earnline_entries"
+                && $0.query.contains("workspace_id")
+        })
+        // Delivered tombstones don't linger locally.
+        #expect(try context.fetch(FetchDescriptor<SyncTombstone>()).isEmpty)
+    }
+
+    // MARK: Ordering
+
+    @Test func remoteClientTombstoneCascadesBeforePush() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        // A synced client with a *dirty* entry — deleted on another device.
+        // The tombstone must land before the push so the doomed entry is
+        // never upserted (its remote FK row is already gone).
+        let client = Client(name: "Gone",
+                            createdAt: timestamp("2026-07-01T09:00:00.000Z"),
+                            updatedAt: timestamp("2026-07-01T09:00:00.000Z"),
+                            syncState: .synced,
+                            lastSyncedAt: .now)
+        let entry = Entry(amount: 50, task: "orphaned edit")
+        entry.client = client
+        context.insert(client)
+        context.insert(entry)
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_tombstones", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)","entity":"client",
+          "record_id":"\(client.id.uuidString)",
+          "deleted_at":"2026-07-05T12:00:00.000Z","created_at":"2026-07-05T12:00:00.000Z"}]
+        """)
+
+        let cursor = try await SyncCoordinator.sync(context: context,
+                                                    client: makeClient(),
+                                                    workspaceID: workspace)
+
+        #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
+        // The cascade-deleted entry must not have been pushed.
+        #expect(!MockTransport.recorded.contains { $0.method == "POST" && $0.table == "earnline_entries" })
+        // Device-originated tombstone dates never advance the row cursor.
+        #expect(cursor.rowUpdatedAt == nil)
+    }
+
+    @Test func malformedTombstoneDeletesNothing() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let client = Client(name: "Keep",
+                            createdAt: .now,
+                            updatedAt: .now,
+                            syncState: .synced,
+                            lastSyncedAt: .now)
+        context.insert(client)
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_tombstones", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)","entity":"client",
+          "record_id":"\(client.id.uuidString)",
+          "deleted_at":"not-a-date","created_at":"2026-07-05T12:00:00.000Z"}]
+        """)
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace)
+        #expect(try context.fetch(FetchDescriptor<Client>()).count == 1)
+    }
+
+    @Test func newerCloudEditConflictsBeforeThisIPhonePushes() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let baseline = timestamp("2026-07-01T10:00:00.000Z")
+        let client = Client(name: "Local edit",
+                            createdAt: baseline,
+                            updatedAt: timestamp("2026-07-02T10:00:00.000Z"),
+                            syncState: .dirty,
+                            lastSyncedAt: baseline)
+        context.insert(client)
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_clients", json: """
+        [{"id":"\(client.id.uuidString)","workspace_id":"\(workspace)","name":"Cloud edit",
+          "color_hex":"#0088FF","sort_index":1,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-03T10:00:00.000Z"}]
+        """)
+
+        await #expect(throws: SyncCoordinator.SyncConflictError.detected(1)) {
+            try await SyncCoordinator.sync(context: context,
+                                            client: makeClient(),
+                                            workspaceID: workspace)
+        }
+
+        #expect(client.name == "Local edit")
+        #expect(!MockTransport.recorded.contains {
+            $0.method == "POST" && $0.table == "earnline_clients"
+        })
+    }
+
+    @Test func oldTombstoneStillAppliesEvenAfterTheRowCursorAdvanced() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let client = Client(name: "Deleted long ago", syncState: .synced,
+                            lastSyncedAt: timestamp("2020-01-01T00:00:00.000Z"))
+        context.insert(client)
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_tombstones", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)","entity":"client",
+          "record_id":"\(client.id.uuidString)",
+          "deleted_at":"2020-01-02T00:00:00.000Z","created_at":"2020-01-02T00:00:00.000Z"}]
+        """)
+
+        let cursor = try await SyncCoordinator.sync(context: context,
+                                                     client: makeClient(),
+                                                     workspaceID: workspace,
+                                                     lastPulledAt: timestamp("2026-07-01T00:00:00.000Z"))
+
+        #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
+        #expect(cursor.rowUpdatedAt == timestamp("2026-07-01T00:00:00.000Z"))
+    }
+}

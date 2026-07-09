@@ -41,6 +41,14 @@ describe("money — parsing", () => {
     expect(parseDecimalString("99.50")).toBe(99.5);
     expect(parseDecimalString("abc")).toBeNull();
   });
+
+  it("reads EU-format amounts (dot thousands, comma decimals)", () => {
+    expect(parseDecimalString("1.000,50")).toBe(1000.5);
+    expect(parseDecimalString("1.000.000,50")).toBe(1000000.5);
+    // US grouping still works after the change
+    expect(parseDecimalString("1,000.50")).toBe(1000.5);
+    expect(parseDecimalString("1,000,000.50")).toBe(1000000.5);
+  });
 });
 
 describe("money — display (CurrencyFormatter parity)", () => {

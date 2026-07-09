@@ -39,7 +39,7 @@ export async function sync(
   supabase: SupabaseClient,
   workspaceId: string,
   lastPulledMs: number | null,
-): Promise<number> {
+): Promise<number | null> {
   const syncedAt = Date.now();
   await pushDeletes(supabase, workspaceId);
   const remoteTombstones = await fetchRows<TombstoneRow>(
@@ -51,9 +51,21 @@ export async function sync(
   );
   await applyRemoteTombstones(remoteTombstones);
   await pushLocalRows(supabase, workspaceId, syncedAt);
-  await pullRemoteRows(supabase, workspaceId, lastPulledMs, syncedAt);
+  const maxRowUpdatedAt = await pullRemoteRows(supabase, workspaceId, lastPulledMs, syncedAt);
   await pruneRemoteTombstones(supabase, workspaceId, syncedAt);
-  return syncedAt;
+
+  // The next pull cursor is the newest server timestamp we actually observed —
+  // NOT the local clock. `updated_at`/`deleted_at` are server-authoritative (DB
+  // trigger), so stamping the cursor with `Date.now()` on a fast client clock
+  // would skip remote writes that land between this sync and the next. `gte`
+  // makes re-applying the boundary row idempotent, so an inclusive cursor is
+  // safe. Fall back to the previous cursor when nothing new was seen.
+  const maxTombstoneDeletedAt = remoteTombstones.reduce(
+    (max, t) => Math.max(max, parseTimestamp(t.deleted_at)),
+    0,
+  );
+  const observed = Math.max(maxRowUpdatedAt, maxTombstoneDeletedAt);
+  return observed > 0 ? Math.max(observed, lastPulledMs ?? 0) : lastPulledMs;
 }
 
 // --- apply remote deletes (before push, see header) ---
@@ -91,14 +103,22 @@ async function pushDeletes(supabase: SupabaseClient, workspaceId: string): Promi
   const upsert = await supabase.from("earnline_tombstones").upsert(rows);
   if (upsert.error) throw upsert.error;
 
+  // One delete per entity table (`.in(id, …)`) instead of one request per
+  // tombstone — a large batch of deletes was N round-trips.
+  const byEntity = new Map<string, typeof tombstones>();
   for (const t of tombstones) {
+    const list = byEntity.get(t.entity) ?? [];
+    list.push(t);
+    byEntity.set(t.entity, list);
+  }
+  for (const [entity, list] of byEntity) {
     const del = await supabase
-      .from(tableFor(t.entity))
+      .from(tableFor(entity as (typeof tombstones)[number]["entity"]))
       .delete()
-      .eq("id", t.recordId)
+      .in("id", list.map((t) => t.recordId))
       .eq("workspace_id", workspaceId);
     if (del.error) throw del.error;
-    await db.tombstones.delete(t.id);
+    await db.tombstones.bulkDelete(list.map((t) => t.id));
   }
 }
 
@@ -152,7 +172,7 @@ async function pullRemoteRows(
   workspaceId: string,
   lastPulledMs: number | null,
   syncedAt: number,
-): Promise<void> {
+): Promise<number> {
   const [localClients, localHeadings, localEntries] = await Promise.all([
     db.clients.count(),
     db.headings.count(),
@@ -169,6 +189,11 @@ async function pullRemoteRows(
     fetchRows<HeadingRow>(supabase, "earnline_headings", workspaceId, "updated_at", headingSince),
     fetchRows<EntryRow>(supabase, "earnline_entries", workspaceId, "updated_at", entrySince),
   ]);
+
+  const maxUpdatedAt = [...remoteClients, ...remoteHeadings, ...remoteEntries].reduce(
+    (max, row) => Math.max(max, parseTimestamp(row.updated_at)),
+    0,
+  );
 
   await db.transaction("rw", db.clients, db.headings, db.entries, async () => {
     const clientsById = new Map((await db.clients.toArray()).map((c) => [c.id, c]));
@@ -253,6 +278,8 @@ async function pullRemoteRows(
       }
     }
   });
+
+  return maxUpdatedAt;
 }
 
 function shouldApplyRemote(remoteUpdatedMs: number, localUpdatedMs: number, localState: SyncState): boolean {
@@ -269,7 +296,15 @@ async function fetchRows<T>(
   const out: T[] = [];
   let from = 0;
   for (;;) {
-    let query = supabase.from(table).select("*").eq("workspace_id", workspaceId);
+    // Order explicitly: `.range()` paging over an unordered result lets Postgres
+    // return rows in any order, so pages could overlap or skip rows. Ordering by
+    // the cursor column then `id` gives a stable, total sort across pages.
+    let query = supabase
+      .from(table)
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .order(cursorColumn, { ascending: true })
+      .order("id", { ascending: true });
     if (sinceMs != null) query = query.gte(cursorColumn, timestampString(sinceMs));
     const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
     if (error) throw error;

@@ -1,12 +1,14 @@
 import SwiftUI
 import SwiftData
 
-/// The outstanding work list: every in-progress line, most urgent first. Overdue
-/// holds are flagged red, due-soon ones amber. Rows reuse `EntryRow`, so the
-/// status menu lets you mark a line paid (which removes it from this list).
+/// The outstanding work list in the ChatGPT card dialect: centered title with
+/// a circular glass ✕, a total row up top, then every in-progress line in one white
+/// card, most urgent first. Overdue holds are flagged red, due-soon ones
+/// amber. Rows reuse `EntryRow`, so the status menu lets you mark a line paid
+/// straight from here (which removes it from this list).
 struct PendingView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @Query(sort: \Client.sortIndex) private var clients: [Client]
 
@@ -20,65 +22,71 @@ struct PendingView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if pending.isEmpty {
-                    ContentUnavailableView(
-                        "Nothing pending",
-                        systemImage: "checkmark.circle",
-                        description: Text("In-progress lines show up here, soonest hold date first.")
-                    )
-                } else {
-                    List {
-                        Section {
-                            HStack {
-                                Text("Total pending").foregroundStyle(Theme.label(0.6))
+        Group {
+            if pending.isEmpty {
+                ContentUnavailableView(
+                    "Nothing pending",
+                    systemImage: "checkmark.circle",
+                    description: Text("In-progress lines show up here, soonest hold date first.")
+                )
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        ChromeCard {
+                            ChromeRow(icon: "clock") {
+                                Text("Total").foregroundStyle(Theme.label)
                                 Spacer()
                                 MoneyAmountText(baseAmount: totalPending,
-                                                font: .system(size: 18, weight: .semibold),
+                                                size: 17, weight: .semibold, design: .rounded,
                                                 color: Theme.label)
                             }
                         }
-                        Section {
-                            ForEach(pending) { entry in
-                                row(entry)
-                                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+
+                        VStack(alignment: .leading, spacing: 0) {
+                            CardHeader("Lines")
+                            ChromeCard {
+                                ForEach(Array(pending.enumerated()), id: \.element.id) { index, entry in
+                                    row(entry)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                    if index < pending.count - 1 {
+                                        ChromeDivider(inset: 16)
+                                    }
+                                }
                             }
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
                 }
             }
-            .navigationTitle("Pending")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
-            .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
-            .alert("Delete income line?", isPresented: Binding(
-                get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }
-            ), presenting: pendingDelete) { entry in
-                Button("Delete", role: .destructive) { delete(entry); pendingDelete = nil }
-                Button("Cancel", role: .cancel) { pendingDelete = nil }
-            } message: { entry in
-                Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)")
-            }
-            .alert("Could not save changes", isPresented: Binding(
-                get: { saveError != nil }, set: { if !$0 { saveError = nil } }
-            )) {
-                Button("OK", role: .cancel) { saveError = nil }
-            } message: {
-                Text(saveError ?? String(localized: "Try again."))
-            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.background)
+        .sheetHeader("Pending", onClose: { dismiss() })
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.background)
+        .undoToastHost()
+        .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
+        .alert("Delete income line?", isPresented: Binding(
+            get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }
+        ), presenting: pendingDelete) { entry in
+            Button("Delete", role: .destructive) { delete(entry); pendingDelete = nil }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { entry in
+            Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)")
+        }
+        .saveErrorAlert($saveError)
     }
 
-    @ViewBuilder
     private func row(_ entry: Entry) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 if let client = entry.client {
                     Text(client.name)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, .semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -111,7 +119,7 @@ struct PendingView: View {
 
     private func badge(_ title: LocalizedStringKey, systemImage: String, tint: Color) -> some View {
         Label(title, systemImage: systemImage)
-            .font(.system(size: 12, weight: .semibold))
+            .appFont(12, .semibold)
             .foregroundStyle(tint)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -129,20 +137,12 @@ struct PendingView: View {
     }
 
     private func delete(_ entry: Entry) {
-        SyncDeleteQueue.enqueue(.entry, id: entry.id, in: context)
-        withAnimation(.snappy) { context.delete(entry) }
-        _ = save()
+        saveError = app.delete(entry, context: context)
     }
 
     @discardableResult
     private func save() -> Bool {
-        do {
-            try context.save()
-            app.queueSync(context: context)
-            return true
-        } catch {
-            saveError = error.localizedDescription
-            return false
-        }
+        saveError = app.save(context)
+        return saveError == nil
     }
 }

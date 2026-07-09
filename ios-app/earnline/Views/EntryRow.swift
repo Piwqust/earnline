@@ -11,26 +11,27 @@ struct EntryRow: View {
 
     @State private var expanded = false
 
-    private var baseAmount: Decimal {
-        app.toBase(entry.amount, code: entry.currencyCode)
+    var body: some View {
+        // A sync pull (remote tombstone, store reset) can delete this entry
+        // while the row is still on screen; one more render before List drops
+        // the row would trap in the model's getters (the crash log's
+        // `Entry.amount.getter` assertion). Render nothing instead.
+        if entry.isInvalidated {
+            EmptyView()
+        } else {
+            rowBody
+        }
     }
 
-    var body: some View {
+    private var rowBody: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .top, spacing: 7) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, .semibold)
                     .foregroundStyle(Theme.label(0.45))
                     .padding(.top, 7)
 
-                MoneyAmountText(baseAmount: baseAmount,
-                                font: .lineAmount,
-                                color: Theme.label,
-                                minimumScaleFactor: 1,
-                                isApproximate: !app.canConvert(entry.currencyCode))
-                    .animation(.snappy(duration: 0.3), value: entry.amount)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .layoutPriority(1)
+                entryAmount
 
                 EntryDescriptionText(text: description, expanded: expanded)
 
@@ -56,16 +57,8 @@ struct EntryRow: View {
         }
         .contextMenu {
             Button { onEdit() } label: { Label("Edit line", systemImage: "pencil") }
-
-            Section("Status") {
-                ForEach(EntryStatus.allCases) { s in
-                    Button { onSetStatus(s) } label: { Label(s.title, systemImage: s.symbol) }
-                }
-            }
-
-            Section {
-                Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
-            }
+            statusPicker
+            Section { deleteButton }
         } preview: {
             // Context-menu previews render in a detached hierarchy that does NOT
             // inherit the SwiftUI environment, so re-inject AppModel — the preview
@@ -85,6 +78,27 @@ struct EntryRow: View {
         return parts.joined(separator: ", ")
     }
 
+    @ViewBuilder
+    private var entryAmount: some View {
+        if app.canConvert(entry.currencyCode) {
+            MoneyAmountText(baseAmount: app.toBase(entry.amount, code: entry.currencyCode),
+                            size: 20, weight: .medium,
+                            color: Theme.label,
+                            minimumScaleFactor: 1)
+                .animation(.snappy(duration: 0.3), value: entry.amount)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
+        } else {
+            Text(CurrencyFormatter.string(entry.amount, code: entry.currencyCode))
+                .appFont(20, .medium)
+                .foregroundStyle(Theme.statusProgress)
+                .monospacedDigit()
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
+                .accessibilityHint("Excluded from consolidated totals because no conversion rate is set")
+        }
+    }
+
     private var description: Text {
         var result = AttributedString()
         if let project = entry.project, !project.isEmpty {
@@ -99,42 +113,70 @@ struct EntryRow: View {
 
     private var statusMenu: some View {
         Menu {
-            ForEach(EntryStatus.allCases) { s in
-                Button { onSetStatus(s) } label: { Label(s.title, systemImage: s.symbol) }
-            }
-            Divider()
-            Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
+            statusPicker
+            Section { deleteButton }
         } label: {
             Image(systemName: entry.status.symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, .semibold)
                 .foregroundStyle(entry.status.tint)
-                .frame(width: 22, height: 22)
-                .contentShape(.circle)
+                .frame(minWidth: 22, minHeight: 22)
                 .contentTransition(.symbolEffect(.replace))
                 .animation(.snappy(duration: 0.3), value: entry.status)
+                // Grow the hit region to the HIG's 44 pt without moving the
+                // 22 pt glyph: pad out to 44, take the shape, pull the layout
+                // back in (hit testing isn't clipped to layout bounds).
+                .padding(11)
+                .contentShape(.circle)
+                .padding(-11)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
     }
 
+    /// Status choices as a native inline picker section — the system draws
+    /// the leading selection checkmark (ChatGPT's model-picker idiom) inside
+    /// the Liquid Glass menu, instead of hand-rolled checkmark labels.
+    @ViewBuilder
+    private var statusPicker: some View {
+        Section("Status") {
+            Picker("Status", selection: Binding(
+                get: { entry.status },
+                set: { onSetStatus($0) }
+            )) {
+                ForEach(EntryStatus.allCases) { s in
+                    Text(s.title).tag(s)
+                }
+            }
+            .pickerStyle(.inline)
+        }
+    }
+
+    /// Destructive action, isolated in its own trailing section so it reads as
+    /// separate from the everyday status switches (ChatGPT's menu grouping).
+    private var deleteButton: some View {
+        Button(role: .destructive, action: onDelete) {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
     private var dateLine: some View {
         HStack(spacing: 4) {
             Image(systemName: "arrow.turn.down.right")
-                .font(.system(size: 9, weight: .regular))
+                .appFont(9, .regular)
                 .foregroundStyle(Theme.label(0.35))
             Text(DateFormat.dotted(entry.date))
                 .foregroundStyle(Theme.label(0.7))
             if let hold = entry.holdUntil {
                 Text("·").foregroundStyle(Theme.label(0.5))
                 HStack(spacing: 3) {
-                    Image(systemName: "calendar").font(.system(size: 10))
+                    Image(systemName: "calendar").appFont(10)
                     Text("hold until \(DateFormat.dotted(hold))")
                 }
                 .foregroundStyle(Theme.label(0.7))
                 .lineLimit(1)
             }
         }
-        .font(.caption)
+        .appFont(14)
     }
 }
 
@@ -145,23 +187,25 @@ private struct EntryContextPreview: View {
 
     let entry: Entry
 
-    private var baseAmount: Decimal {
-        app.toBase(entry.amount, code: entry.currencyCode)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: entry.status.symbol)
-                    .font(.system(size: 16, weight: .semibold))
+                    .appFont(16, .semibold)
                     .foregroundStyle(entry.status.tint)
-                MoneyAmountText(baseAmount: baseAmount,
-                                font: .system(size: 22, weight: .semibold),
-                                color: Theme.label,
-                                isApproximate: !app.canConvert(entry.currencyCode))
+                if app.canConvert(entry.currencyCode) {
+                    MoneyAmountText(baseAmount: app.toBase(entry.amount, code: entry.currencyCode),
+                                    size: 22, weight: .semibold,
+                                    color: Theme.label)
+                } else {
+                    Text(CurrencyFormatter.string(entry.amount, code: entry.currencyCode))
+                        .appFont(22, .semibold)
+                        .foregroundStyle(Theme.statusProgress)
+                        .monospacedDigit()
+                }
                 Spacer(minLength: 12)
                 Text(entry.status.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, .semibold)
                     .foregroundStyle(entry.status.tint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -170,17 +214,17 @@ private struct EntryContextPreview: View {
 
             if let project = entry.project, !project.isEmpty {
                 Text(project)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, .semibold)
                     .foregroundStyle(Theme.label(0.55))
             }
             Text(entry.task)
-                .font(.system(size: 17))
+                .appFont(17)
                 .foregroundStyle(Theme.label)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 12))
+                    .appFont(12)
                     .foregroundStyle(Theme.label(0.45))
                 Text(DateFormat.dotted(entry.date))
                     .foregroundStyle(Theme.label(0.7))
@@ -189,7 +233,7 @@ private struct EntryContextPreview: View {
                         .foregroundStyle(Theme.label(0.5))
                 }
             }
-            .font(.system(size: 13))
+            .appFont(13)
         }
         .padding(16)
         .frame(width: 280, alignment: .leading)
@@ -237,7 +281,7 @@ private struct EntryDescriptionText: View {
 
     private func displayText(lineLimit: Int?) -> some View {
         text
-            .font(.lineBody)
+            .appFont(20, .medium)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -257,7 +301,7 @@ private struct EntryDescriptionText: View {
 
     private func measuredText(lineLimit: Int?, mode: EntryDescriptionHeightMode) -> some View {
         text
-            .font(.lineBody)
+            .appFont(20, .medium)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)

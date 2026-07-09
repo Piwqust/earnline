@@ -106,4 +106,22 @@ describe("LineParser", () => {
     expect(isCommittable(parseLine("$240 Acme: 2 screens"))).toBe(true);
     expect(isCommittable(parseLine("Acme: 2 screens"))).toBe(false);
   });
+
+  it("rejects an impossible hold date instead of rolling it over", () => {
+    const p = parseLine("$140 Acme: Logotype hold 31.02");
+    expect(p.holdUntil).toBeUndefined();
+    // The date text stays part of the task rather than vanishing.
+    expect(p.task).toContain("31.02");
+  });
+
+  it("does not treat 'due' inside a word as a hold marker", () => {
+    const p = parseLine("$140 Acme: residue 12.05 cleanup");
+    expect(p.holdUntil).toBeUndefined();
+  });
+
+  it("reads an EU-format amount", () => {
+    const p = parseLine("€1.000,50 Acme: Retainer");
+    expect(p.currencyCode).toBe("EUR");
+    expect(p.amount).toBe(1000.5);
+  });
 });

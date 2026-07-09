@@ -11,6 +11,8 @@ enum SyncState: String, Codable {
 /// pushed rows generically.
 protocol SyncableModel: PersistentModel {
     var syncUpdatedAt: Date { get }
+    var syncState: SyncState { get set }
+    var lastSyncedAt: Date? { get set }
     func markSynced(at date: Date)
 }
 
@@ -126,8 +128,25 @@ extension Heading {
 
 enum SyncDeleteQueue {
     static func enqueue(_ entity: SyncEntity, id recordID: UUID, in context: ModelContext) {
-        context.insert(SyncTombstone(id: DeterministicID.uuid("tombstone:\(entity.rawValue):\(recordID.uuidString)"),
+        context.insert(SyncTombstone(id: tombstoneID(entity, recordID: recordID),
                                      entity: entity,
                                      recordID: recordID))
+    }
+
+    /// Remove a still-local tombstone — used by undo, so a restored row isn't
+    /// chased by its own queued delete. Scans in memory (the table holds only
+    /// deletes awaiting the next sync): predicating on a custom `id` property
+    /// trips over `Identifiable.id` at runtime.
+    static func dequeue(_ entity: SyncEntity, id recordID: UUID, in context: ModelContext) {
+        let tombstones = (try? context.fetch(FetchDescriptor<SyncTombstone>())) ?? []
+        tombstones
+            .filter { $0.recordID == recordID && $0.entity == entity }
+            .forEach(context.delete)
+    }
+
+    /// Deterministic per-row id: enqueueing the same delete twice stays one
+    /// tombstone.
+    private static func tombstoneID(_ entity: SyncEntity, recordID: UUID) -> UUID {
+        DeterministicID.uuid("tombstone:\(entity.rawValue):\(recordID.uuidString)")
     }
 }

@@ -29,7 +29,7 @@ const AMOUNT_PATTERNS = [
 ];
 const FALLBACK_NUMBER = new RegExp(`^([0-9][0-9.,   ]*[0-9])(?=\\s)`);
 const HOLD_REGEX =
-  /(?:hold\s*(?:until|till|til)?|until|till|due)\s*:?\s*(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?/i;
+  /\b(?:hold\s*(?:until|till|til)?|until|till|due)\s*:?\s*(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?/i;
 
 export function parseLine(
   raw: string,
@@ -139,12 +139,24 @@ function extractHoldDate(s: string, referenceDayMs: number): { date: number; res
     hasExplicitYear = true;
   }
 
+  // Reject impossible day/month combos instead of letting Date roll them into
+  // a different real day ("31.02" → Mar 3). Mirrors iOS LineParser.isExactDate.
+  if (!isExactDay(dayMsFromParts(year, month, day), year, month, day)) return null;
+
   let date = dayMsFromParts(year, month, day);
   if (!hasExplicitYear && date < referenceDayMs) {
-    date = dayMsFromParts(year + 1, month, day);
+    const rolled = dayMsFromParts(year + 1, month, day);
+    if (!isExactDay(rolled, year + 1, month, day)) return null;
+    date = rolled;
   }
   const rest = (s.slice(0, m.index) + s.slice(m.index + m[0].length)).trim();
   return { date, rest };
+}
+
+/** True when the UTC day didn't normalize into a different month/day. */
+function isExactDay(ms: number, year: number, month: number, day: number): boolean {
+  const d = new Date(ms);
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
 }
 
 function trimChars(s: string, set: string): string {

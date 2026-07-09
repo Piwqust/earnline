@@ -23,6 +23,9 @@ docs/screenshots/*.jpeg
 .vscode/
 .idea/
 .xcodebuildmcp/
+.cursor/
+.codegraph/
+.ios-simulator-output/
 
 # Secrets and local environment
 .env

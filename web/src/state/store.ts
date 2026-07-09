@@ -77,8 +77,9 @@ class SyncController {
     this.set({ isSyncing: true, message: "Syncing…", error: null });
     try {
       const supabase = getSupabase(s.supabaseUrl, s.supabaseKey);
-      const completedAt = await sync(supabase, s.workspaceId, s.lastSyncAt);
-      setSettings({ lastSyncAt: completedAt });
+      const nextCursor = await sync(supabase, s.workspaceId, s.syncCursorMs);
+      const completedAt = Date.now();
+      setSettings({ syncCursorMs: nextCursor, lastSyncAt: completedAt });
       this.set({ isSyncing: false, message: "Synced", lastSyncAt: completedAt });
     } catch (e) {
       this.set({ isSyncing: false, message: "Needs sync", error: errorMessage(e) });

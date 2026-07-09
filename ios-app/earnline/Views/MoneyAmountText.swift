@@ -6,7 +6,10 @@ struct MoneyAmountText: View {
     @Environment(AppModel.self) private var app
 
     let baseAmount: Decimal
-    var font: Font
+    var size: CGFloat
+    var weight: Font.Weight = .regular
+    var design: Font.Design = .default
+    var relativeTo: Font.TextStyle = .body
     var color: Color = Theme.label
     var lineLimit: Int? = 1
     var minimumScaleFactor: CGFloat = 0.78
@@ -53,7 +56,7 @@ struct MoneyAmountText: View {
                         .foregroundStyle(color.opacity(0.4))
                 }
             }
-            .font(font)
+            .appFont(size, weight, design: design, relativeTo: relativeTo)
             .foregroundStyle(color)
             .monospacedDigit()
             .lineLimit(lineLimit)

@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import earnline
 
-/// Locks in the sync conflict policy: last-write-wins, with unsynced local edits
-/// protected, and ties resolving to remote. See `SyncCoordinator.shouldApplyRemote`.
+/// Locks in the sync conflict policy: clean rows accept cloud state, while a
+/// dirty row is never overwritten automatically.
 @MainActor
 struct ConflictPolicyTests {
     private func date(_ offset: TimeInterval) -> Date {
@@ -11,22 +11,22 @@ struct ConflictPolicyTests {
     }
 
     @Test func cleanLocalAlwaysTakesRemoteEvenIfOlder() {
-        #expect(SyncCoordinator.shouldApplyRemote(
-            remoteUpdatedAt: date(-10), localUpdatedAt: date(0), localState: .synced))
+        #expect(SyncCoordinator.shouldApplyRemote(localState: .synced))
     }
 
-    @Test func dirtyLocalKeepsStrictlyNewerLocalEdit() {
-        #expect(!SyncCoordinator.shouldApplyRemote(
-            remoteUpdatedAt: date(-10), localUpdatedAt: date(0), localState: .dirty))
+    @Test func dirtyLocalWithUnchangedCloudVersionStaysLocalUntilPush() {
+        #expect(!SyncCoordinator.conflictsWithDirtyLocal(
+            remoteUpdatedAt: date(0), localLastSyncedAt: date(0), localState: .dirty))
+        #expect(!SyncCoordinator.shouldApplyRemote(localState: .dirty))
     }
 
-    @Test func dirtyLocalTakesNewerRemote() {
-        #expect(SyncCoordinator.shouldApplyRemote(
-            remoteUpdatedAt: date(10), localUpdatedAt: date(0), localState: .dirty))
+    @Test func newerCloudVersionRequiresAnExplicitChoice() {
+        #expect(SyncCoordinator.conflictsWithDirtyLocal(
+            remoteUpdatedAt: date(10), localLastSyncedAt: date(0), localState: .dirty))
     }
 
-    @Test func equalTimestampsResolveToRemote() {
-        #expect(SyncCoordinator.shouldApplyRemote(
-            remoteUpdatedAt: date(0), localUpdatedAt: date(0), localState: .dirty))
+    @Test func missingServerBaselineFailsClosed() {
+        #expect(SyncCoordinator.conflictsWithDirtyLocal(
+            remoteUpdatedAt: date(0), localLastSyncedAt: nil, localState: .dirty))
     }
 }

@@ -1,19 +1,35 @@
 import SwiftUI
 
 /// A client's colored name pill + rolled-up total, with the "+ Line" button.
-/// Tapping the name opens the client; tapping the total flips the shown currency.
+/// Tapping the name opens the client; tapping the total flips the shown
+/// currency. While this client's composer is open the button reads "Close",
+/// since the same tap collapses it.
 struct ClientChip: View {
     let client: Client
     let total: Decimal
+    var isComposing: Bool = false
+    /// Hidden in ledger search mode — adding a line there would fight the filter.
+    var showsAdd: Bool = true
     var onOpen: () -> Void
     var onAdd: () -> Void
 
     var body: some View {
+        // Same guard as `EntryRow`: a sync pull can delete this client while
+        // the chip is on screen, and one more render before the row leaves
+        // the List would trap reading the invalidated model.
+        if client.isInvalidated {
+            EmptyView()
+        } else {
+            chipBody
+        }
+    }
+
+    private var chipBody: some View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
                 Button(action: onOpen) {
                     Text(client.name)
-                        .font(.chipName)
+                        .appFont(16, .semibold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                         .padding(.horizontal, 8)
@@ -22,12 +38,14 @@ struct ClientChip: View {
                                      in: .capsule)
                 }
                 .buttonStyle(.plain)
-                .layoutPriority(1)
 
                 MoneyAmountText(baseAmount: total,
-                                font: .chipTotal,
+                                size: 16, weight: .medium,
                                 color: Theme.label,
                                 minimumScaleFactor: 0.7)
+                    // Keep the rolled-up total readable; a long name truncates
+                    // before the amount does.
+                    .layoutPriority(1)
                     .animation(.snappy(duration: 0.3), value: total)
             }
             .padding(.leading, 1)
@@ -35,31 +53,39 @@ struct ClientChip: View {
             .padding(.vertical, 1)
             .background(Theme.fillQuaternary, in: .capsule)
             .overlay(Capsule().strokeBorder(Theme.chipStroke, lineWidth: 0.5))
-
-            Spacer(minLength: 8)
-
-            // "+ Line"; collapses to just "+" when there's still not enough room.
-            Button(action: onAdd) {
-                ViewThatFits(in: .horizontal) {
-                    addLabel(showText: true)
-                    addLabel(showText: false)
-                }
-            }
-            .buttonStyle(.plain)
+            // The name + total win the row over the button label, so a long
+            // client name shrinks the button instead of getting crushed itself.
             .layoutPriority(1)
-            .accessibilityLabel("Add line")
+
+            if showsAdd {
+                Spacer(minLength: 8)
+
+                // "+ Line" / "× Close"; collapses to just the "+" icon when the
+                // client name is long enough to crowd the row.
+                Button(action: onAdd) {
+                    ViewThatFits(in: .horizontal) {
+                        addLabel(showText: true)
+                        addLabel(showText: false)
+                    }
+                }
+                .buttonStyle(.plain)
+                .animation(.snappy(duration: 0.25), value: isComposing)
+                .accessibilityLabel(isComposing ? "Close" : "Add line")
+            }
         }
         .padding(.horizontal, 8)
     }
 
     private func addLabel(showText: Bool) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "plus")
-                .font(.system(size: 16, weight: .medium))
+            Image(systemName: isComposing ? "xmark" : "plus")
+                .appFont(16, .medium)
+                .contentTransition(.symbolEffect(.replace))
             if showText {
-                Text("Line")
-                    .font(.system(size: 15, weight: .semibold))
+                Text(isComposing ? "Close" : "Line")
+                    .appFont(15, .semibold)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
             }
         }
         .foregroundStyle(Theme.label)

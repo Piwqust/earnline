@@ -67,6 +67,15 @@ struct SyncModelTests {
         #expect(app.earnedEntries(of: client, in: monthDate).count == 2)
     }
 
+    @Test func syncRetryDelaysBackOffThenStop() {
+        #expect(AppModel.retryDelay(attempt: 0) == .seconds(5))
+        #expect(AppModel.retryDelay(attempt: 1) == .seconds(15))
+        #expect(AppModel.retryDelay(attempt: 2) == .seconds(45))
+        #expect(AppModel.retryDelay(attempt: 3) == .seconds(120))
+        #expect(AppModel.retryDelay(attempt: 4) == nil)
+        #expect(AppModel.retryDelay(attempt: -1) == nil)
+    }
+
     @Test func invalidExchangeRatesFallBackToSafeValues() {
         #expect(AppModel.validExchangeRate(0, fallback: 42) == 42)
         #expect(AppModel.validExchangeRate(-1, fallback: 42) == 42)
@@ -84,16 +93,19 @@ struct SyncModelTests {
         app.baseCurrencyCode = "USD"
         app.secondaryCurrencyCode = "RUB"
         app.rate = 89.125
-        #expect(app.secondaryString(Decimal(string: "99.50")!) == "8\u{00A0}867.94 ₽")
+        // The decimal separator follows the run locale (the formatter is
+        // locale-aware); grouping is always the app's no-break space.
+        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
+        #expect(app.secondaryString(Decimal(string: "99.50")!) == "8\u{00A0}867\(separator)94 ₽")
     }
 
-    @Test func dayStringsRoundTripAsCalendarDays() {
+    @Test func dayStringsRoundTripAsCalendarDays() throws {
         let cal = Calendar.current
         // Local midnight — the shape every DatePicker / parsed hold date has.
         let midnight = date(year: 2026, month: 7, day: 4)
         #expect(SyncDateCodec.dayString(midnight) == "2026-07-04")
 
-        let parsed = SyncDateCodec.parseDay("2026-07-04")
+        let parsed = try #require(SyncDateCodec.parseDay("2026-07-04"))
         let comps = cal.dateComponents([.year, .month, .day], from: parsed)
         #expect(comps.year == 2026)
         #expect(comps.month == 7)
@@ -102,6 +114,10 @@ struct SyncModelTests {
         // Late-evening instants still format as their local calendar day.
         let evening = cal.date(from: DateComponents(year: 2026, month: 7, day: 4, hour: 23, minute: 30))!
         #expect(SyncDateCodec.dayString(evening) == "2026-07-04")
+
+        // Malformed wire values must be rejected, not defaulted to today.
+        #expect(SyncDateCodec.parseDay("not-a-day") == nil)
+        #expect(SyncDateCodec.parseTimestamp("garbage") == nil)
     }
 
     @Test func syncMoneyDecodesJSONNumbersToTwoDecimalPlaces() throws {

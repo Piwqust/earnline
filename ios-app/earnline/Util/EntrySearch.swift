@@ -1,6 +1,6 @@
 import Foundation
 
-/// Pure, view-independent search predicate shared by the search screen.
+/// Pure, view-independent search predicate shared by ledger search mode.
 ///
 /// Kept free of SwiftUI/SwiftData fetch concerns so it can be unit-tested and
 /// reused: the view passes each entry and the resolved client name.

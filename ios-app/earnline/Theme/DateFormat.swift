@@ -1,27 +1,42 @@
 import Foundation
 
-/// Shared date helpers. earn›line shows dates as `DD.MM.YY` (per Figma).
+/// Shared date helpers. Compact numeric dates come from a localized template,
+/// so the field order and punctuation follow the user's region ("12.07.26" in
+/// Berlin, "7/12/26" in New York) instead of a hardcoded `dd.MM.yy`.
 enum DateFormat {
     static let short: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "dd.MM.yy"
+        f.locale = .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("ddMMyy")
         return f
     }()
 
     static let monthName: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "LLLL"
+        f.locale = .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("LLLL")
         return f
     }()
 
     static let monthYear: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "LLLL yyyy"
+        f.locale = .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("LLLLyyyy")
+        return f
+    }()
+
+    /// Weekday-prefixed compact date for the heatmap's tapped-day headline
+    /// ("Mon, 12.07.26" / "Mon, 7/12/26" by region).
+    static let weekdayDate: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("EEEddMMyy")
         return f
     }()
 
     static func dotted(_ date: Date) -> String { short.string(from: date) }
+
+    static func weekdayAndDate(_ date: Date) -> String { weekdayDate.string(from: date) }
 
     static func month(_ date: Date) -> String {
         monthName.string(from: date).capitalized

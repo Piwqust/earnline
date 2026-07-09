@@ -86,18 +86,28 @@ enum SyncDateCodec {
         timestampWithFractionalSeconds().string(from: date)
     }
 
-    static func parseTimestamp(_ value: String) -> Date {
+    /// `nil` for malformed wire values. Falling back to `Date()` here used to
+    /// disguise bad rows as *fresh* ones — inflating conflict resolution and
+    /// advancing the sync cursor past legitimately older remote writes. The
+    /// coordinator now skips rows it can't date instead.
+    static func parseTimestamp(_ value: String) -> Date? {
         timestampWithFractionalSeconds().date(from: value)
             ?? timestamp().date(from: value)
-            ?? Date()
     }
 
     static func dayString(_ date: Date) -> String {
         dayFormatter().string(from: date)
     }
 
-    static func parseDay(_ value: String) -> Date {
-        dayFormatter().date(from: value) ?? Calendar.current.startOfDay(for: Date())
+    /// `nil` for malformed wire values (the old fallback silently rewrote the
+    /// row's date to *today*). Valid days are anchored at 12:00 local rather
+    /// than midnight: the web client stores days timezone-independently, and
+    /// noon keeps the extracted calendar day stable if the device later
+    /// re-encodes the date from a timezone up to ±11 hours away — a
+    /// local-midnight anchor flips to the previous day after eastward travel.
+    static func parseDay(_ value: String) -> Date? {
+        guard let midnight = dayFormatter().date(from: value) else { return nil }
+        return Calendar.current.date(byAdding: .hour, value: 12, to: midnight) ?? midnight
     }
 }
 

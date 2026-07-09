@@ -35,6 +35,20 @@
                ReferencedContainer = "container:earnline.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0A022DC032F7C98F286FACE3"
+               BuildableName = "earnlineUITests.xctest"
+               BlueprintName = "earnlineUITests"
+               ReferencedContainer = "container:earnline.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -61,6 +75,17 @@
                BlueprintIdentifier = "43D655A2369D28AE1A46AE31"
                BuildableName = "earnlineTests.xctest"
                BlueprintName = "earnlineTests"
+               ReferencedContainer = "container:earnline.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0A022DC032F7C98F286FACE3"
+               BuildableName = "earnlineUITests.xctest"
+               BlueprintName = "earnlineUITests"
                ReferencedContainer = "container:earnline.xcodeproj">
             </BuildableReference>
          </TestableReference>

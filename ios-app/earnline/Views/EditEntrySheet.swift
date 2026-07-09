@@ -1,6 +1,10 @@
 import SwiftUI
 import SwiftData
 
+/// Full editor for one income line: the system compose-sheet toolbar (✕/✓
+/// role buttons, as in Mail), a hero amount with the currency picker beneath
+/// it, a segmented status control, then icon-led grouped cards for the
+/// project, task, client, and schedule.
 struct EditEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -18,13 +22,13 @@ struct EditEntrySheet: View {
     @State private var status: EntryStatus = .paid
     @State private var selectedClient: Client?
     @State private var saveError: String?
-
     @FocusState private var amountFocused: Bool
 
     private var amountDecimal: Decimal? {
         guard let d = LineParser.decimal(from: amountText), d > 0 else { return nil }
         return Validation.clampAmount(d)
     }
+    private var symbol: String { CurrencyFormatter.symbol(for: currencyCode) }
     private var canSave: Bool {
         amountDecimal != nil
             && selectedClient != nil
@@ -32,206 +36,214 @@ struct EditEntrySheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    amountHero
-                }
-                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 10, trailing: 16))
-                .listRowBackground(Color.clear)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                amountHero
+                    .padding(.bottom, 2)
 
-                Section {
-                    statusPills
-                } header: {
-                    Text("Status")
-                }
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                .listRowBackground(Color.clear)
+                statusSegmented
 
-                Section("Details") {
-                    fieldRow("folder") {
-                        TextField("Project", text: $project)
-                            .onChange(of: project) { _, v in project = Validation.capped(v, max: Limits.maxProjectLength) }
-                    }
-                    fieldRow("text.alignleft", alignTop: true) {
-                        TextField("Task", text: $task, axis: .vertical)
-                            .lineLimit(1...4)
-                            .onChange(of: task) { _, v in task = Validation.capped(v, max: Limits.maxTaskLength) }
-                    }
-                    Picker(selection: $selectedClient) {
-                        ForEach(clients) { Text($0.name).tag(Optional($0)) }
-                    } label: {
-                        rowLabel("person.crop.circle", "Client")
+                section("Details") {
+                    VStack(spacing: 10) {
+                        detailsCard
+                        clientCard
                     }
                 }
 
-                Section("Schedule") {
-                    DatePicker(selection: $date, displayedComponents: .date) {
-                        rowLabel("calendar", "Date")
-                    }
-                    Toggle(isOn: $hasHold.animation()) {
-                        rowLabel("hourglass", "Hold until")
-                    }
-                    if hasHold {
-                        DatePicker(selection: $holdDate, in: date..., displayedComponents: .date) {
-                            rowLabel("calendar.badge.clock", "Hold date")
-                        }
-                    }
-                }
+                section("Schedule") { scheduleCard }
             }
-            .scrollContentBackground(.hidden)
-            .background(Theme.background)
-            .navigationTitle("Edit line")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
-                        .fontWeight(.semibold)
-                        .disabled(!canSave)
-                }
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
+        .background(Theme.background)
+        .scrollDismissesKeyboard(.interactively)
+        // Apple's ready-made compose-sheet header (Mail's ✕/send bar):
+        // system ✕/✓ role buttons in a navigation toolbar. See `sheetEditorHeader`.
+        .sheetEditorHeader("Edit line",
+                           saveEnabled: canSave,
+                           onCancel: { dismiss() },
+                           onSave: save)
         .onAppear(perform: load)
         .onChange(of: date) { _, newValue in
             if holdDate < newValue { holdDate = newValue }
         }
-        .alert("Could not save line", isPresented: Binding(
-            get: { saveError != nil },
-            set: { if !$0 { saveError = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveError = nil }
-        } message: {
-            Text(saveError ?? String(localized: "Try again."))
-        }
-        .presentationDetents([.large])
+        .saveErrorAlert($saveError, title: "Could not save line")
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.background)
     }
 
-    // MARK: Amount hero
-
-    private var amountHero: some View {
-        VStack(spacing: 8) {
-            Menu {
-                ForEach(AppModel.supportedCurrencyCodes, id: \.self) { code in
-                    Button { currencyCode = code } label: {
-                        Text("\(CurrencyFormatter.symbol(for: code))  \(code)")
-                    }
-                }
-            } label: {
-                HStack(spacing: 3) {
-                    Text(currencyCode)
-                        .font(.system(size: 13, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                }
-                .foregroundStyle(Theme.label(0.55))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Theme.label(0.06), in: .capsule)
-            }
-            .buttonStyle(.plain)
-
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(CurrencyFormatter.symbol(for: currencyCode))
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(Theme.label(0.5))
-                TextField("0", text: $amountText)
-                    .font(.system(size: 46, weight: .bold))
-                    .monospacedDigit()
-                    .keyboardType(.numbersAndPunctuation)
-                    .fixedSize()
-                    .focused($amountFocused)
-                    .foregroundStyle(amountDecimal == nil ? Theme.label(0.25) : Theme.label)
-                    .onChange(of: amountText) { _, v in amountText = Validation.sanitizeAmountInput(v) }
-            }
-
-            Text(secondaryHint)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.label(0.4))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .animation(.snappy(duration: 0.25), value: secondaryHint)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .padding(.horizontal, 16)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 18))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(Theme.label(0.05), lineWidth: 1)
-        }
-        .contentShape(.rect(cornerRadius: 18))
-        .onTapGesture { amountFocused = true }
-    }
-
-    /// Live "≈ secondary currency" preview, echoing the ledger's dual-currency display.
-    private var secondaryHint: String {
-        guard let amount = amountDecimal else { return String(localized: "Enter an amount") }
-        let base = app.toBase(amount, code: currencyCode)
-        return "≈ \(app.secondaryString(base))"
-    }
-
-    // MARK: Status pills
-
-    private var statusPills: some View {
-        HStack(spacing: 8) {
-            ForEach(EntryStatus.allCases) { s in
-                let selected = status == s
-                Button {
-                    withAnimation(.snappy(duration: 0.25)) { status = s }
-                    UISelectionFeedbackGenerator().selectionChanged()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: s.symbol)
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(s.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-                    .foregroundStyle(selected ? .white : s.tint)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background {
-                        Capsule().fill(selected ? s.tint : s.tint.opacity(0.12))
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    // MARK: Row helpers
-
-    private func rowLabel(_ systemImage: String, _ title: String) -> some View {
-        HStack(spacing: 11) {
-            leadingIcon(systemImage)
-            Text(title).foregroundStyle(Theme.label)
-        }
-    }
-
-    private func fieldRow(_ systemImage: String,
-                          alignTop: Bool = false,
-                          @ViewBuilder content: () -> some View) -> some View {
-        HStack(alignment: alignTop ? .top : .center, spacing: 11) {
-            leadingIcon(systemImage)
+    private func section(_ title: LocalizedStringKey,
+                         @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            CardHeader(title)
             content()
         }
     }
 
-    private func leadingIcon(_ systemImage: String) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Theme.label(0.55))
-            .frame(width: 26, height: 26)
-            .background(Theme.label(0.06), in: .rect(cornerRadius: 7))
+    // MARK: Amount hero
+
+    /// Big centered amount with a leading currency symbol, and the currency
+    /// picker as its subtitle — the Figma "$200 / $ USD ⌄" hero.
+    private var amountHero: some View {
+        VStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(symbol)
+                TextField("0", text: $amountText)
+                    .fixedSize()
+                    .multilineTextAlignment(.leading)
+                    .keyboardType(.numbersAndPunctuation)
+                    .focused($amountFocused)
+                    .onChange(of: amountText) { _, v in amountText = Validation.sanitizeAmountInput(v) }
+                    .accessibilityLabel("Amount")
+            }
+            .appFont(56, .bold, design: .rounded, relativeTo: .largeTitle)
+            .monospacedDigit()
+            .foregroundStyle(amountDecimal == nil ? Theme.label(0.35) : Theme.label)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .contentShape(.rect)
+            .onTapGesture { amountFocused = true }
+
+            currencyPicker
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    /// Native menu picker beneath the amount — rows lead with their currency
+    /// glyph in the Liquid Glass menu panel.
+    private var currencyPicker: some View {
+        Menu {
+            Picker("Currency", selection: $currencyCode) {
+                ForEach(AppModel.supportedCurrencyCodes, id: \.self) { code in
+                    Label(code, systemImage: CurrencyFormatter.symbolName(for: code)).tag(code)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 6) {
+                Text("\(symbol) \(currencyCode)")
+                    .appFont(17)
+                    .foregroundStyle(Theme.label(0.5))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Theme.label(0.4))
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Currency")
+        .accessibilityValue(currencyCode)
+    }
+
+    // MARK: Status (segmented)
+
+    private var statusSegmented: some View {
+        Picker("Status", selection: $status) {
+            ForEach(EntryStatus.allCases) { s in
+                Text(s.title).tag(s)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .onChange(of: status) { _, _ in
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+    }
+
+    // MARK: Details (icon-led editable rows)
+
+    private var detailsCard: some View {
+        ChromeCard {
+            ChromeRow(icon: "folder") {
+                TextField("Project", text: $project)
+                    .foregroundStyle(Theme.label)
+                    .onChange(of: project) { _, v in project = Validation.capped(v, max: Limits.maxProjectLength) }
+                    .accessibilityLabel("Project")
+            }
+            ChromeDivider()
+            ChromeRow(icon: "text.document", alignTop: true) {
+                TextField("Describe the work", text: $task, axis: .vertical)
+                    .lineLimit(1...4)
+                    .foregroundStyle(Theme.label)
+                    .padding(.vertical, 15)
+                    .onChange(of: task) { _, v in task = Validation.capped(v, max: Limits.maxTaskLength) }
+                    .accessibilityLabel("Task")
+            }
+        }
+    }
+
+    private var clientCard: some View {
+        ChromeCard {
+            ChromeRow(icon: "person.crop.circle") {
+                Text("Client").foregroundStyle(Theme.label)
+                Spacer()
+                clientMenu
+            }
+        }
+    }
+
+    /// Client picker with a truncating label — a long client name shortens in
+    /// the middle instead of wrapping the row. The menu content stays a native
+    /// inline picker (system checkmark, Liquid Glass panel).
+    private var clientMenu: some View {
+        Menu {
+            Picker("Client", selection: $selectedClient) {
+                ForEach(clients) { client in
+                    Text(client.name).tag(Optional(client))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 6) {
+                Text(selectedClient?.name ?? String(localized: "Choose"))
+                    .foregroundStyle(Theme.label(0.5))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Theme.label(0.4))
+            }
+            .frame(maxWidth: 190, alignment: .trailing)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Client")
+        .accessibilityValue(selectedClient?.name ?? "")
+    }
+
+    // MARK: Schedule
+
+    private var scheduleCard: some View {
+        ChromeCard {
+            ChromeRow(icon: "calendar") {
+                Text("Date").foregroundStyle(Theme.label)
+                Spacer()
+                DatePicker("", selection: $date, displayedComponents: .date)
+                    .labelsHidden()
+            }
+            ChromeDivider()
+            ChromeRow(icon: "hourglass") {
+                Toggle(isOn: $hasHold.animation()) {
+                    Text("Hold until").foregroundStyle(Theme.label)
+                }
+            }
+            if hasHold {
+                ChromeDivider()
+                ChromeRow(icon: "calendar.badge.clock") {
+                    Text("Hold date").foregroundStyle(Theme.label)
+                    Spacer()
+                    DatePicker("", selection: $holdDate, in: date..., displayedComponents: .date)
+                        .labelsHidden()
+                }
+            }
+        }
     }
 
     // MARK: Data
 
     private func load() {
+        guard !entry.isInvalidated else { return }
         amountText = NSDecimalNumber(decimal: entry.amount).stringValue
         currencyCode = entry.currencyCode
         project = entry.project ?? ""
@@ -244,6 +256,13 @@ struct EditEntrySheet: View {
 
     private func save() {
         guard let amount = amountDecimal else { return }
+        // A sync pull can delete the line while it's being edited; writing to
+        // the invalidated model would trap. The edit is lost either way — the
+        // row no longer exists anywhere — so just close.
+        guard !entry.isInvalidated else {
+            dismiss()
+            return
+        }
         entry.amount = amount
         entry.currencyCode = currencyCode
         let p = Validation.trimmed(project, max: Limits.maxProjectLength)
@@ -254,13 +273,11 @@ struct EditEntrySheet: View {
         entry.status = status
         if let c = selectedClient { entry.client = c }
         entry.markDirty()
-        do {
-            try context.save()
-            app.queueSync(context: context)
+        if let error = app.save(context) {
+            saveError = error
+        } else {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             dismiss()
-        } catch {
-            saveError = error.localizedDescription
         }
     }
 }

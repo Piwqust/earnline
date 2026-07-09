@@ -25,11 +25,10 @@ struct CurrencyConversionTests {
         #expect(app.toBase(5000, code: "RUB") == 50)
     }
 
-    @Test func unknownCurrencyIsNotConvertibleAndFallsBackAtPar() {
+    @Test func unknownCurrencyIsNotConvertibleAndIsExcludedFromTotals() {
         let app = makeApp(base: "USD", secondary: "RUB", rate: 100)
         #expect(app.conversionRate(from: "EUR") == nil)
         #expect(app.canConvert("EUR") == false)
-        // Lossy 1:1 fallback — surfaced to the user via the UI marker + Settings count.
-        #expect(app.toBase(320, code: "EUR") == 320)
+        #expect(app.toBase(320, code: "EUR") == 0)
     }
 }

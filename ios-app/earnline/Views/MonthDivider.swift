@@ -11,14 +11,14 @@ struct MonthDivider: View {
                 .fill(Theme.hairline)
                 .frame(width: 28, height: 1)
             Text(title)
-                .font(.labelMed)
+                .appFont(14, .medium)
                 .foregroundStyle(Theme.label(0.6))
             Rectangle()
                 .fill(Theme.hairline)
                 .frame(height: 1)
             if let total {
                 MoneyAmountText(baseAmount: total,
-                                font: .system(size: 13, weight: .medium),
+                                size: 13, weight: .medium,
                                 color: Theme.label(0.4),
                                 minimumScaleFactor: 0.7)
                     .animation(.snappy(duration: 0.3), value: total)

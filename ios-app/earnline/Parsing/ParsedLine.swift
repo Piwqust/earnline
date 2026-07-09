@@ -12,8 +12,10 @@ struct ParsedLine: Equatable {
     var holdUntil: Date?
     var status: EntryStatus?
 
-    /// Enough information present to commit a real line.
+    /// Enough information present to commit a real line. A zero amount is not
+    /// an income line — it's a note that happened to contain "0".
     var isCommittable: Bool {
-        amount != nil && (!(task.isEmpty) || project != nil)
+        guard let amount, amount > 0 else { return false }
+        return !task.isEmpty || project != nil
     }
 }

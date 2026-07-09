@@ -13,17 +13,17 @@ struct EmptyStateView: View {
 
             VStack(spacing: 6) {
                 Text("Write your first line")
-                    .font(.system(size: 20, weight: .semibold))
+                    .appFont(20, .semibold)
                     .foregroundStyle(Theme.label)
                 Text("Jot income like a notebook —\n“$240 Acme: 2 screens”")
-                    .font(.system(size: 15))
+                    .appFont(15)
                     .foregroundStyle(Theme.label(0.5))
                     .multilineTextAlignment(.center)
             }
 
             Button(action: onStart) {
                 Text("New line")
-                    .font(.system(size: 16, weight: .medium))
+                    .appFont(16, .medium)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
             }
