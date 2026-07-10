@@ -165,8 +165,10 @@ final class AppModel {
     var syncError: String?
     /// Number of remote edits/deletes that changed after this device's last
     /// observed server version. These require an explicit user choice rather
-    /// than a silent last-device-wins overwrite.
-    private(set) var syncConflictCount = 0
+    /// than a silent last-device-wins overwrite. Written by the sync pass in
+    /// `AppModel+Sync.swift`; module-internal setter (only that extension
+    /// writes it — views read it).
+    var syncConflictCount = 0
     /// When the last sync completed — display only ("Last sync" in Settings).
     var lastSyncAt: Date? {
         didSet { defaults.set(lastSyncAt, forKey: workspaceDefaultKey("lastSyncAt")) }
@@ -189,29 +191,34 @@ final class AppModel {
     /// Production/Test picker inside it.
     var showSettings = false
 
-    private let defaults = UserDefaults.standard
-    @ObservationIgnored private var supabaseClient: SupabaseClient?
-    @ObservationIgnored private var queuedSyncTask: Task<Void, Never>?
-    @ObservationIgnored private var realtimeChannel: RealtimeChannelV2?
+    // Persisted-settings store plus the sync / realtime / retry machinery.
+    // These are module-`internal` (not `private`) only so the sync orchestration
+    // can live in `AppModel+Sync.swift` while remaining owned by `AppModel`;
+    // `@ObservationIgnored` keeps them off the observation graph. Treat as
+    // private to the type — nothing outside `AppModel` should touch them.
+    let defaults = UserDefaults.standard
+    @ObservationIgnored var supabaseClient: SupabaseClient?
+    @ObservationIgnored var queuedSyncTask: Task<Void, Never>?
+    @ObservationIgnored var realtimeChannel: RealtimeChannelV2?
     /// The client that owns `realtimeChannel` — kept so teardown can remove the
     /// channel even after `supabaseClient` has been reset to nil.
-    @ObservationIgnored private var realtimeClient: SupabaseClient?
-    @ObservationIgnored private var realtimeTask: Task<Void, Never>?
-    @ObservationIgnored private var realtimeContext: ModelContext?
-    @ObservationIgnored private var configRefreshTask: Task<Void, Never>?
-    @ObservationIgnored private var followUpSyncRequested = false
+    @ObservationIgnored var realtimeClient: SupabaseClient?
+    @ObservationIgnored var realtimeTask: Task<Void, Never>?
+    @ObservationIgnored var realtimeContext: ModelContext?
+    @ObservationIgnored var configRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var followUpSyncRequested = false
     /// Bumped on every workspace detach. An in-flight `syncNow` snapshots the
     /// generation before its await and discards its results if the workspace
     /// changed underneath it — otherwise a Production pass finishing after a
     /// switch to Test would write its cursor under Test's keys.
-    @ObservationIgnored private var syncGeneration = 0
-    @ObservationIgnored private var retryTask: Task<Void, Never>?
-    @ObservationIgnored private var retryAttempt = 0
-    @ObservationIgnored private var invokedByRetry = false
-    @ObservationIgnored private var lastSyncFailed = false
-    @ObservationIgnored private let pathMonitor = NWPathMonitor()
-    @ObservationIgnored private var pathMonitorStarted = false
-    @ObservationIgnored private var pathWasSatisfied = true
+    @ObservationIgnored var syncGeneration = 0
+    @ObservationIgnored var retryTask: Task<Void, Never>?
+    @ObservationIgnored var retryAttempt = 0
+    @ObservationIgnored var invokedByRetry = false
+    @ObservationIgnored var lastSyncFailed = false
+    @ObservationIgnored let pathMonitor = NWPathMonitor()
+    @ObservationIgnored var pathMonitorStarted = false
+    @ObservationIgnored var pathWasSatisfied = true
     @ObservationIgnored private var lockWindow: UIWindow?
     @ObservationIgnored private var isUnlocking = false
 
@@ -408,616 +415,77 @@ final class AppModel {
 
     // MARK: Currency
 
-    /// Base-currency value of one unit of `code`, or `nil` when the app has no
-    /// rate for it (anything other than the base or secondary currency).
-    func conversionRate(from code: String) -> Decimal? {
-        if code == baseCurrencyCode { return 1 }
-        if code == secondaryCurrencyCode { return 1 / rateDecimal }
-        return nil
+    /// A value-type snapshot of the current currency settings. The money math
+    /// lives in `CurrencyConverter` so it's testable without an `AppModel`;
+    /// rebuilt per read since the three fields are trivial to copy.
+    var converter: CurrencyConverter {
+        CurrencyConverter(baseCurrencyCode: baseCurrencyCode,
+                          secondaryCurrencyCode: secondaryCurrencyCode,
+                          rate: rate)
     }
 
-    /// Whether an amount in `code` can be converted to the base currency.
-    func canConvert(_ code: String) -> Bool { conversionRate(from: code) != nil }
+    func conversionRate(from code: String) -> Decimal? { converter.conversionRate(from: code) }
+    func canConvert(_ code: String) -> Bool { converter.canConvert(code) }
+    func toBase(_ amount: Decimal, code: String) -> Decimal { converter.toBase(amount, code: code) }
+    func secondary(_ base: Decimal) -> Decimal { converter.secondary(base) }
+    func primaryString(_ base: Decimal) -> String { converter.primaryString(base) }
+    func secondaryString(_ base: Decimal) -> String { converter.secondaryString(base) }
 
-    /// Convert an entry amount into the base currency.
-    func toBase(_ amount: Decimal, code: String) -> Decimal {
-        if code == baseCurrencyCode { return amount }
-        if code == secondaryCurrencyCode { return amount / rateDecimal }
-        // A third currency is a valid imported or synced state, but adding its
-        // raw units to a base-currency total fabricates a financial result.
-        // Callers retain and display the entry's original amount; consolidated
-        // totals exclude it until a conversion rate is available.
-        #if DEBUG
-        print("⚠️ toBase: no rate for \(code); excluding it from consolidated totals.")
-        #endif
-        return .zero
-    }
+    // MARK: Grouping, totals & insights
 
-    /// The secondary-currency value for a base amount.
-    func secondary(_ base: Decimal) -> Decimal { base * rateDecimal }
+    /// The aggregation layer — grouping/totals, trend series, the daily
+    /// heatmap, and the pending queue — lives in the pure `Insights` value
+    /// type. `AppModel` forwards to a snapshot built from the current
+    /// `converter`, so views keep calling `app.total(…)`, `app.monthlySeries(…)`
+    /// etc. unchanged while the math is unit-tested in isolation.
+    var insights: Insights { Insights(converter: converter) }
 
-    func primaryString(_ base: Decimal) -> String {
-        CurrencyFormatter.string(base, code: baseCurrencyCode)
-    }
-    func secondaryString(_ base: Decimal) -> String {
-        CurrencyFormatter.string(secondary(base), code: secondaryCurrencyCode)
-    }
+    func entries(of client: Client, in month: Date) -> [Entry] { insights.entries(of: client, in: month) }
+    func earnedEntries(of client: Client, in month: Date) -> [Entry] { insights.earnedEntries(of: client, in: month) }
+    func total(of client: Client, in month: Date) -> Decimal { insights.total(of: client, in: month) }
+    func clientsWithEntries(_ clients: [Client], in month: Date) -> [Client] { insights.clientsWithEntries(clients, in: month) }
+    func monthTotal(_ clients: [Client], in month: Date) -> Decimal { insights.monthTotal(clients, in: month) }
 
-    // MARK: Grouping & totals
-
-    func entries(of client: Client, in month: Date) -> [Entry] {
-        client.entries
-            .filter { sameMonth($0.date, month) }
-            .sorted { $0.sortIndex == $1.sortIndex ? $0.createdAt > $1.createdAt : $0.sortIndex < $1.sortIndex }
-    }
-
-    func earnedEntries(of client: Client, in month: Date) -> [Entry] {
-        entries(of: client, in: month).filter { $0.status.isIncludedInEarnedTotals }
-    }
-
-    func total(of client: Client, in month: Date) -> Decimal {
-        // A running sum doesn't care about order, so skip the filtered-array
-        // allocation and the sort that `earnedEntries` does — this runs per
-        // client, per visible month, and (×6) on every summary refresh.
-        client.entries.reduce(Decimal.zero) { sum, entry in
-            guard entry.status.isIncludedInEarnedTotals, sameMonth(entry.date, month) else { return sum }
-            return sum + toBase(entry.amount, code: entry.currencyCode)
-        }
-    }
-
-    func clientsWithEntries(_ clients: [Client], in month: Date) -> [Client] {
-        clients
-            .filter { !entries(of: $0, in: month).isEmpty }
-            .sorted { $0.sortIndex < $1.sortIndex }
-    }
-
-    func monthTotal(_ clients: [Client], in month: Date) -> Decimal {
-        clients.reduce(Decimal.zero) { $0 + total(of: $1, in: month) }
-    }
-
-    // MARK: Insights
-
-    /// Earned base-currency total for each of the last `lastNMonths` months,
-    /// oldest first. Months with no data come back as 0 so the chart is continuous.
     func monthlySeries(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, total: Decimal)] {
-        let calendar = Calendar.current
-        let thisMonth = DateFormat.monthStart(of: .now)
-        return (0..<max(lastNMonths, 1)).reversed().compactMap { offset in
-            guard let month = calendar.date(byAdding: .month, value: -offset, to: thisMonth) else { return nil }
-            return (month: month, total: monthTotal(clients, in: month))
-        }
+        insights.monthlySeries(clients, lastNMonths: lastNMonths)
     }
-
-    /// Every client that earned over the last `lastNMonths` months, highest
-    /// first, dropping clients with nothing earned — the full breakdown behind
-    /// the Top clients composition bar.
     func clientTotals(_ clients: [Client], lastNMonths: Int = 12) -> [(client: Client, total: Decimal)] {
-        let months = monthlySeries(clients, lastNMonths: lastNMonths).map(\.month)
-        return clients
-            .map { client in
-                (client: client, total: months.reduce(Decimal.zero) { $0 + total(of: client, in: $1) })
-            }
-            .filter { $0.total > 0 }
-            .sorted { $0.total > $1.total }
+        insights.clientTotals(clients, lastNMonths: lastNMonths)
     }
-
-    /// The `limit` highest-earning clients over the window.
     func topClients(_ clients: [Client], lastNMonths: Int = 12, limit: Int = 3) -> [(client: Client, total: Decimal)] {
-        Array(clientTotals(clients, lastNMonths: lastNMonths).prefix(limit))
+        insights.topClients(clients, lastNMonths: lastNMonths, limit: limit)
     }
-
-    /// Month-over-month change in earned revenue across the last `lastNMonths`
-    /// months: each month's earned total minus the prior month's. An extra
-    /// leading month is fetched so the first bar has a real baseline.
     func monthlyDeltas(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, delta: Decimal, total: Decimal)] {
-        let series = monthlySeries(clients, lastNMonths: lastNMonths + 1)
-        guard series.count >= 2 else {
-            return series.map { (month: $0.month, delta: $0.total, total: $0.total) }
-        }
-        return (1..<series.count).map { index in
-            (month: series[index].month,
-             delta: series[index].total - series[index - 1].total,
-             total: series[index].total)
-        }
+        insights.monthlyDeltas(clients, lastNMonths: lastNMonths)
     }
 
-    /// Straight-line month-end projection for the running month: the earned
-    /// total so far scaled up to the full month. Nil while there's nothing to
-    /// extrapolate — no earnings yet, or the first two days of a month (one
-    /// early invoice would project an absurd figure).
+    /// Straight-line month-end projection — see `Insights.monthPace`. Kept as a
+    /// static forwarder so existing `AppModel.monthPace` call sites and tests
+    /// need no change.
     nonisolated static func monthPace(total: Decimal,
                                       now: Date = .now,
                                       calendar: Calendar = .current) -> Decimal? {
-        guard total > 0 else { return nil }
-        let day = calendar.component(.day, from: now)
-        guard day >= 3,
-              let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count else { return nil }
-        return (total / Decimal(day) * Decimal(daysInMonth)).rounded()
+        Insights.monthPace(total: total, now: now, calendar: calendar)
     }
 
-    // MARK: Insights — daily heatmap
-
-    /// How a single line lands on the calendar: the base-currency amount it
-    /// contributes per day and the span of days it covers. A *held* line
-    /// spreads its amount evenly across every day from its own date through the
-    /// hold-release day (inclusive) — the money is "earning" across the wait —
-    /// while every other line lands wholly on its date.
-    private func heatSpan(of entry: Entry) -> (start: Date, end: Date, perDay: Decimal, dayCount: Int) {
-        let calendar = Calendar.current
-        let base = toBase(entry.amount, code: entry.currencyCode)
-        let start = calendar.startOfDay(for: entry.date)
-        guard let hold = entry.holdUntil else { return (start, start, base, 1) }
-        let end = calendar.startOfDay(for: hold)
-        guard end > start else { return (start, start, base, 1) }
-        let count = (calendar.dateComponents([.day], from: start, to: end).day ?? 0) + 1
-        return (start, end, base / Decimal(count), count)
-    }
-
-    /// Earned base-currency amount for each calendar day in `[startDay, endDay]`,
-    /// with held lines distributed evenly over their span. Canceled lines are
-    /// excluded; days with nothing earned are simply absent from the result.
-    /// Keys are start-of-day, matching what the heatmap looks up.
     func dailyEarnings(_ clients: [Client], from startDay: Date, through endDay: Date) -> [Date: Decimal] {
-        let calendar = Calendar.current
-        let lo = calendar.startOfDay(for: startDay)
-        let hi = calendar.startOfDay(for: endDay)
-        guard lo <= hi else { return [:] }
-        var map: [Date: Decimal] = [:]
-        for client in clients {
-            for entry in client.entries where entry.status.isIncludedInEarnedTotals {
-                let span = heatSpan(of: entry)
-                var day = max(span.start, lo)
-                let last = min(span.end, hi)
-                while day <= last {
-                    map[day, default: .zero] += span.perDay
-                    guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-                    day = next
-                }
-            }
-        }
-        return map
+        insights.dailyEarnings(clients, from: startDay, through: endDay)
     }
-
-    /// The lines earning on `day`, largest slice first, each paired with the
-    /// base-currency amount it contributes that day (a full amount, or one even
-    /// slice of a held line). Powers the tapped-day breakdown.
     func dayContributions(on day: Date, clients: [Client]) -> [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] {
-        let calendar = Calendar.current
-        let target = calendar.startOfDay(for: day)
-        var rows: [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] = []
-        for client in clients {
-            for entry in client.entries where entry.status.isIncludedInEarnedTotals {
-                let span = heatSpan(of: entry)
-                if target >= span.start && target <= span.end {
-                    rows.append((entry: entry, amount: span.perDay, isHeldSlice: span.dayCount > 1))
-                }
-            }
-        }
-        return rows.sorted { $0.amount > $1.amount }
+        insights.dayContributions(on: day, clients: clients)
     }
 
-    // MARK: Pending / outstanding
-
-    /// All in-progress lines, soonest `holdUntil` first (undated last), then by
-    /// creation. These are the lines that still need follow-up.
-    func pendingEntries(_ clients: [Client]) -> [Entry] {
-        clients
-            .flatMap(\.entries)
-            .filter { $0.status == .inProgress }
-            .sorted { a, b in
-                switch (a.holdUntil, b.holdUntil) {
-                case let (l?, r?): return l == r ? a.createdAt < b.createdAt : l < r
-                case (_?, nil): return true   // dated before undated
-                case (nil, _?): return false
-                case (nil, nil): return a.createdAt < b.createdAt
-                }
-            }
-    }
-
-    /// An in-progress line whose hold date is already in the past.
-    func isOverdue(_ entry: Entry) -> Bool {
-        guard entry.status == .inProgress, let hold = entry.holdUntil else { return false }
-        return hold < Calendar.current.startOfDay(for: .now)
-    }
+    func pendingEntries(_ clients: [Client]) -> [Entry] { insights.pendingEntries(clients) }
+    func isOverdue(_ entry: Entry) -> Bool { insights.isOverdue(entry) }
+    func monthsWithData(_ clients: [Client]) -> [Date] { insights.monthsWithData(clients) }
 
     /// Rebuild local hold-until reminders from the current entries. Called after
     /// every save point (via `queueSync`) and after a sync pull, so the schedule
-    /// always matches the data without any delta tracking.
+    /// always matches the data without any delta tracking. Stateful (fetches the
+    /// context), so it stays on `AppModel` rather than in `Insights`.
     func refreshPendingReminders(context: ModelContext) {
         let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
         PendingNotifications.sync(entries)
-    }
-
-    /// Months containing at least one visible entry (newest first), always including this month.
-    func monthsWithData(_ clients: [Client]) -> [Date] {
-        var set = Set<Date>()
-        for c in clients {
-            for e in c.entries {
-                set.insert(DateFormat.monthStart(of: e.date))
-            }
-        }
-        set.insert(DateFormat.monthStart(of: .now))
-        return set.sorted(by: >)
-    }
-
-    private func sameMonth(_ a: Date, _ b: Date) -> Bool {
-        Calendar.current.isDate(a, equalTo: b, toGranularity: .month)
-    }
-
-    // MARK: Supabase
-
-    var isSupabaseConfigured: Bool {
-        let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: urlText),
-              url.scheme?.lowercased() == "https",
-              url.host() != nil else { return false }
-        return !supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func refreshSupabaseSession() async {
-        guard isSupabaseConfigured else {
-            syncMessage = String(localized: "Offline")
-            return
-        }
-        do {
-            _ = try supabase()
-            syncMessage = String(localized: "Ready")
-            syncError = nil
-        } catch {
-            syncMessage = String(localized: "Needs setup")
-            syncError = error.localizedDescription
-        }
-    }
-
-    func syncNow(context: ModelContext,
-                 conflictResolution: SyncCoordinator.ConflictResolution = .requireUserChoice) async {
-        guard isSupabaseConfigured else {
-            syncMessage = String(localized: "Offline")
-            return
-        }
-        guard !isSyncing else {
-            // A pass is already on the wire — run another when it finishes so
-            // edits made mid-flight are pushed rather than dropped.
-            followUpSyncRequested = true
-            return
-        }
-        // Any pass supersedes a pending retry; an externally triggered one
-        // (edit, foreground, realtime) also restarts the backoff ladder.
-        retryTask?.cancel()
-        if !invokedByRetry { retryAttempt = 0 }
-        invokedByRetry = false
-        // Demo rows seeded while sync was unconfigured must not leak into a
-        // real workspace — drop the never-synced ones before the first push.
-        SampleData.purgeAutoSeededDemoIfNeeded(context)
-        let generation = syncGeneration
-        isSyncing = true
-        syncMessage = String(localized: "Syncing...")
-        syncError = nil
-        do {
-            let nextCursor = try await SyncCoordinator.sync(context: context,
-                                                            client: supabase(),
-                                                            workspaceID: workspaceID,
-                                                            lastPulledAt: syncCursor,
-                                                            conflictResolution: conflictResolution)
-            guard generation == syncGeneration else {
-                finishStaleSyncPass()
-                return
-            }
-            syncCursor = nextCursor.rowUpdatedAt
-            lastSyncAt = Date()
-            syncMessage = String(localized: "Synced")
-            try context.save()
-            refreshPendingReminders(context: context)
-            retryAttempt = 0
-            lastSyncFailed = false
-            syncConflictCount = 0
-        } catch {
-            guard generation == syncGeneration else {
-                finishStaleSyncPass()
-                return
-            }
-            context.rollback()
-            if let conflict = error as? SyncCoordinator.SyncConflictError {
-                syncConflictCount = conflict.count
-                syncMessage = String(localized: "Resolve conflict")
-                syncError = conflict.localizedDescription
-                lastSyncFailed = false
-            } else {
-                syncMessage = String(localized: "Needs sync")
-                syncError = error.localizedDescription
-                lastSyncFailed = true
-                scheduleRetrySync(context: context)
-            }
-        }
-        isSyncing = false
-        if followUpSyncRequested {
-            followUpSyncRequested = false
-            await syncNow(context: context)
-        }
-    }
-
-    /// An in-flight pass outlived a workspace switch: drop its results and
-    /// state writes. If a sync was requested for the *new* workspace while the
-    /// stale pass held `isSyncing`, run it now against the current store.
-    private func finishStaleSyncPass() {
-        isSyncing = false
-        if followUpSyncRequested {
-            followUpSyncRequested = false
-            if let context = realtimeContext { queueSync(context: context) }
-        }
-    }
-
-    /// Replace the local SwiftData cache with the selected Supabase workspace.
-    /// This intentionally does not enqueue tombstones: the user is switching
-    /// sources of truth, not deleting remote income rows.
-    @discardableResult
-    func resetLocalDataAndPull(context: ModelContext) async -> String? {
-        guard isSupabaseConfigured else {
-            syncMessage = String(localized: "Offline")
-            return String(localized: "Add the Supabase URL and publishable key first.")
-        }
-        syncGeneration += 1 // a pass already on the wire must not restore the old cursor
-        queuedSyncTask?.cancel()
-        retryTask?.cancel()
-        followUpSyncRequested = false
-        retryAttempt = 0
-        invokedByRetry = false
-        lastSyncFailed = false
-        do {
-            try clearLocalStore(context)
-            syncCursor = nil
-            lastSyncAt = nil
-            defaults.set(false, forKey: SampleData.autoSeededDemoKey)
-            await syncNow(context: context)
-            return syncError
-        } catch {
-            syncMessage = String(localized: "Needs sync")
-            syncError = error.localizedDescription
-            return error.localizedDescription
-        }
-    }
-
-    func queueSync(context: ModelContext) {
-        queuedSyncTask?.cancel()
-        queuedSyncTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled, let self else { return }
-            self.refreshPendingReminders(context: context)
-            await self.syncNow(context: context)
-        }
-    }
-
-    /// The user has reviewed the conflict warning and intentionally wants this
-    /// iPhone's dirty rows to replace the remote copies.
-    func keepLocalConflictChanges(context: ModelContext) async {
-        await syncNow(context: context, conflictResolution: .preferLocal)
-    }
-
-    func detachWorkspaceStore() {
-        syncGeneration += 1
-        queuedSyncTask?.cancel()
-        retryTask?.cancel()
-        configRefreshTask?.cancel()
-        followUpSyncRequested = false
-        retryAttempt = 0
-        invokedByRetry = false
-        lastSyncFailed = false
-        realtimeContext = nil
-        stopRealtime()
-    }
-
-    // MARK: Persistence
-
-    /// The one persistence path: commit pending changes and kick the debounced
-    /// sync. Returns `nil` on success, or a user-facing message on failure —
-    /// assign it to the caller's error state and surface it with
-    /// `.saveErrorAlert`. Every screen saves through here so the save + sync +
-    /// error-reporting behaviour is identical everywhere.
-    @discardableResult
-    func save(_ context: ModelContext) -> String? {
-        do {
-            try context.save()
-            queueSync(context: context)
-            return nil
-        } catch {
-            // A save error must leave the screen exactly as it was before the
-            // action. Without this rollback, a later unrelated save could
-            // commit an insert/edit/delete the user was told had failed.
-            context.rollback()
-            return error.localizedDescription
-        }
-    }
-
-    private func clearLocalStore(_ context: ModelContext) throws {
-        for entry in try context.fetch(FetchDescriptor<Entry>()) {
-            context.delete(entry)
-        }
-        for heading in try context.fetch(FetchDescriptor<Heading>()) {
-            context.delete(heading)
-        }
-        for tombstone in try context.fetch(FetchDescriptor<SyncTombstone>()) {
-            context.delete(tombstone)
-        }
-        for client in try context.fetch(FetchDescriptor<Client>()) {
-            context.delete(client)
-        }
-        try context.save()
-    }
-
-    /// Delete an entry through the standard tombstone → save → undo flow, so a
-    /// deletion looks the same whether it comes from the ledger, a client, or
-    /// the pending list. Returns `nil` on success (with the undo staged) or the
-    /// error message on failure.
-    @discardableResult
-    func delete(_ entry: Entry, context: ModelContext) -> String? {
-        let snapshot = UndoableDelete.entry(EntrySnapshot(entry))
-        SyncDeleteQueue.enqueue(.entry, id: entry.id, in: context)
-        withAnimation(.snappy) { context.delete(entry) }
-        let error = save(context)
-        if error == nil { stageUndo(snapshot) }
-        return error
-    }
-
-    // MARK: Retry & reconnect
-
-    /// A failed pass retries itself with growing delays, then gives up until
-    /// the next external trigger (edit, foreground, realtime, reconnect) —
-    /// endless polling against a dead endpoint would just burn battery.
-    private func scheduleRetrySync(context: ModelContext) {
-        guard let delay = Self.retryDelay(attempt: retryAttempt) else { return }
-        retryAttempt += 1
-        retryTask?.cancel()
-        retryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self, self.isSupabaseConfigured, !self.isSyncing else { return }
-            self.invokedByRetry = true
-            await self.syncNow(context: context)
-        }
-    }
-
-    /// Backoff ladder: 5 s → 15 s → 45 s → 120 s, then nil (stop).
-    nonisolated static func retryDelay(attempt: Int) -> Duration? {
-        let delays: [Duration] = [.seconds(5), .seconds(15), .seconds(45), .seconds(120)]
-        guard delays.indices.contains(attempt) else { return nil }
-        return delays[attempt]
-    }
-
-    /// Sync as soon as connectivity returns after a failed pass, instead of
-    /// sitting on "Needs sync" until the user happens to touch something.
-    private func startPathMonitorIfNeeded() {
-        guard !pathMonitorStarted else { return }
-        pathMonitorStarted = true
-        pathMonitor.pathUpdateHandler = { [weak self] path in
-            let satisfied = path.status == .satisfied
-            Task { @MainActor [weak self] in
-                self?.handlePathChange(satisfied: satisfied)
-            }
-        }
-        pathMonitor.start(queue: DispatchQueue(label: "earnline.path-monitor"))
-    }
-
-    private func handlePathChange(satisfied: Bool) {
-        let cameBackOnline = satisfied && !pathWasSatisfied
-        pathWasSatisfied = satisfied
-        guard cameBackOnline, lastSyncFailed, let context = realtimeContext else { return }
-        queueSync(context: context)
-    }
-
-    private func supabase() throws -> SupabaseClient {
-        if let supabaseClient { return supabaseClient }
-        let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: urlText), !key.isEmpty else {
-            throw SyncError.missingConfiguration
-        }
-        let client = SupabaseClient(supabaseURL: url, supabaseKey: key)
-        supabaseClient = client
-        return client
-    }
-
-    private func resetSupabaseClient() {
-        supabaseClient = nil
-        syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
-        scheduleConfigRefresh()
-    }
-
-    private func workspaceDefaultKey(_ key: String) -> String {
-        "\(key).\(workspaceEnvironment.rawValue)"
-    }
-
-    private func loadWorkspaceSyncState() {
-        lastSyncAt = defaults.object(forKey: workspaceDefaultKey("lastSyncAt")) as? Date
-        syncCursor = defaults.object(forKey: workspaceDefaultKey("syncCursor")) as? Date
-    }
-
-    /// Load the Supabase URL/key for the active environment: the user's stored
-    /// value for that workspace, or the project preloaded for it. Assigning
-    /// these fires their `didSet`s, which persist the values under the new
-    /// workspace's keys and rebuild the client.
-    private func loadWorkspaceSupabaseConfig() {
-        let config = workspaceEnvironment.defaultSupabaseConfig
-        supabaseURLString = defaults.string(forKey: workspaceDefaultKey("supabaseURLString")) ?? config.url
-        supabaseKey = defaults.string(forKey: workspaceDefaultKey("supabaseKey")) ?? config.publishableKey
-    }
-
-    /// The Settings fields fire their didSets on every keystroke — debounce
-    /// before rebuilding the realtime subscription, and kick off a sync so a
-    /// freshly configured workspace pulls without waiting for a manual "Sync
-    /// now" or the next edit.
-    private func scheduleConfigRefresh() {
-        guard realtimeContext != nil else { return }
-        configRefreshTask?.cancel()
-        configRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled, let self else { return }
-            self.restartRealtime()
-            if let context = self.realtimeContext, self.isSupabaseConfigured {
-                await self.syncNow(context: context)
-            }
-        }
-    }
-
-    // MARK: Realtime
-
-    /// Subscribe to workspace changes and trigger a debounced sync on any remote
-    /// insert/update/delete. One schema-wide channel filtered by `workspace_id`
-    /// covers clients, entries, headings, and tombstones.
-    func startRealtime(context: ModelContext) {
-        realtimeContext = context
-        startPathMonitorIfNeeded()
-        guard isSupabaseConfigured, realtimeChannel == nil, let client = try? supabase() else { return }
-        let workspace = workspaceID
-        let channel = client.channel("earnline:\(workspace)")
-        realtimeChannel = channel
-        realtimeClient = client
-        let stream = channel.postgresChange(
-            AnyAction.self,
-            schema: "public",
-            filter: .eq("workspace_id", value: workspace)
-        )
-        realtimeTask = Task { @MainActor [weak self] in
-            do {
-                try await channel.subscribeWithError()
-            } catch {
-                // Realtime is an optimization, not a reason to hide a failed
-                // subscription. The next foreground/manual sync still works.
-                self?.syncError = "Realtime updates unavailable: \(error.localizedDescription)"
-            }
-            for await _ in stream {
-                self?.handleRealtimeChange()
-            }
-        }
-    }
-
-    private func handleRealtimeChange() {
-        guard let realtimeContext else { return }
-        queueSync(context: realtimeContext)
-    }
-
-    private func restartRealtime() {
-        let context = realtimeContext
-        stopRealtime()
-        if let context { startRealtime(context: context) }
-    }
-
-    private func stopRealtime() {
-        realtimeTask?.cancel()
-        realtimeTask = nil
-        // Tear down against the client that created the channel — after a
-        // config change `supabaseClient` is already nil, and skipping the
-        // removal leaked a live subscription per change.
-        let client = realtimeClient
-        realtimeClient = nil
-        if let channel = realtimeChannel {
-            realtimeChannel = nil
-            Task { await client?.removeChannel(channel) }
-        }
-    }
-
-    private var rateDecimal: Decimal {
-        Decimal(string: String(rate), locale: Locale(identifier: "en_US_POSIX"))
-            ?? Decimal(Self.defaultExchangeRate)
     }
 
     nonisolated static func validExchangeRate(_ value: Double, fallback: Double = defaultExchangeRate) -> Double {
