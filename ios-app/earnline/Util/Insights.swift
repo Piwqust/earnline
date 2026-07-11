@@ -266,6 +266,19 @@ struct Insights {
         }
     }
 
+    /// Earned base-currency totals for one client, bucketed by month key —
+    /// the client-detail page's chart and stat source. One pass over the
+    /// client's entries, like `ledgerSnapshot`.
+    func earnedTotalsByMonth(of client: Client) -> [Int: Decimal] {
+        var totals: [Int: Decimal] = [:]
+        for entry in client.entries
+        where !entry.isDeleted && entry.status.isIncludedInEarnedTotals {
+            totals[Self.monthKey(of: entry.date, calendar: calendar), default: .zero] +=
+                converter.toBase(entry.amount, code: entry.currencyCode)
+        }
+        return totals
+    }
+
     func ledgerSnapshot(_ clients: [Client]) -> LedgerSnapshot {
         var entriesByClientMonth: [LedgerSnapshot.ClientMonth: [Entry]] = [:]
         var earnedTotalByClientMonth: [LedgerSnapshot.ClientMonth: Decimal] = [:]

@@ -2,6 +2,11 @@
 
 ## July 11, 2026
 
+### Client profile
+- The client page is a full profile now: a large earned total, a scrubbable chart of the last 12 months in the client's color, at-a-glance stats (this month, average month, share of income, pending), and the full history grouped by month.
+- Long histories load lazily, so opening a client with years of lines is instant.
+- Renaming, recoloring, and deleting a client moved behind an Edit button into their own sheet — changes apply when you confirm, and Cancel really cancels.
+
 ### Ledger
 - Scrolling and editing stay smooth on ledgers with thousands of lines: the list and its summary cards now aggregate months, totals, and trends in a single pass instead of re-scanning every line for every month.
 - Removed the detached lower scroll fade so the ledger now meets the native Liquid Glass controls with a clean edge.
