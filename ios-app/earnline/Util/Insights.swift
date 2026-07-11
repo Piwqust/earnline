@@ -221,7 +221,9 @@ struct Insights {
     /// cache (and no cache-invalidation bug surface) is needed.
     struct LedgerSnapshot {
         /// Months with at least one entry (newest first), always including the
-        /// current month — same contract as `monthsWithData`.
+        /// current month — same contract as `monthsWithData`. A windowed
+        /// snapshot lists only the window's months; older ones materialize
+        /// when the ledger extends its window.
         let months: [Date]
         /// Earned base-currency total per month key (canceled excluded).
         let earnedTotalByMonth: [Int: Decimal]
@@ -230,6 +232,9 @@ struct Insights {
         let hasEntries: Bool
         /// Number of in-progress lines — the More menu's "Pending (N)" label.
         let pendingCount: Int
+        /// Whether entries exist before the first month in `months` — drives
+        /// the ledger's load-older sentinel.
+        let hasOlderMonths: Bool
         private let entriesByClientMonth: [ClientMonth: [Entry]]
         private let earnedTotalByClientMonth: [ClientMonth: Decimal]
 
@@ -237,12 +242,14 @@ struct Insights {
                          earnedTotalByMonth: [Int: Decimal],
                          hasEntries: Bool,
                          pendingCount: Int,
+                         hasOlderMonths: Bool,
                          entriesByClientMonth: [ClientMonth: [Entry]],
                          earnedTotalByClientMonth: [ClientMonth: Decimal]) {
             self.months = months
             self.earnedTotalByMonth = earnedTotalByMonth
             self.hasEntries = hasEntries
             self.pendingCount = pendingCount
+            self.hasOlderMonths = hasOlderMonths
             self.entriesByClientMonth = entriesByClientMonth
             self.earnedTotalByClientMonth = earnedTotalByClientMonth
         }
@@ -288,7 +295,42 @@ struct Insights {
         return totals
     }
 
+    /// Full snapshot over every client's entries — the search path, the
+    /// ledger's one-off action fallback, and the unit tests use this.
     func ledgerSnapshot(_ clients: [Client]) -> LedgerSnapshot {
+        // `isDeleted` (not `isInvalidated`) on purpose: it reads only
+        // registration metadata, and free-standing models in unit tests have
+        // no context yet — `isInvalidated` would treat the fixture as dead.
+        var rows: [(owner: Client, entry: Entry)] = []
+        for client in clients where !client.isDeleted {
+            for entry in client.entries {
+                rows.append((client, entry))
+            }
+        }
+        return buildLedgerSnapshot(rows: rows, hasAnyEntries: nil,
+                                   pendingCount: nil, hasOlderMonths: false)
+    }
+
+    /// Windowed snapshot: `entries` are just the rows inside the ledger's
+    /// visible month window (a date-scoped fetch, so launch never faults the
+    /// whole table), while the whole-store facts arrive from cheap SQL counts
+    /// at the call site. Owners resolve through the store-maintained
+    /// `entry.client` relationship; orphaned rows are skipped, as before.
+    func ledgerSnapshot(windowed entries: [Entry],
+                        hasOlderMonths: Bool,
+                        hasAnyEntries: Bool,
+                        pendingCount: Int) -> LedgerSnapshot {
+        let rows = entries.compactMap { entry in
+            entry.client.map { (owner: $0, entry: entry) }
+        }
+        return buildLedgerSnapshot(rows: rows, hasAnyEntries: hasAnyEntries,
+                                   pendingCount: pendingCount, hasOlderMonths: hasOlderMonths)
+    }
+
+    private func buildLedgerSnapshot(rows: [(owner: Client, entry: Entry)],
+                                     hasAnyEntries: Bool?,
+                                     pendingCount pendingCountOverride: Int?,
+                                     hasOlderMonths: Bool) -> LedgerSnapshot {
         var entriesByClientMonth: [LedgerSnapshot.ClientMonth: [Entry]] = [:]
         var earnedTotalByClientMonth: [LedgerSnapshot.ClientMonth: Decimal] = [:]
         var earnedTotalByMonth: [Int: Decimal] = [:]
@@ -296,23 +338,18 @@ struct Insights {
         var pendingCount = 0
 
         // A sync pull can delete models mid-render; skip those the same way
-        // the ledger's row views do. `isDeleted` (not `isInvalidated`) on
-        // purpose: it reads only registration metadata, and free-standing
-        // models in unit tests have no context yet — `isInvalidated` would
-        // treat the whole fixture as dead.
-        for client in clients where !client.isDeleted {
-            for entry in client.entries where !entry.isDeleted {
-                let key = LedgerSnapshot.ClientMonth(client: client.id,
-                                                     month: Self.monthKey(of: entry.date, calendar: calendar))
-                monthKeys.insert(key.month)
-                entriesByClientMonth[key, default: []].append(entry)
-                let status = entry.status
-                if status == .inProgress { pendingCount += 1 }
-                if status.isIncludedInEarnedTotals {
-                    let base = converter.toBase(entry.amount, code: entry.currencyCode)
-                    earnedTotalByClientMonth[key, default: .zero] += base
-                    earnedTotalByMonth[key.month, default: .zero] += base
-                }
+        // the ledger's row views do.
+        for (owner, entry) in rows where !entry.isDeleted && !owner.isDeleted {
+            let key = LedgerSnapshot.ClientMonth(client: owner.id,
+                                                 month: Self.monthKey(of: entry.date, calendar: calendar))
+            monthKeys.insert(key.month)
+            entriesByClientMonth[key, default: []].append(entry)
+            let status = entry.status
+            if status == .inProgress { pendingCount += 1 }
+            if status.isIncludedInEarnedTotals {
+                let base = converter.toBase(entry.amount, code: entry.currencyCode)
+                earnedTotalByClientMonth[key, default: .zero] += base
+                earnedTotalByMonth[key.month, default: .zero] += base
             }
         }
         for key in entriesByClientMonth.keys {
@@ -321,15 +358,15 @@ struct Insights {
             }
         }
 
-        let hasEntries = !entriesByClientMonth.isEmpty
         monthKeys.insert(Self.monthKey(of: .now, calendar: calendar))
         let months = monthKeys.sorted(by: >).compactMap { key in
             calendar.date(from: DateComponents(year: key / 12, month: key % 12 + 1))
         }
         return LedgerSnapshot(months: months,
                               earnedTotalByMonth: earnedTotalByMonth,
-                              hasEntries: hasEntries,
-                              pendingCount: pendingCount,
+                              hasEntries: hasAnyEntries ?? !entriesByClientMonth.isEmpty,
+                              pendingCount: pendingCountOverride ?? pendingCount,
+                              hasOlderMonths: hasOlderMonths,
                               entriesByClientMonth: entriesByClientMonth,
                               earnedTotalByClientMonth: earnedTotalByClientMonth)
     }

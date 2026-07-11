@@ -17,6 +17,11 @@ struct LedgerView: View {
     /// through a save) and by the pricing task below for currency changes,
     /// which don't touch the store.
     @State private var ledgerSnapshot: Insights.LedgerSnapshot?
+    /// Trailing months currently materialized — see `refreshLedgerSnapshot`.
+    @State private var windowMonthCount = LedgerView.initialWindowMonths
+    /// Full-ledger snapshot for search, built when search opens: search spans
+    /// every month, not just the materialized window.
+    @State private var searchSnapshot: Insights.LedgerSnapshot?
 
     @State private var composerClient: Client?
     /// The month the open composer is anchored to — set from the section whose
@@ -82,7 +87,7 @@ struct LedgerView: View {
     /// per rebuild, which is what made a long ledger stutter on every body
     /// evaluation (each keystroke, status change, or sync tick).
     private func ledgerRows(_ snapshot: Insights.LedgerSnapshot) -> [Row] {
-        if isSearching { return searchLedgerRows(snapshot) }
+        if isSearching { return searchLedgerRows(searchSnapshot ?? snapshot) }
         var rows: [Row] = []
         for month in snapshot.months {
             let key = snapshot.key(for: month)
@@ -176,8 +181,53 @@ struct LedgerView: View {
                         rate: app.rate)
     }
 
+    /// How many trailing months the ledger materializes. Launch fetches only
+    /// this window (a date-scoped SQL fetch — the whole table is never
+    /// faulted); scrolling toward the bottom extends it. Six keeps the
+    /// summary trend (displayed month + five back) correct at launch.
+    private static let initialWindowMonths = 6
+    private static let windowExtensionMonths = 12
+
+    private var windowStart: Date {
+        let thisMonth = DateFormat.monthStart(of: .now)
+        return Calendar.current.date(byAdding: .month,
+                                     value: -(windowMonthCount - 1),
+                                     to: thisMonth) ?? .distantPast
+    }
+
     private func refreshLedgerSnapshot() {
-        ledgerSnapshot = app.insights.ledgerSnapshot(clients)
+        let start = windowStart
+        let inWindow = FetchDescriptor<Entry>(predicate: #Predicate { $0.date >= start })
+        let entries = (try? context.fetch(inWindow)) ?? []
+        // Whole-store facts come from SQL counts, not from walking rows.
+        let older = FetchDescriptor<Entry>(predicate: #Predicate { $0.date < start })
+        let olderCount = (try? context.fetchCount(older)) ?? 0
+        let inProgressRaw = EntryStatus.inProgress.rawValue
+        let pending = FetchDescriptor<Entry>(predicate: #Predicate { $0.statusRaw == inProgressRaw })
+        let pendingCount = (try? context.fetchCount(pending)) ?? 0
+        ledgerSnapshot = app.insights.ledgerSnapshot(windowed: entries,
+                                                     hasOlderMonths: olderCount > 0,
+                                                     hasAnyEntries: olderCount > 0 || !entries.isEmpty,
+                                                     pendingCount: pendingCount)
+        // Search spans every month, not just the window; keep its full
+        // snapshot in step while it's open.
+        if isSearching { searchSnapshot = app.insights.ledgerSnapshot(clients) }
+    }
+
+    /// Materialize older months once the user nears the bottom of the window
+    /// (the load-older sentinel row) or scrolls the summary pill close to the
+    /// window's edge, where the six-month trend would otherwise miss data.
+    private func extendLedgerWindow() {
+        guard ledgerSnapshot?.hasOlderMonths == true else { return }
+        windowMonthCount += Self.windowExtensionMonths
+        refreshLedgerSnapshot()
+    }
+
+    private func extendLedgerWindowIfNeeded(for displayedMonth: Date) {
+        guard ledgerSnapshot?.hasOlderMonths == true,
+              let trendStart = Calendar.current.date(byAdding: .month, value: -5, to: displayedMonth),
+              trendStart < windowStart else { return }
+        extendLedgerWindow()
     }
 
     var body: some View {
@@ -259,8 +309,15 @@ struct LedgerView: View {
                         prompt: "Search income")
             .searchToolbarBehavior(.minimize)
             .onChange(of: isSearching) { _, searching in
-                if searching { composerClient = nil }
-                else { searchQuery = "" }
+                if searching {
+                    composerClient = nil
+                    // One full pass, user-initiated: search must span every
+                    // month, while the ledger itself stays windowed.
+                    searchSnapshot = app.insights.ledgerSnapshot(clients)
+                } else {
+                    searchQuery = ""
+                    searchSnapshot = nil
+                }
             }
             .onAppear(perform: runDemoIfNeeded)
     }
@@ -316,6 +373,16 @@ struct LedgerView: View {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .listRowInsets(insets(for: row))
+                    }
+                    // Load-older sentinel: scrolling it into view materializes
+                    // the next chunk of months. Invisible — the extension is
+                    // synchronous, so older rows simply continue the list.
+                    if !isSearching, snapshot.hasOlderMonths {
+                        Color.clear
+                            .frame(height: 1)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .onAppear(perform: extendLedgerWindow)
                     }
                 }
             }
@@ -829,6 +896,9 @@ struct LedgerView: View {
         let chosen = above.max(by: { $0.y < $1.y }) ?? anchors.min(by: { $0.y < $1.y })
         if let m = chosen?.month, !Calendar.current.isDate(m, equalTo: app.displayedMonth, toGranularity: .month) {
             app.displayedMonth = m
+            // Near the window's edge the six-month trend would read zeros for
+            // months that exist but aren't materialized yet — extend first.
+            extendLedgerWindowIfNeeded(for: m)
         }
     }
 

@@ -153,9 +153,18 @@ enum SyncCoordinator {
     private static func pushLocalRows(context: ModelContext,
                                       client: SupabaseClient,
                                       workspaceID: String) async throws {
-        let clients = try context.fetch(FetchDescriptor<Client>())
-        let headings = try context.fetch(FetchDescriptor<Heading>())
-        let entries = try context.fetch(FetchDescriptor<Entry>())
+        // Fetch only rows that can need a push — the steady state is zero,
+        // and this runs on the main actor right after launch, where
+        // materializing the whole Entry table stalled the UI on large
+        // ledgers. `syncStateRaw == nil` is matched explicitly: `needsSync`
+        // treats it as dirty, but in SQL `NULL != 'synced'` is not true.
+        let synced = SyncState.synced.rawValue
+        let clients = try context.fetch(FetchDescriptor<Client>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
+        let headings = try context.fetch(FetchDescriptor<Heading>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
+        let entries = try context.fetch(FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
 
         // Snapshot the dirty rows *and their edit stamps* before each upsert:
         // the UI stays live while the request is on the wire, so only the rows
@@ -192,6 +201,29 @@ enum SyncCoordinator {
         }
     }
 
+    /// SQLite caps bound variables; batches past this size fall back to one
+    /// full-table fetch, which is also the cheapest plan for a first pull
+    /// into an empty or nearly-empty store.
+    private static let idPredicateLimit = 300
+
+    private static func localEntries(ids: [UUID], context: ModelContext) throws -> [Entry] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else { return try context.fetch(FetchDescriptor<Entry>()) }
+        return try context.fetch(FetchDescriptor<Entry>(predicate: #Predicate { ids.contains($0.id) }))
+    }
+
+    private static func localHeadings(ids: [UUID], context: ModelContext) throws -> [Heading] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else { return try context.fetch(FetchDescriptor<Heading>()) }
+        return try context.fetch(FetchDescriptor<Heading>(predicate: #Predicate { ids.contains($0.id) }))
+    }
+
+    private static func localClients(ids: [UUID], context: ModelContext) throws -> [Client] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else { return try context.fetch(FetchDescriptor<Client>()) }
+        return try context.fetch(FetchDescriptor<Client>(predicate: #Predicate { ids.contains($0.id) }))
+    }
+
     /// Mark exactly the pushed rows synced — skipping any that were edited or
     /// deleted while the upsert was in flight, so they stay dirty for the next
     /// pass instead of being silently dropped. The post-push pull sets the
@@ -209,17 +241,23 @@ enum SyncCoordinator {
                                        workspaceID: String,
                                        lastPulledAt: Date?,
                                        conflictResolution: ConflictResolution) async throws -> Date? {
+        // Clients stay a full fetch: there are few, and every remote entry
+        // needs its owner resolvable even when that client wasn't in this
+        // pull. Headings and entries are indexed only to merge the pulled
+        // batch, so they're fetched by the batch's ids below — an incremental
+        // pull touches a handful of rows, not the whole table.
         let localClients = try context.fetch(FetchDescriptor<Client>())
-        let localHeadings = try context.fetch(FetchDescriptor<Heading>())
-        let localEntries = try context.fetch(FetchDescriptor<Entry>())
 
         let clientSince = localClients.isEmpty ? nil : lastPulledAt
-        let headingSince = localHeadings.isEmpty ? nil : lastPulledAt
-        let entrySince = localEntries.isEmpty ? nil : lastPulledAt
+        let headingSince = try context.fetchCount(FetchDescriptor<Heading>()) == 0 ? nil : lastPulledAt
+        let entrySince = try context.fetchCount(FetchDescriptor<Entry>()) == 0 ? nil : lastPulledAt
 
         let remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
         let remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
         let remoteEntries = try await fetchEntries(client: client, workspaceID: workspaceID, updatedAfter: entrySince)
+
+        let localHeadings = try localHeadings(ids: remoteHeadings.map(\.id), context: context)
+        let localEntries = try localEntries(ids: remoteEntries.map(\.id), context: context)
 
         let maxUpdatedAt = (remoteClients.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
             + remoteHeadings.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
@@ -354,9 +392,17 @@ enum SyncCoordinator {
                                               context: ModelContext,
                                               conflictResolution: ConflictResolution) throws {
         guard !records.isEmpty else { return }
-        let clientsByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Client>()).map { ($0.id, $0) })
-        let headingsByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Heading>()).map { ($0.id, $0) })
-        let entriesByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Entry>()).map { ($0.id, $0) })
+        // Only rows named by a tombstone can be deleted, so index just those
+        // instead of materializing three whole tables on every pass.
+        func ids(_ entity: SyncEntity) -> [UUID] {
+            records.filter { $0.entity == entity.rawValue }.map(\.recordID)
+        }
+        let clientsByID = Dictionary(uniqueKeysWithValues:
+            try localClients(ids: ids(.client), context: context).map { ($0.id, $0) })
+        let headingsByID = Dictionary(uniqueKeysWithValues:
+            try localHeadings(ids: ids(.heading), context: context).map { ($0.id, $0) })
+        let entriesByID = Dictionary(uniqueKeysWithValues:
+            try localEntries(ids: ids(.entry), context: context).map { ($0.id, $0) })
         var conflictCount = 0
         for record in records {
             guard let entity = SyncEntity(rawValue: record.entity) else { continue }

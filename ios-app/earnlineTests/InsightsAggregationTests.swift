@@ -146,4 +146,41 @@ struct InsightsAggregationTests {
         #expect(fromSnapshot == fromFilter)
         #expect(fromSnapshot.first == "late") // sortIndex 0 leads
     }
+
+    @Test func windowedLedgerSnapshotMatchesFullAggregationForWindowMonths() {
+        let ins = insights()
+        let client = Client(name: "Acme")
+        let recent = Entry(amount: 100, task: "recent", date: thisMonth, status: .paid)
+        let old = Entry(amount: 40, task: "old", date: monthsAgo(9), status: .paid)
+        client.entries = [recent, old]
+        // The windowed variant resolves owners through `entry.client`; a real
+        // store maintains the inverse, free-standing fixtures set it directly.
+        recent.client = client
+        old.client = client
+
+        // The window carries only the recent entry; the whole-store facts
+        // (any entries at all, pending count, older months) come from counts.
+        let windowed = ins.ledgerSnapshot(windowed: [recent],
+                                          hasOlderMonths: true,
+                                          hasAnyEntries: true,
+                                          pendingCount: 7)
+        let key = windowed.key(for: thisMonth)
+        #expect(windowed.total(of: client, monthKey: key) == ins.total(of: client, in: thisMonth))
+        #expect(windowed.monthTotal(monthKey: key) == 100)
+        #expect(windowed.entries(of: client, monthKey: key).map(\.task) == ["recent"])
+        // The old month is outside the window: no rows, no month.
+        #expect(!windowed.months.contains(DateFormat.monthStart(of: monthsAgo(9))))
+        #expect(windowed.hasOlderMonths)
+        #expect(windowed.hasEntries)
+        #expect(windowed.pendingCount == 7)
+    }
+
+    @Test func fullLedgerSnapshotReportsNoOlderMonths() {
+        let client = Client(name: "Acme")
+        client.entries = [Entry(amount: 10, task: "only", date: monthsAgo(3), status: .inProgress)]
+        let snapshot = insights().ledgerSnapshot([client])
+        #expect(!snapshot.hasOlderMonths) // the full pass materializes everything
+        #expect(snapshot.pendingCount == 1)
+        #expect(snapshot.hasEntries)
+    }
 }
