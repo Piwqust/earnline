@@ -7,6 +7,17 @@ struct LedgerView: View {
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     @Query(sort: \Heading.sortIndex) private var headings: [Heading]
 
+    /// The one aggregation pass over the whole ledger, cached across body
+    /// evaluations. `LedgerView.body` re-evaluates many times around launch
+    /// (query delivery, appearance, toolbar/safe-area setup), and rebuilding
+    /// the snapshot inline made each of those a full SwiftData walk — on a
+    /// several-thousand-line ledger that was seconds of white screen before
+    /// the first frame. Refreshed by `ModelContext.didSave` (every edit,
+    /// insert, delete, import, undo, and sync pull in this app persists
+    /// through a save) and by the pricing task below for currency changes,
+    /// which don't touch the store.
+    @State private var ledgerSnapshot: Insights.LedgerSnapshot?
+
     @State private var composerClient: Client?
     /// The month the open composer is anchored to — set from the section whose
     /// "+ Line" was tapped, so the composer shows there (not always the current
@@ -142,12 +153,31 @@ struct LedgerView: View {
             .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
     }
 
-    private var hasContent: Bool {
-        !headings.isEmpty || clients.contains { !$0.entries.isEmpty }
+    private func hasContent(_ snapshot: Insights.LedgerSnapshot) -> Bool {
+        !headings.isEmpty || snapshot.hasEntries
     }
 
     private var hasSearchQuery: Bool {
         !EntrySearch.normalized(searchQuery).isEmpty
+    }
+
+    /// The snapshot's only inputs that change *without* a context save: the
+    /// currency pair and rate re-price every total. Read in body via
+    /// `.task(id:)`, so a committed rate edit re-runs the snapshot task.
+    private struct PricingRevision: Hashable {
+        let baseCurrencyCode: String
+        let secondaryCurrencyCode: String
+        let rate: Double
+    }
+
+    private var pricingRevision: PricingRevision {
+        PricingRevision(baseCurrencyCode: app.baseCurrencyCode,
+                        secondaryCurrencyCode: app.secondaryCurrencyCode,
+                        rate: app.rate)
+    }
+
+    private func refreshLedgerSnapshot() {
+        ledgerSnapshot = app.insights.ledgerSnapshot(clients)
     }
 
     var body: some View {
@@ -266,24 +296,27 @@ struct LedgerView: View {
     // MARK: Scroll content (List → native swipe actions)
 
     private var scrollContent: some View {
-        // One aggregation pass shared by the row model and the summary header;
-        // rebuilt only when this body re-evaluates (a data change), never by
-        // scrolling — the header owns the `displayedMonth` read.
-        let snapshot = app.insights.ledgerSnapshot(clients)
-        return List {
-            if isSearching {
-                searchListContent(snapshot)
-            } else if !hasContent {
-                EmptyStateView(onStart: startFirstLine)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-            } else {
-                ForEach(ledgerRows(snapshot)) { row in
-                    rowView(row)
+        // The row model and the summary header share the cached
+        // `ledgerSnapshot` (one aggregation pass, refreshed by the task below
+        // only when `ledgerRevision` changes). Body re-evaluations — and there
+        // are many around launch — reuse it for free, and scrolling never
+        // touches it: the header owns the `displayedMonth` read.
+        List {
+            if let snapshot = ledgerSnapshot {
+                if isSearching {
+                    searchListContent(snapshot)
+                } else if !hasContent(snapshot) {
+                    EmptyStateView(onStart: startFirstLine)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                        .listRowInsets(insets(for: row))
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                } else {
+                    ForEach(ledgerRows(snapshot)) { row in
+                        rowView(row)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(insets(for: row))
+                    }
                 }
             }
             Color.clear
@@ -308,7 +341,11 @@ struct LedgerView: View {
         // the cards (Figma's "Scroll Edge Effect - Soft"), progressively, and
         // stays put at rest. A plain `safeAreaInset` gave the effect no bar to
         // frost against, so the top read as a hard cut with no blur.
-        .safeAreaBar(edge: .top) { header(monthlyTotals: snapshot.earnedTotalByMonth) }
+        .safeAreaBar(edge: .top) {
+            if let snapshot = ledgerSnapshot {
+                header(monthlyTotals: snapshot.earnedTotalByMonth)
+            }
+        }
         .scrollEdgeEffectStyle(.soft, for: .top)
         // The bottom toolbar already provides its own native Liquid Glass
         // contrast. Keep the list edge clean instead of layering a detached
@@ -317,6 +354,18 @@ struct LedgerView: View {
         .scrollDismissesKeyboard(.interactively)
         .onPreferenceChange(MonthAnchorKey.self) { anchors in
             updateDisplayedMonth(anchors)
+        }
+        // Runs after the first frame commits — the app appears immediately and
+        // the ledger fills in a beat later — then again when the currency
+        // settings re-price the totals. Data edits arrive via `didSave` below.
+        .task(id: pricingRevision) {
+            refreshLedgerSnapshot()
+        }
+        // Every mutation in this app persists through a context save (the
+        // AppModel.save contract, plus the sync pass's own saves), so this is
+        // the one complete invalidation signal for the cached snapshot.
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
+            refreshLedgerSnapshot()
         }
     }
 
@@ -540,9 +589,11 @@ struct LedgerView: View {
     }
 
     /// "Pending" with the outstanding count folded into the title, since a
-    /// plain system menu row can't carry a separate badge overlay.
+    /// plain system menu row can't carry a separate badge overlay. Counted in
+    /// the cached snapshot pass — re-walking every entry here priced each
+    /// body evaluation at O(ledger).
     private var pendingLabel: String {
-        let count = app.pendingEntries(clients).count
+        let count = ledgerSnapshot?.pendingCount ?? 0
         return count > 0 ? String(localized: "Pending (\(count))") : String(localized: "Pending")
     }
 
@@ -722,19 +773,22 @@ struct LedgerView: View {
         if saveChanges() { app.stageUndo(snapshot) }
     }
 
-    // The heading actions below run one-off (a tap, not a render), so building
-    // a fresh snapshot per call is fine — it keeps their block ordering
-    // identical to what the list displays.
+    // The heading actions below run one-off (a tap, not a render). They read
+    // the same cached snapshot the list displays — falling back to a fresh
+    // pass only in the eyeblink before the launch task has produced one.
+
+    private var actionSnapshot: Insights.LedgerSnapshot {
+        ledgerSnapshot ?? app.insights.ledgerSnapshot(clients)
+    }
 
     private func nextHeadingSortIndex(in month: Date) -> Int {
-        (blocks(in: month, snapshot: app.insights.ledgerSnapshot(clients)).map(\.sortIndex).max() ?? -1) + 1
+        (blocks(in: month, snapshot: actionSnapshot).map(\.sortIndex).max() ?? -1) + 1
     }
 
     /// Whether the heading has a neighbouring block to trade places with in
     /// the given direction (-1 up, +1 down).
     private func canMoveHeading(_ h: Heading, by offset: Int) -> Bool {
-        let ordered = blocks(in: DateFormat.monthStart(of: h.date),
-                             snapshot: app.insights.ledgerSnapshot(clients))
+        let ordered = blocks(in: DateFormat.monthStart(of: h.date), snapshot: actionSnapshot)
         guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return false }
         return ordered.indices.contains(idx + offset)
     }
@@ -743,8 +797,7 @@ struct LedgerView: View {
     /// the adjacent block. Only the two swapped blocks are touched, so the rest
     /// of the ledger's order is left intact.
     private func moveHeading(_ h: Heading, by offset: Int) {
-        let ordered = blocks(in: DateFormat.monthStart(of: h.date),
-                             snapshot: app.insights.ledgerSnapshot(clients))
+        let ordered = blocks(in: DateFormat.monthStart(of: h.date), snapshot: actionSnapshot)
         guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return }
         let target = idx + offset
         guard ordered.indices.contains(target) else { return }

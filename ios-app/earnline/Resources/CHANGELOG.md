@@ -8,6 +8,7 @@
 - Renaming, recoloring, and deleting a client moved behind an Edit button into their own sheet — changes apply when you confirm, and Cancel really cancels.
 
 ### Ledger
+- The app launches noticeably faster on large ledgers: the ledger's totals are computed once and reused, instead of being recomputed from every line each time the screen redraws during startup.
 - Scrolling and editing stay smooth on ledgers with thousands of lines: the list and its summary cards now aggregate months, totals, and trends in a single pass instead of re-scanning every line for every month.
 - Removed the detached lower scroll fade so the ledger now meets the native Liquid Glass controls with a clean edge.
 - The summary cards now react with native interactive Liquid Glass.
