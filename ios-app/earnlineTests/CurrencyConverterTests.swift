@@ -40,4 +40,10 @@ struct CurrencyConverterTests {
         let secondary = c.secondary(120)      // 120 USD → 9960 RUB
         #expect(c.toBase(secondary, code: "RUB") == 120)
     }
+
+    @Test func displayedAmountsRoundHalfUpWithoutFractionDigits() {
+        #expect(CurrencyFormatter.string(Decimal(string: "423.49")!, code: "USD") == "$423")
+        #expect(CurrencyFormatter.string(Decimal(string: "423.50")!, code: "USD") == "$424")
+        #expect(CurrencyFormatter.string(Decimal(string: "423.99")!, code: "RUB") == "424 ₽")
+    }
 }

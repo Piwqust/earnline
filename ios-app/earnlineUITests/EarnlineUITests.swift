@@ -49,5 +49,24 @@ final class EarnlineUITests: XCTestCase {
         developerMode.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
 
         XCTAssertEqual(app.switches["Developer Mode"].value as? String, "1")
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Supabase"].waitForExistence(timeout: 2))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Sync"].waitForExistence(timeout: 2))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Data"].waitForExistence(timeout: 2))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 2))
+    }
+
+    func testComposerSubmitKeepsAccessibleGlassButtonSize() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-demoComposer"]
+        app.launch()
+
+        let submit = app.buttons["composer.submit"].firstMatch
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(submit.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(submit.frame.height, 44)
     }
 }

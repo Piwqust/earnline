@@ -19,6 +19,8 @@ import {
   type EntryRow,
   type HeadingRow,
   type TombstoneRow,
+  type WorkspaceProfilePayload,
+  type WorkspaceProfileRow,
   clientToRow,
   entryToRow,
   headingToRow,
@@ -34,6 +36,30 @@ import {
 
 const TOMBSTONE_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const PAGE_SIZE = 1000;
+
+export async function syncWorkspaceProfile(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  local: WorkspaceProfilePayload,
+  pushLocal: boolean,
+): Promise<WorkspaceProfileRow> {
+  const fetched = await supabase
+    .from("earnline_profiles")
+    .select("workspace_id,base_currency_code,secondary_currency_code,exchange_rate,updated_at")
+    .eq("workspace_id", workspaceId)
+    .limit(1);
+  if (fetched.error) throw fetched.error;
+  const existing = (fetched.data?.[0] ?? null) as WorkspaceProfileRow | null;
+  if (!pushLocal && existing) return existing;
+
+  const upserted = await supabase
+    .from("earnline_profiles")
+    .upsert(local, { onConflict: "workspace_id" })
+    .select("workspace_id,base_currency_code,secondary_currency_code,exchange_rate,updated_at")
+    .single();
+  if (upserted.error) throw upserted.error;
+  return upserted.data as WorkspaceProfileRow;
+}
 
 export async function sync(
   supabase: SupabaseClient,

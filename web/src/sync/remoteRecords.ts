@@ -52,6 +52,22 @@ export interface TombstoneRow {
   created_at: string;
 }
 
+export interface WorkspaceProfileRow {
+  workspace_id: string;
+  base_currency_code: string;
+  secondary_currency_code: string;
+  exchange_rate: string | number;
+  updated_at: string;
+}
+
+export interface WorkspaceProfilePayload {
+  workspace_id: string;
+  base_currency_code: string;
+  secondary_currency_code: string;
+  /** Send a decimal string so PostgREST never receives binary float dust. */
+  exchange_rate: string;
+}
+
 // --- SyncDateCodec ---
 
 export function timestampString(ms: number): string {

@@ -40,6 +40,34 @@ enum SyncCoordinator {
         let rowUpdatedAt: Date?
     }
 
+    /// Synchronize the single workspace profile. A locally edited currency
+    /// tuple wins on the next pass; otherwise the cloud copy is applied. When
+    /// the row does not exist yet, the current device seeds it.
+    static func syncWorkspaceProfile(client: SupabaseClient,
+                                     workspaceID: String,
+                                     local: WorkspaceProfilePayload,
+                                     pushLocal: Bool) async throws -> RemoteWorkspaceProfile {
+        let remote: [RemoteWorkspaceProfile] = try await client
+            .from("earnline_profiles")
+            .select()
+            .eq("workspace_id", value: workspaceID)
+            .limit(1)
+            .execute()
+            .value
+
+        if !pushLocal, let existing = remote.first {
+            return existing
+        }
+
+        return try await client
+            .from("earnline_profiles")
+            .upsert(local, onConflict: "workspace_id")
+            .select()
+            .single()
+            .execute()
+            .value
+    }
+
     /// Runs a full sync pass and returns the server-managed row cursor.
     /// Tombstones are paged and reapplied on every pass so a skewed device clock
     /// can never hide a remote deletion. `gte` makes row cursor boundaries

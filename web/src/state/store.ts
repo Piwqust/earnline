@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "../sync/supabaseClient";
-import { sync } from "../sync/syncCoordinator";
+import { sync, syncWorkspaceProfile } from "../sync/syncCoordinator";
 import { getSettings, isSupabaseConfigured, setSettings, subscribeSettings } from "./settings";
 
 export interface SyncStatus {
@@ -20,6 +20,7 @@ const REALTIME_TABLES = [
   "earnline_entries",
   "earnline_headings",
   "earnline_tombstones",
+  "earnline_profiles",
 ];
 
 function errorMessage(e: unknown): string {
@@ -77,6 +78,30 @@ class SyncController {
     this.set({ isSyncing: true, message: "Syncing…", error: null });
     try {
       const supabase = getSupabase(s.supabaseUrl, s.supabaseKey);
+      const profileSignature = `${s.baseCurrencyCode}|${s.secondaryCurrencyCode}|${s.rate}`;
+      const remoteProfile = await syncWorkspaceProfile(
+        supabase,
+        s.workspaceId,
+        {
+          workspace_id: s.workspaceId,
+          base_currency_code: s.baseCurrencyCode,
+          secondary_currency_code: s.secondaryCurrencyCode,
+          exchange_rate: String(s.rate),
+        },
+        s.profileNeedsSync,
+      );
+      const current = getSettings();
+      const currentProfileSignature = `${current.baseCurrencyCode}|${current.secondaryCurrencyCode}|${current.rate}`;
+      if (currentProfileSignature === profileSignature) {
+        setSettings({
+          baseCurrencyCode: remoteProfile.base_currency_code,
+          secondaryCurrencyCode: remoteProfile.secondary_currency_code,
+          rate: Number(remoteProfile.exchange_rate),
+          profileNeedsSync: false,
+        });
+      } else {
+        this.followUpRequested = true;
+      }
       const nextCursor = await sync(supabase, s.workspaceId, s.syncCursorMs);
       const completedAt = Date.now();
       setSettings({ syncCursorMs: nextCursor, lastSyncAt: completedAt });
@@ -101,7 +126,10 @@ class SyncController {
     window.addEventListener("focus", this.onWake);
     window.addEventListener("online", this.onWake);
     document.addEventListener("visibilitychange", this.onVisibility);
-    subscribeSettings(() => this.reconfigure());
+    subscribeSettings(() => {
+      this.reconfigure();
+      if (getSettings().profileNeedsSync && isSupabaseConfigured()) this.queueSync();
+    });
     this.reconfigure();
   }
 

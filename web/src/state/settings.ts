@@ -18,6 +18,8 @@ export interface Settings {
   baseCurrencyCode: string;
   secondaryCurrencyCode: string;
   rate: number;
+  /** Currency tuple has changed locally and must win on the next profile sync. */
+  profileNeedsSync: boolean;
   supabaseUrl: string;
   supabaseKey: string;
   workspaceId: string;
@@ -41,6 +43,7 @@ function defaults(): Settings {
     baseCurrencyCode: DEFAULT_BASE_CURRENCY,
     secondaryCurrencyCode: DEFAULT_SECONDARY_CURRENCY,
     rate: DEFAULT_EXCHANGE_RATE,
+    profileNeedsSync: false,
     supabaseUrl: envDefault("VITE_SUPABASE_URL"),
     supabaseKey: envDefault("VITE_SUPABASE_ANON_KEY"),
     workspaceId: envDefault("VITE_WORKSPACE_ID"),
@@ -59,6 +62,7 @@ function normalize(s: Settings): Settings {
     baseCurrencyCode: base,
     secondaryCurrencyCode: secondary,
     rate: validExchangeRate(s.rate),
+    profileNeedsSync: s.profileNeedsSync === true,
     supabaseUrl: s.supabaseUrl.trim(),
     supabaseKey: s.supabaseKey.trim(),
     workspaceId: s.workspaceId.trim(),
@@ -116,6 +120,13 @@ export function setSettings(patch: Partial<Settings>): void {
   if (next.workspaceId !== prev.workspaceId) {
     next.lastSyncAt = null;
     next.syncCursorMs = null;
+  }
+  const changesCurrencyProfile =
+    (patch.baseCurrencyCode !== undefined && next.baseCurrencyCode !== prev.baseCurrencyCode) ||
+    (patch.secondaryCurrencyCode !== undefined && next.secondaryCurrencyCode !== prev.secondaryCurrencyCode) ||
+    (patch.rate !== undefined && next.rate !== prev.rate);
+  if (changesCurrencyProfile && patch.profileNeedsSync === undefined) {
+    next.profileNeedsSync = true;
   }
   current = next;
   try {

@@ -62,8 +62,34 @@ extension AppModel {
         syncMessage = String(localized: "Syncing...")
         syncError = nil
         do {
+            let client = try supabase()
+            let profileStamp = profileEditGeneration
+            let localProfile = WorkspaceProfilePayload(
+                workspaceID: workspaceID,
+                baseCurrencyCode: baseCurrencyCode,
+                secondaryCurrencyCode: secondaryCurrencyCode,
+                exchangeRate: rate
+            )
+            let remoteProfile = try await SyncCoordinator.syncWorkspaceProfile(
+                client: client,
+                workspaceID: workspaceID,
+                local: localProfile,
+                pushLocal: profileNeedsSync
+            )
+            guard generation == syncGeneration else {
+                finishStaleSyncPass()
+                return
+            }
+            if profileEditGeneration == profileStamp {
+                applyRemoteWorkspaceProfile(remoteProfile)
+            } else {
+                // A currency edit landed while the request was in flight. Keep
+                // it visible and push it in a follow-up pass.
+                followUpSyncRequested = true
+            }
+
             let nextCursor = try await SyncCoordinator.sync(context: context,
-                                                            client: supabase(),
+                                                            client: client,
                                                             workspaceID: workspaceID,
                                                             lastPulledAt: syncCursor,
                                                             conflictResolution: conflictResolution)
@@ -305,6 +331,29 @@ extension AppModel {
         syncCursor = defaults.object(forKey: workspaceDefaultKey("syncCursor")) as? Date
     }
 
+    func loadWorkspaceProfileSyncState() {
+        profileNeedsSync = defaults.bool(forKey: workspaceDefaultKey("profileNeedsSync"))
+        profileEditGeneration += 1
+    }
+
+    func markWorkspaceProfileDirtyIfNeeded() {
+        guard !isApplyingRemoteProfile else { return }
+        profileNeedsSync = true
+        profileEditGeneration += 1
+        defaults.set(true, forKey: workspaceDefaultKey("profileNeedsSync"))
+        if let context = realtimeContext { queueSync(context: context) }
+    }
+
+    private func applyRemoteWorkspaceProfile(_ profile: RemoteWorkspaceProfile) {
+        isApplyingRemoteProfile = true
+        baseCurrencyCode = profile.baseCurrencyCode
+        secondaryCurrencyCode = profile.secondaryCurrencyCode
+        rate = Self.validExchangeRate(profile.exchangeRate.doubleValue, fallback: rate)
+        isApplyingRemoteProfile = false
+        profileNeedsSync = false
+        defaults.set(false, forKey: workspaceDefaultKey("profileNeedsSync"))
+    }
+
     /// Load the Supabase URL/key for the active environment: the user's stored
     /// value for that workspace, or the project preloaded for it. Assigning
     /// these fires their `didSet`s, which persist the values under the new
@@ -337,7 +386,7 @@ extension AppModel {
 
     /// Subscribe to workspace changes and trigger a debounced sync on any remote
     /// insert/update/delete. One schema-wide channel filtered by `workspace_id`
-    /// covers clients, entries, headings, and tombstones.
+    /// covers ledger rows, tombstones, and the workspace profile.
     func startRealtime(context: ModelContext) {
         realtimeContext = context
         startPathMonitorIfNeeded()

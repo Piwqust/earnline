@@ -198,9 +198,12 @@ struct LedgerView: View {
         ledgerCore
             .navigationDestination(item: $detailClient) { ClientDetailView(client: $0) }
             .toolbar(.hidden, for: .navigationBar)
-            // Keep the action controls in the system bottom bar. A `Menu`
-            // already owns a native button; adding another glass effect to its
-            // label created the previous button-inside-a-button look.
+            // Keep the action controls in the system bottom bar: it folds the
+            // `.searchable` field into the same Liquid Glass surface (via
+            // `.searchToolbarBehavior(.minimize)`), so no separate search bar
+            // shows at rest. Floating them into an overlay removes that host and
+            // a persistent "Search income" bar reappears — hence they stay here,
+            // using explicit circular glass labels at the bar's native margins.
             .toolbar { bottomToolbar }
             // System search owns its focus, cancel affordance, keyboard, and
             // Liquid Glass presentation. There is no custom text field layered
@@ -280,13 +283,18 @@ struct LedgerView: View {
             await app.syncNow(context: context)
         }
         .coordinateSpace(name: "ledger")
-        // The floating summary cards sit in a pinned top inset; the native soft
-        // scroll edge effect frosts rows as they slide up behind them — Figma's
-        // "Scroll Edge Effect - Soft" — progressively, and stays put at rest.
-        // (`safeAreaInset`, not `safeAreaBar`: the bar variant re-measured its
-        // content width on first render and let the cards drift off-edge.)
-        .safeAreaInset(edge: .top) { header }
+        // The floating summary cards ride a top `safeAreaBar` — a real pinned
+        // bar, which is what a scroll edge effect attaches to. The native soft
+        // effect then frosts rows into a blurred band as they slide up behind
+        // the cards (Figma's "Scroll Edge Effect - Soft"), progressively, and
+        // stays put at rest. A plain `safeAreaInset` gave the effect no bar to
+        // frost against, so the top read as a hard cut with no blur.
+        .safeAreaBar(edge: .top) { header }
         .scrollEdgeEffectStyle(.soft, for: .top)
+        // The bottom toolbar already provides its own native Liquid Glass
+        // contrast. Keep the list edge clean instead of layering a detached
+        // material gradient above the home indicator.
+        .scrollEdgeEffectHidden(true, for: .bottom)
         .scrollDismissesKeyboard(.interactively)
         .onPreferenceChange(MonthAnchorKey.self) { anchors in
             updateDisplayedMonth(anchors)
@@ -457,17 +465,24 @@ struct LedgerView: View {
 
     // MARK: Bottom toolbar
 
-    /// The system owns the bar's glass and the hit regions. `Menu` labels stay
-    /// as plain symbols here; applying a second glass effect around the label
-    /// makes a system control look like a decorative image nested in a button.
+    /// More (leading) and Add (trailing) use the bottom bar's native edge
+    /// positions. Each menu owns one 52-point circular Liquid Glass surface;
+    /// the toolbar's automatic shared background is suppressed so it never
+    /// becomes a button inside another button.
     @ToolbarContentBuilder
     private var bottomToolbar: some ToolbarContent {
         if !isSearching {
-            ToolbarItemGroup(placement: .bottomBar) {
+            ToolbarItem(placement: .bottomBar) {
                 moreMenu
-                Spacer()
-                addMenu
+                    .padding(.bottom, 10)
             }
+                .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                addMenu
+                    .padding(.bottom, 10)
+            }
+                .sharedBackgroundVisibility(.hidden)
         }
     }
 
@@ -517,7 +532,12 @@ struct LedgerView: View {
 
     private func toolbarMenuSymbol(_ systemName: String) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: 17, weight: .semibold))
+            .font(.system(size: 19, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(Theme.label)
+            .frame(width: 52, height: 52)
+            .contentShape(.circle)
+            .glassEffect(.regular.tint(Theme.surface).interactive(), in: .circle)
     }
 
     /// "Pending" with the outstanding count folded into the title, since a
@@ -650,7 +670,7 @@ struct LedgerView: View {
         if args.contains("-demoComposer") {
             didRunDemo = true
             composerClient = clients.first
-        } else if args.contains("-demoSettings") {
+        } else if args.contains("-demoSettings") || args.contains("-demoDeveloperSettings") {
             didRunDemo = true
             app.showSettings = true
         } else if args.contains("-demoHeadingEditor") {

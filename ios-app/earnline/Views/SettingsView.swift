@@ -29,6 +29,12 @@ struct SettingsView: View {
     @State private var isDeveloperModeEnabled = false
     private let currencies = AppModel.supportedCurrencyCodes
 
+    init() {
+        _isDeveloperModeEnabled = State(
+            initialValue: ProcessInfo.processInfo.arguments.contains("-demoDeveloperSettings")
+        )
+    }
+
     var body: some View {
         @Bindable var app = appModel
         Form {
@@ -64,9 +70,9 @@ struct SettingsView: View {
             }
 
             Section {
-                currencyPicker("Primary", glyph: "banknote",
+                currencyPicker("Primary",
                                selection: $app.baseCurrencyCode, options: currencies)
-                currencyPicker("Secondary", glyph: "arrow.left.arrow.right",
+                currencyPicker("Secondary",
                                selection: $app.secondaryCurrencyCode,
                                options: currencies.filter { $0 != app.baseCurrencyCode })
             } header: {
@@ -120,15 +126,35 @@ struct SettingsView: View {
                 Toggle(isOn: $isDeveloperModeEnabled) {
                     SettingsRowLabel("Developer Mode", glyph: "wrench.and.screwdriver")
                 }
-                if isDeveloperModeEnabled {
-                    developerModeContent
-                }
             } footer: {
-                VStack(alignment: .leading, spacing: 6) {
+                Text("Sync controls, workspace diagnostics, and data-recovery tools stay out of the everyday settings path.")
+            }
+
+            if isDeveloperModeEnabled {
+                #if DEBUG
+                Section("Supabase") {
+                    developerSupabaseContent
+                }
+                #endif
+
+                Section {
+                    developerSyncContent
+                } header: {
+                    Text("Sync")
+                } footer: {
                     if let syncError = app.syncError, !syncError.isEmpty {
                         Text(syncError).foregroundStyle(Theme.statusCanceled)
                     }
-                    Text("Sync controls, workspace diagnostics, and data-recovery tools stay out of the everyday settings path.")
+                }
+
+                #if DEBUG
+                Section("Data") {
+                    developerDataContent
+                }
+                #endif
+
+                Section("About") {
+                    developerAboutContent
                 }
             }
         }
@@ -168,8 +194,7 @@ struct SettingsView: View {
     // MARK: Building blocks
 
     @ViewBuilder
-    private var developerModeContent: some View {
-        #if DEBUG
+    private var developerSupabaseContent: some View {
         HStack(spacing: 12) {
             SettingsRowGlyph(glyph: "network")
             TextField("Project URL", text: Bindable(appModel).supabaseURLString)
@@ -191,8 +216,10 @@ struct SettingsView: View {
             SettingsRowLabel("Workspace", glyph: "externaldrive")
         }
         .tint(valueGray)
-        #endif
+    }
 
+    @ViewBuilder
+    private var developerSyncContent: some View {
         valueRow("Status", value: appModel.syncMessage)
         valueRow("Pending", value: "\(pendingSyncCount)")
         if let lastSyncAt = appModel.lastSyncAt {
@@ -225,8 +252,10 @@ struct SettingsView: View {
             }
             .disabled(appModel.isSyncing || isResettingLocalData)
         }
+    }
 
-        #if DEBUG
+    @ViewBuilder
+    private var developerDataContent: some View {
         developerButton(title: "Reset and pull",
                         glyph: "arrow.counterclockwise",
                         value: appModel.workspaceDisplayName,
@@ -235,8 +264,10 @@ struct SettingsView: View {
             SettingsRowLabel("Import sample ledger", glyph: "square.and.arrow.down")
         }
         .disabled(isResettingLocalData)
-        #endif
+    }
 
+    @ViewBuilder
+    private var developerAboutContent: some View {
         valueRow("Version", value: appVersion)
         NavigationLink {
             ChangelogView()
@@ -261,7 +292,6 @@ struct SettingsView: View {
     /// than an SF Symbol glyph, so the trailing text is one consistent
     /// typographic unit.
     private func currencyPicker(_ title: LocalizedStringKey,
-                                glyph: String,
                                 selection: Binding<String>,
                                 options: [String]) -> some View {
         Picker(selection: selection) {
@@ -269,7 +299,7 @@ struct SettingsView: View {
                 Text(verbatim: "\(CurrencyFormatter.symbol(for: code)) \(code)").tag(code)
             }
         } label: {
-            SettingsRowLabel(title, glyph: glyph)
+            Text(title)
         }
         .pickerStyle(.menu)
         .tint(valueGray)

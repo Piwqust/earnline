@@ -119,6 +119,32 @@ struct SyncCoordinatorTests {
 
     // MARK: Pull
 
+    @Test func workspaceProfileSeedsCloudWithPrecisionSafeCurrencyTuple() async throws {
+        MockTransport.reset()
+        MockTransport.respond("POST", "earnline_profiles", json: """
+        {"workspace_id":"\(workspace)","base_currency_code":"USD",
+          "secondary_currency_code":"RUB","exchange_rate":"89.125",
+          "updated_at":"2026-07-11T08:00:00.000Z"}
+        """)
+
+        let payload = WorkspaceProfilePayload(workspaceID: workspace,
+                                              baseCurrencyCode: "USD",
+                                              secondaryCurrencyCode: "RUB",
+                                              exchangeRate: 89.125)
+        let profile = try await SyncCoordinator.syncWorkspaceProfile(
+            client: makeClient(),
+            workspaceID: workspace,
+            local: payload,
+            pushLocal: true
+        )
+
+        #expect(profile.exchangeRate.decimal == Decimal(string: "89.125"))
+        let request = try #require(MockTransport.recorded.first { $0.method == "POST" })
+        #expect(request.table == "earnline_profiles")
+        #expect(request.body.contains("\"exchange_rate\":\"89.125\""))
+        #expect(request.query.contains("on_conflict=workspace_id"))
+    }
+
     @Test func pullInsertsRemoteRowsAndAdvancesCursor() async throws {
         MockTransport.reset()
         let container = try makeContainer()

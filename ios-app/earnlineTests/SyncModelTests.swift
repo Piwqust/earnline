@@ -4,6 +4,19 @@ import Testing
 @testable import earnline
 
 struct SyncModelTests {
+    @Test func workspaceProfileRateEncodesAsDecimalString() throws {
+        let payload = WorkspaceProfilePayload(workspaceID: "test-workspace",
+                                              baseCurrencyCode: "USD",
+                                              secondaryCurrencyCode: "RUB",
+                                              exchangeRate: 89.125)
+        let data = try JSONEncoder().encode(payload)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["exchange_rate"] as? String == "89.125")
+        #expect(object["base_currency_code"] as? String == "USD")
+        #expect(object["secondary_currency_code"] as? String == "RUB")
+    }
+
     @Test func remoteEntryEncodesMoneyAsDecimalString() throws {
         let client = Client(name: "Acme Studio")
         let entry = Entry(amount: Decimal(string: "99.50")!,
@@ -83,7 +96,7 @@ struct SyncModelTests {
         #expect(AppModel.validExchangeRate(.infinity, fallback: 42) == 42)
     }
 
-    @Test @MainActor func identicalCurrenciesAreSeparatedAndSecondaryKeepsCents() {
+    @Test @MainActor func identicalCurrenciesAreSeparatedAndSecondaryDisplaysRoundedWholeAmount() {
         let app = AppModel()
         app.baseCurrencyCode = "EUR"
         app.secondaryCurrencyCode = "EUR"
@@ -93,10 +106,7 @@ struct SyncModelTests {
         app.baseCurrencyCode = "USD"
         app.secondaryCurrencyCode = "RUB"
         app.rate = 89.125
-        // The decimal separator follows the run locale (the formatter is
-        // locale-aware); grouping is always the app's no-break space.
-        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
-        #expect(app.secondaryString(Decimal(string: "99.50")!) == "8\u{00A0}867\(separator)94 ₽")
+        #expect(app.secondaryString(Decimal(string: "99.50")!) == "8\u{00A0}868 ₽")
     }
 
     @Test func dayStringsRoundTripAsCalendarDays() throws {

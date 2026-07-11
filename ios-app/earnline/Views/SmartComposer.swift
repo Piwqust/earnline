@@ -277,14 +277,17 @@ struct SmartComposer: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(canCommit ? .white : Theme.label(0.3))
                 .frame(width: 34, height: 34)
-                .background(canCommit ? app.accentColor : Theme.label(0.10), in: .circle)
+                .glassEffect(
+                    .regular
+                        .tint(canCommit ? app.accentColor : nil)
+                        .interactive(canCommit),
+                    in: .circle
+                )
+                .padding(5)
+                .contentShape(.circle)
                 // The trigger value is frozen under Reduce Motion, so the
                 // bounce simply never fires.
                 .symbolEffect(.bounce, value: reduceMotion ? false : canCommit)
-                // 44 pt hit region around the 34 pt visual circle.
-                .padding(5)
-                .contentShape(.circle)
-                .padding(-5)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Add line")

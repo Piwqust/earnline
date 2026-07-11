@@ -64,6 +64,7 @@ final class AppModel {
                 secondaryCurrencyCode = Self.replacementCurrencyCode(excluding: baseCurrencyCode)
             }
             defaults.set(baseCurrencyCode, forKey: "baseCurrencyCode")
+            markWorkspaceProfileDirtyIfNeeded()
         }
     }
     var secondaryCurrencyCode: String {
@@ -78,6 +79,7 @@ final class AppModel {
                 return
             }
             defaults.set(secondaryCurrencyCode, forKey: "secondaryCurrencyCode")
+            markWorkspaceProfileDirtyIfNeeded()
         }
     }
     /// Secondary units per 1 base unit (e.g. RUB per USD).
@@ -89,6 +91,7 @@ final class AppModel {
                 return
             }
             defaults.set(rate, forKey: "rate")
+            markWorkspaceProfileDirtyIfNeeded()
         }
     }
     var supabaseURLString: String {
@@ -113,6 +116,7 @@ final class AppModel {
             // URL/key over to the new one before rebuilding the client.
             loadWorkspaceSupabaseConfig()
             loadWorkspaceSyncState()
+            loadWorkspaceProfileSyncState()
             detachWorkspaceStore()
             resetSupabaseClient()
         }
@@ -216,6 +220,9 @@ final class AppModel {
     @ObservationIgnored var retryAttempt = 0
     @ObservationIgnored var invokedByRetry = false
     @ObservationIgnored var lastSyncFailed = false
+    @ObservationIgnored var profileNeedsSync = false
+    @ObservationIgnored var profileEditGeneration = 0
+    @ObservationIgnored var isApplyingRemoteProfile = false
     @ObservationIgnored let pathMonitor = NWPathMonitor()
     @ObservationIgnored var pathMonitorStarted = false
     @ObservationIgnored var pathWasSatisfied = true
@@ -253,6 +260,7 @@ final class AppModel {
         workspaceID = resolvedEnvironment.workspaceID
         defaults.set(resolvedEnvironment.rawValue, forKey: "workspaceEnvironment")
         defaults.set(resolvedEnvironment.workspaceID, forKey: "workspaceID")
+        profileNeedsSync = defaults.bool(forKey: "profileNeedsSync.\(resolvedEnvironment.rawValue)")
         let workspaceKeySuffix = resolvedEnvironment.rawValue
         let savedLastSyncAt = defaults.object(forKey: "lastSyncAt.\(workspaceKeySuffix)") as? Date
             ?? defaults.object(forKey: "lastSyncAt") as? Date

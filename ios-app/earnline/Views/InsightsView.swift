@@ -411,23 +411,23 @@ struct InsightsView: View {
         NSDecimalNumber(decimal: value).doubleValue
     }
 
-    /// Compact bar label, e.g. "+1.5k" / "−11k" — like `signedCompact` but with
+    /// Compact bar label, e.g. "+2k" / "−11k" — like `signedCompact` but with
     /// an explicit plus so a rise reads unambiguously against a dip on the bar.
     private func signedCompactLabel(_ value: Double) -> String {
         value > 0 ? "+\(signedCompact(value))" : signedCompact(value)
     }
 
-    /// Compact axis label, e.g. "1.2k", carrying a leading minus for negatives
+    /// Compact axis label, e.g. "1k", carrying a leading minus for negatives
     /// so the month-over-month axis reads correctly below zero.
     private func signedCompact(_ value: Double) -> String {
         let sign = value < 0 ? "−" : ""
         let magnitude = abs(value)
         if magnitude >= 1_000_000 {
-            return "\(sign)\((magnitude / 1_000_000).formatted(.number.precision(.fractionLength(0...1))))M"
+            return "\(sign)\(CurrencyFormatter.grouped(Decimal(magnitude / 1_000_000), code: app.baseCurrencyCode))M"
         }
         if magnitude >= 1000 {
-            return "\(sign)\((magnitude / 1000).formatted(.number.precision(.fractionLength(0...1))))k"
+            return "\(sign)\(CurrencyFormatter.grouped(Decimal(magnitude / 1000), code: app.baseCurrencyCode))k"
         }
-        return "\(sign)\(magnitude.formatted(.number.precision(.fractionLength(0))))"
+        return "\(sign)\(CurrencyFormatter.grouped(Decimal(magnitude), code: app.baseCurrencyCode))"
     }
 }

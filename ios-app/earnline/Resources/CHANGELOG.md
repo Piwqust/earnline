@@ -1,5 +1,30 @@
 # What's new
 
+## July 11, 2026
+
+### Ledger
+- Removed the detached lower scroll fade so the ledger now meets the native Liquid Glass controls with a clean edge.
+- The summary cards now react with native interactive Liquid Glass.
+
+### Amounts
+- Amounts across the app, including compact chart labels, now display as correctly rounded whole values without decimal digits; stored and synced values keep their original precision.
+- The selected currency pair and exchange rate now sync through the shared Supabase workspace profile.
+
+### Settings
+- Developer tools are grouped into Supabase, Sync, Data, and About sections again.
+
+### Composer
+- The Add line button now uses a native interactive Liquid Glass treatment without enlarging the compact composer.
+
+## July 10, 2026
+
+### Ledger
+- The Add (+) and More (…) controls are balanced standard Liquid Glass buttons with clearer icons and consistent bottom-edge spacing.
+
+### Settings
+- Currency pickers no longer use decorative leading icons.
+- Developer Mode reveals its advanced controls in a separate section below the toggle.
+
 ## July 9, 2026
 
 ### Insights
