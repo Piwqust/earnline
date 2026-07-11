@@ -93,4 +93,57 @@ struct InsightsAggregationTests {
         #expect(months.contains(DateFormat.monthStart(of: monthsAgo(2))))
         #expect(months == months.sorted(by: >))       // strictly descending
     }
+
+    // MARK: Ledger snapshot (single-pass aggregation)
+
+    @Test func monthKeyDistinguishesMonthsAcrossYearBoundaries() {
+        #expect(Insights.monthKey(of: date(2025, 12, 31)) != Insights.monthKey(of: date(2026, 1, 1)))
+        #expect(Insights.monthKey(of: date(2026, 7, 1)) == Insights.monthKey(of: date(2026, 7, 31)))
+        // Adjacent months are adjacent keys, including over the year boundary.
+        #expect(Insights.monthKey(of: date(2026, 1, 15)) - Insights.monthKey(of: date(2025, 12, 15)) == 1)
+    }
+
+    @Test func ledgerSnapshotMatchesPerMonthAggregation() {
+        let ins = insights()
+        let a = Client(name: "A")
+        let b = Client(name: "B")
+        a.entries = [
+            Entry(amount: 100, task: "now-paid", date: thisMonth, status: .paid),
+            Entry(amount: 999, task: "now-canceled", date: thisMonth, status: .canceled),
+            Entry(amount: 40, task: "old", date: monthsAgo(2), status: .paid),
+        ]
+        b.entries = [Entry(amount: 50, task: "progress", date: thisMonth, status: .inProgress)]
+
+        let snapshot = ins.ledgerSnapshot([a, b])
+        let nowKey = snapshot.key(for: thisMonth)
+        let oldKey = snapshot.key(for: monthsAgo(2))
+
+        // Same months contract as monthsWithData.
+        #expect(snapshot.months == ins.monthsWithData([a, b]))
+        // Same totals as the per-month sweeps.
+        #expect(snapshot.monthTotal(monthKey: nowKey) == ins.monthTotal([a, b], in: thisMonth))
+        #expect(snapshot.monthTotal(monthKey: oldKey) == ins.monthTotal([a, b], in: monthsAgo(2)))
+        #expect(snapshot.total(of: a, monthKey: nowKey) == ins.total(of: a, in: thisMonth))
+        // Canceled lines appear in the rows but not in earned totals.
+        #expect(snapshot.entries(of: a, monthKey: nowKey).count == 2)
+        #expect(snapshot.monthTotal(monthKey: nowKey) == 150)
+        // Months without data read as zero, not as a crash or a miss.
+        #expect(snapshot.monthTotal(monthKey: snapshot.key(for: monthsAgo(1))) == 0)
+        #expect(!snapshot.hasEntries(b, monthKey: oldKey))
+    }
+
+    @Test func ledgerSnapshotOrdersEntriesLikeEntriesOf() {
+        let ins = insights()
+        let client = Client(name: "Acme")
+        let early = Entry(amount: 1, task: "early", date: thisMonth, sortIndex: 1)
+        let late = Entry(amount: 2, task: "late", date: thisMonth, sortIndex: 0)
+        let tie = Entry(amount: 3, task: "tie", date: thisMonth, sortIndex: 1)
+        client.entries = [early, late, tie]
+
+        let snapshot = ins.ledgerSnapshot([client])
+        let fromSnapshot = snapshot.entries(of: client, monthKey: snapshot.key(for: thisMonth)).map(\.task)
+        let fromFilter = ins.entries(of: client, in: thisMonth).map(\.task)
+        #expect(fromSnapshot == fromFilter)
+        #expect(fromSnapshot.first == "late") // sortIndex 0 leads
+    }
 }

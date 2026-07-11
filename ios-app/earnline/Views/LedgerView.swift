@@ -44,40 +44,47 @@ struct LedgerView: View {
         return composerClient
     }
 
-    private var months: [Date] { app.monthsWithData(clients) }
-
     private func sectionHeadings(in month: Date) -> [Heading] {
         headings.filter { Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) }
     }
 
-    private func sectionClients(in month: Date) -> [Client] {
-        var list = app.clientsWithEntries(clients, in: month)
+    private func sectionClients(in month: Date, snapshot: Insights.LedgerSnapshot) -> [Client] {
+        let key = snapshot.key(for: month)
+        // `clients` arrives sortIndex-sorted from the @Query; filtering keeps
+        // that order, matching what `clientsWithEntries` used to return.
+        var list = clients.filter { !$0.isInvalidated && snapshot.hasEntries($0, monthKey: key) }
         if let cc = activeComposerClient, isComposerMonth(month), !list.contains(where: { $0.id == cc.id }) {
             list.append(cc)
         }
         return list
     }
 
-    private func blocks(in month: Date) -> [Block] {
+    private func blocks(in month: Date, snapshot: Insights.LedgerSnapshot) -> [Block] {
         let h = sectionHeadings(in: month).map { Block.heading($0) }
-        let c = sectionClients(in: month).map { Block.client($0) }
+        let c = sectionClients(in: month, snapshot: snapshot).map { Block.client($0) }
         return (h + c).sorted { $0.isOrderedBefore($1) }
     }
 
-    private var ledgerRows: [Row] {
-        if isSearching { return searchLedgerRows }
+    /// The full row model, read off one `LedgerSnapshot` pass. The previous
+    /// per-month filtering re-walked every client's whole entries array once
+    /// per month with `Calendar` granularity compares — O(months × entries)
+    /// per rebuild, which is what made a long ledger stutter on every body
+    /// evaluation (each keystroke, status change, or sync tick).
+    private func ledgerRows(_ snapshot: Insights.LedgerSnapshot) -> [Row] {
+        if isSearching { return searchLedgerRows(snapshot) }
         var rows: [Row] = []
-        for month in months {
-            rows.append(.month(month))
-            for block in blocks(in: month) {
+        for month in snapshot.months {
+            let key = snapshot.key(for: month)
+            rows.append(.month(month, snapshot.monthTotal(monthKey: key)))
+            for block in blocks(in: month, snapshot: snapshot) {
                 switch block {
                 case .heading(let h): rows.append(.heading(h))
                 case .client(let c):
-                    rows.append(.client(c, month))
+                    rows.append(.client(c, month, snapshot.total(of: c, monthKey: key)))
                     if isComposerMonth(month), activeComposerClient?.id == c.id {
                         rows.append(.composer(c))
                     }
-                    for e in app.entries(of: c, in: month) { rows.append(.entry(e)) }
+                    for e in snapshot.entries(of: c, monthKey: key) { rows.append(.entry(e)) }
                 }
             }
         }
@@ -86,23 +93,31 @@ struct LedgerView: View {
 
     /// Matching entries grouped under their month/client, newest months first
     /// (same order as the idle ledger). Headings and the composer are omitted.
-    private var searchLedgerRows: [Row] {
+    /// Month and client rows carry the earned totals of the *matches*, so the
+    /// row views don't re-run the search per row.
+    private func searchLedgerRows(_ snapshot: Insights.LedgerSnapshot) -> [Row] {
         guard !EntrySearch.normalized(searchQuery).isEmpty else { return [] }
         var rows: [Row] = []
-        for month in months {
+        for month in snapshot.months {
+            let key = snapshot.key(for: month)
             var monthRows: [Row] = []
-            for block in blocks(in: month) {
+            var monthTotal = Decimal.zero
+            for block in blocks(in: month, snapshot: snapshot) {
                 guard case .client(let c) = block, !c.isInvalidated else { continue }
-                let matches = app.entries(of: c, in: month).filter { entry in
+                let matches = snapshot.entries(of: c, monthKey: key).filter { entry in
                     guard !entry.isInvalidated else { return false }
                     return EntrySearch.matches(entry, query: searchQuery, clientName: c.name)
                 }
                 guard !matches.isEmpty else { continue }
-                monthRows.append(.client(c, month))
+                let earned = matches
+                    .filter { $0.status.isIncludedInEarnedTotals }
+                    .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
+                monthTotal += earned
+                monthRows.append(.client(c, month, earned))
                 for e in matches { monthRows.append(.entry(e)) }
             }
             if !monthRows.isEmpty {
-                rows.append(.month(month))
+                rows.append(.month(month, monthTotal))
                 rows.append(contentsOf: monthRows)
             }
         }
@@ -235,11 +250,11 @@ struct LedgerView: View {
     // Kept in its own view so a scroll-driven `displayedMonth` change re-renders
     // only the summary cards. Reading `displayedMonth` (or the totals derived
     // from it) directly here would register the whole `LedgerView.body` as an
-    // observer, rebuilding `ledgerRows` — every month, client, and entry — each
-    // time the top month ticks over. That rebuild was the scroll hitch.
-    private var header: some View {
+    // observer, rebuilding the ledger rows — every month, client, and entry —
+    // each time the top month ticks over. That rebuild was the scroll hitch.
+    private func header(monthlyTotals: [Int: Decimal]) -> some View {
         LedgerSummaryHeader(
-            clients: clients,
+            monthlyTotals: monthlyTotals,
             isSearching: isSearching,
             searchHitCount: searchHits.count,
             searchEarnedTotal: searchEarnedTotal,
@@ -251,16 +266,20 @@ struct LedgerView: View {
     // MARK: Scroll content (List → native swipe actions)
 
     private var scrollContent: some View {
-        List {
+        // One aggregation pass shared by the row model and the summary header;
+        // rebuilt only when this body re-evaluates (a data change), never by
+        // scrolling — the header owns the `displayedMonth` read.
+        let snapshot = app.insights.ledgerSnapshot(clients)
+        return List {
             if isSearching {
-                searchListContent
+                searchListContent(snapshot)
             } else if !hasContent {
                 EmptyStateView(onStart: startFirstLine)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             } else {
-                ForEach(ledgerRows) { row in
+                ForEach(ledgerRows(snapshot)) { row in
                     rowView(row)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -289,7 +308,7 @@ struct LedgerView: View {
         // the cards (Figma's "Scroll Edge Effect - Soft"), progressively, and
         // stays put at rest. A plain `safeAreaInset` gave the effect no bar to
         // frost against, so the top read as a hard cut with no blur.
-        .safeAreaBar(edge: .top) { header }
+        .safeAreaBar(edge: .top) { header(monthlyTotals: snapshot.earnedTotalByMonth) }
         .scrollEdgeEffectStyle(.soft, for: .top)
         // The bottom toolbar already provides its own native Liquid Glass
         // contrast. Keep the list edge clean instead of layering a detached
@@ -302,7 +321,7 @@ struct LedgerView: View {
     }
 
     @ViewBuilder
-    private var searchListContent: some View {
+    private func searchListContent(_ snapshot: Insights.LedgerSnapshot) -> some View {
         if !hasSearchQuery {
             ContentUnavailableView(
                 "Search income",
@@ -316,7 +335,7 @@ struct LedgerView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
         } else {
-            ForEach(ledgerRows) { row in
+            ForEach(ledgerRows(snapshot)) { row in
                 rowView(row)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -345,13 +364,13 @@ struct LedgerView: View {
         // offscreen rows, so a long month whose divider has scrolled away would
         // otherwise stop feeding the summary pill and leave it stale.
         switch row {
-        case .month(let m):
-            monthRow(m)
+        case .month(let m, let total):
+            monthRow(m, total: total)
         case .heading(let h):
             headingRow(h)
                 .background(monthAnchorReader(DateFormat.monthStart(of: h.date)))
-        case .client(let c, let m):
-            clientHeaderRow(c, month: m)
+        case .client(let c, let m, let total):
+            clientHeaderRow(c, month: m, total: total)
                 .background(monthAnchorReader(m))
         case .composer(let c):
             composerRow(c)
@@ -361,15 +380,10 @@ struct LedgerView: View {
         }
     }
 
-    private func clientHeaderRow(_ client: Client, month: Date) -> some View {
+    private func clientHeaderRow(_ client: Client, month: Date, total: Decimal) -> some View {
         ClientChip(
             client: client,
-            total: isSearching
-                ? app.entries(of: client, in: month)
-                    .filter { EntrySearch.matches($0, query: searchQuery, clientName: client.name) }
-                    .filter { $0.status.isIncludedInEarnedTotals }
-                    .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
-                : app.total(of: client, in: month),
+            total: total,
             isComposing: !isSearching && activeComposerClient?.id == client.id,
             showsAdd: !isSearching,
             onOpen: { detailClient = client },
@@ -382,24 +396,9 @@ struct LedgerView: View {
             .transition(.opacity)
     }
 
-    private func monthRow(_ month: Date) -> some View {
-        MonthDivider(
-            title: DateFormat.month(month),
-            total: isSearching
-                ? searchMonthTotal(month)
-                : app.monthTotal(clients, in: month)
-        )
-        .background(monthAnchorReader(month))
-    }
-
-    private func searchMonthTotal(_ month: Date) -> Decimal {
-        clients.reduce(Decimal.zero) { sum, client in
-            guard !client.isInvalidated else { return sum }
-            return sum + app.entries(of: client, in: month)
-                .filter { EntrySearch.matches($0, query: searchQuery, clientName: client.name) }
-                .filter { $0.status.isIncludedInEarnedTotals }
-                .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
-        }
+    private func monthRow(_ month: Date, total: Decimal) -> some View {
+        MonthDivider(title: DateFormat.month(month), total: total)
+            .background(monthAnchorReader(month))
     }
 
     private func monthAnchorReader(_ month: Date) -> some View {
@@ -723,14 +722,19 @@ struct LedgerView: View {
         if saveChanges() { app.stageUndo(snapshot) }
     }
 
+    // The heading actions below run one-off (a tap, not a render), so building
+    // a fresh snapshot per call is fine — it keeps their block ordering
+    // identical to what the list displays.
+
     private func nextHeadingSortIndex(in month: Date) -> Int {
-        (blocks(in: month).map(\.sortIndex).max() ?? -1) + 1
+        (blocks(in: month, snapshot: app.insights.ledgerSnapshot(clients)).map(\.sortIndex).max() ?? -1) + 1
     }
 
     /// Whether the heading has a neighbouring block to trade places with in
     /// the given direction (-1 up, +1 down).
     private func canMoveHeading(_ h: Heading, by offset: Int) -> Bool {
-        let ordered = blocks(in: DateFormat.monthStart(of: h.date))
+        let ordered = blocks(in: DateFormat.monthStart(of: h.date),
+                             snapshot: app.insights.ledgerSnapshot(clients))
         guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return false }
         return ordered.indices.contains(idx + offset)
     }
@@ -739,7 +743,8 @@ struct LedgerView: View {
     /// the adjacent block. Only the two swapped blocks are touched, so the rest
     /// of the ledger's order is left intact.
     private func moveHeading(_ h: Heading, by offset: Int) {
-        let ordered = blocks(in: DateFormat.monthStart(of: h.date))
+        let ordered = blocks(in: DateFormat.monthStart(of: h.date),
+                             snapshot: app.insights.ledgerSnapshot(clients))
         guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return }
         let target = idx + offset
         guard ordered.indices.contains(target) else { return }
@@ -782,17 +787,19 @@ struct LedgerView: View {
 // MARK: - Row model
 
 private enum Row: Identifiable {
-    case month(Date)
+    /// Month and client rows carry their earned total, computed once in the
+    /// snapshot pass — a row must never re-derive it by walking entries.
+    case month(Date, Decimal)
     case heading(Heading)
-    case client(Client, Date)
+    case client(Client, Date, Decimal)
     case composer(Client)
     case entry(Entry)
 
     var id: String {
         switch self {
-        case .month(let d): return "m-\(d.timeIntervalSinceReferenceDate)"
+        case .month(let d, _): return "m-\(d.timeIntervalSinceReferenceDate)"
         case .heading(let h): return "h-\(h.id)"
-        case .client(let c, let d): return "c-\(c.id)-\(d.timeIntervalSinceReferenceDate)"
+        case .client(let c, let d, _): return "c-\(c.id)-\(d.timeIntervalSinceReferenceDate)"
         case .composer(let c): return "composer-\(c.id)"
         case .entry(let e): return "e-\(e.id)"
         }
@@ -805,7 +812,7 @@ private enum Row: Identifiable {
         switch self {
         case .month: return false
         case .heading(let h): return h.isInvalidated
-        case .client(let c, _): return c.isInvalidated
+        case .client(let c, _, _): return c.isInvalidated
         case .composer(let c): return c.isInvalidated
         case .entry(let e): return e.isInvalidated
         }
@@ -876,7 +883,11 @@ struct MonthAnchorKey: PreferenceKey {
 /// the top chrome stays visible without covering results.
 private struct LedgerSummaryHeader: View {
     @Environment(AppModel.self) private var app
-    let clients: [Client]
+    /// Earned totals per month key from the shared `LedgerSnapshot` pass.
+    /// A month crossing during scroll used to recompute the displayed total
+    /// and six-month trend as seven full sweeps over every entry; with the
+    /// totals handed in, the crossing costs seven dictionary lookups.
+    let monthlyTotals: [Int: Decimal]
     var isSearching: Bool = false
     var searchHitCount: Int = 0
     var searchEarnedTotal: Decimal = 0
@@ -884,7 +895,7 @@ private struct LedgerSummaryHeader: View {
     let onOpenStats: () -> Void
 
     private var displayedTotal: Decimal {
-        app.monthTotal(clients, in: app.displayedMonth)
+        monthlyTotals[Insights.monthKey(of: app.displayedMonth)] ?? .zero
     }
 
     /// Earned totals for the six months ending at the displayed month, oldest
@@ -893,7 +904,7 @@ private struct LedgerSummaryHeader: View {
         let calendar = Calendar.current
         return (0..<6).reversed().compactMap { offset in
             calendar.date(byAdding: .month, value: -offset, to: app.displayedMonth)
-                .map { app.monthTotal(clients, in: $0) }
+                .map { monthlyTotals[Insights.monthKey(of: $0)] ?? .zero }
         }
     }
 

@@ -7,7 +7,12 @@ enum CurrencyFormatter {
         "USD": "$", "RUB": "₽", "EUR": "€", "GBP": "£", "UAH": "₴",
     ]
 
-    private static func formatter(for code: String) -> NumberFormatter {
+    /// One shared instance (the configuration is identical for every currency):
+    /// building a `NumberFormatter` costs on the order of a millisecond, and it
+    /// used to happen for every money label on every render — a per-frame cost
+    /// while the ledger scrolls. `.autoupdatingCurrent` keeps the decimal
+    /// separator following the user's region without rebuilding.
+    private static let shared: NumberFormatter = {
         let f = NumberFormatter()
         // Amounts stay precise in storage and sync; only the UI presentation is
         // rounded to a whole unit. `.halfUp` makes the boundary explicit and
@@ -20,10 +25,10 @@ enum CurrencyFormatter {
         f.maximumFractionDigits = 0
         f.minimumFractionDigits = 0
         return f
-    }
+    }()
 
     static func grouped(_ value: Decimal, code: String) -> String {
-        formatter(for: code).string(from: value as NSDecimalNumber) ?? "\(value)"
+        shared.string(from: value as NSDecimalNumber) ?? "\(value)"
     }
 
     /// Symbol-prefixed (e.g. "$3 222"). Currencies whose symbol trails (₽, ₴) go after.

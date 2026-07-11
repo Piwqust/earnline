@@ -300,6 +300,68 @@ enum SampleData {
         return inserted
     }
 
+    // MARK: - Stress dataset (developer tool)
+
+    /// ~48 months × ~120 lines across 8 clients ≈ 5,800 entries — enough to
+    /// make row-model and aggregation costs visible while profiling the
+    /// ledger. Rows are inserted already `.synced` so the sync layer never
+    /// pushes them to a workspace; "Reset and pull" clears them. Deterministic
+    /// IDs make the button idempotent.
+    @discardableResult
+    static func seedStress(_ context: ModelContext) -> Int {
+        let cal = Calendar.current
+        let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: .now)) ?? .now
+
+        let palette = ["#0088FF", "#7B00FF", "#FF7A45", "#16B364", "#0FB5BA", "#FF3B30", "#8E8E93", "#FF8A00"]
+        let stressClients = (0..<8).map { index in
+            SeedClient(id: DeterministicID.uuid("earnline-stress-client:\(index)"),
+                       name: "Stress Client \(index + 1)",
+                       colorHex: palette[index % palette.count],
+                       sortIndex: 100 + index)
+        }
+
+        let existingClients = (try? context.fetch(FetchDescriptor<Client>())) ?? []
+        var clientsByID = Dictionary(existingClients.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let existingEntryIDs = Set(((try? context.fetch(FetchDescriptor<Entry>())) ?? []).map(\.id))
+        var inserted = 0
+
+        for seedClient in stressClients where clientsByID[seedClient.id] == nil {
+            let client = Client(id: seedClient.id, name: seedClient.name, colorHex: seedClient.colorHex,
+                                sortIndex: seedClient.sortIndex, syncState: .synced, lastSyncedAt: .now)
+            context.insert(client)
+            clientsByID[seedClient.id] = client
+            inserted += 1
+        }
+
+        for offset in 0..<48 {
+            guard let monthStart = cal.date(byAdding: .month, value: -offset, to: thisMonthStart) else { continue }
+            let comps = cal.dateComponents([.year, .month], from: monthStart)
+            guard let year = comps.year, let month = comps.month else { continue }
+            let daysInMonth = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
+
+            let count = 110 + Int(noise(year, month, 21) * 20)
+            for i in 0..<count {
+                let id = DeterministicID.uuid("earnline-stress-entry:\(year)-\(month)-\(i)")
+                guard !existingEntryIDs.contains(id) else { continue }
+                let day = min(daysInMonth, 1 + Int(noise(year, month, i, 22) * Double(daysInMonth)))
+                guard let date = cal.date(from: DateComponents(year: year, month: month, day: day)) else { continue }
+                let client = clientsByID[stressClients[Int(noise(year, month, i, 23) * 8) % 8].id]
+                let amount = Decimal(max(1, Int(noise(year, month, i, 24) * 90) * 10))
+                let entry = Entry(id: id, amount: amount, currencyCode: "USD",
+                                  project: pick(seedProjects, noise(year, month, i, 25)),
+                                  task: pick(seedTasks, noise(year, month, i, 26)),
+                                  date: date, status: .paid, sortIndex: i,
+                                  createdAt: date, updatedAt: date,
+                                  syncState: .synced, lastSyncedAt: date)
+                entry.client = client
+                context.insert(entry)
+                inserted += 1
+            }
+        }
+        try? context.save()
+        return inserted
+    }
+
     private static func isLegacyDemoEntry(_ entry: Entry) -> Bool {
         legacyDemoEntryKeys.contains(demoKey(client: entry.client?.name,
                                             project: entry.project,

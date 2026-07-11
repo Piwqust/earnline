@@ -201,4 +201,108 @@ struct Insights {
     private func sameMonth(_ a: Date, _ b: Date) -> Bool {
         calendar.isDate(a, equalTo: b, toGranularity: .month)
     }
+
+    // MARK: Ledger snapshot (single-pass aggregation)
+
+    /// Integer key for the month containing `date` (`year * 12 + month`).
+    /// Bucketing by this key costs one `dateComponents` call per entry, where
+    /// the per-month filters above cost a two-date `Calendar` granularity
+    /// comparison per entry *per month* — the difference between O(entries)
+    /// and O(months × entries) every time the ledger row model rebuilds.
+    nonisolated static func monthKey(of date: Date, calendar: Calendar = .current) -> Int {
+        let parts = calendar.dateComponents([.year, .month], from: date)
+        return (parts.year ?? 0) * 12 + ((parts.month ?? 1) - 1)
+    }
+
+    /// Everything the ledger list and its summary header read, aggregated in
+    /// one pass over the entries: months with data, each client's sorted
+    /// entries per month, and earned totals per client-month and per month.
+    /// Built fresh per body evaluation — cheap enough that no cross-render
+    /// cache (and no cache-invalidation bug surface) is needed.
+    struct LedgerSnapshot {
+        /// Months with at least one entry (newest first), always including the
+        /// current month — same contract as `monthsWithData`.
+        let months: [Date]
+        /// Earned base-currency total per month key (canceled excluded).
+        let earnedTotalByMonth: [Int: Decimal]
+        private let entriesByClientMonth: [ClientMonth: [Entry]]
+        private let earnedTotalByClientMonth: [ClientMonth: Decimal]
+
+        fileprivate init(months: [Date],
+                         earnedTotalByMonth: [Int: Decimal],
+                         entriesByClientMonth: [ClientMonth: [Entry]],
+                         earnedTotalByClientMonth: [ClientMonth: Decimal]) {
+            self.months = months
+            self.earnedTotalByMonth = earnedTotalByMonth
+            self.entriesByClientMonth = entriesByClientMonth
+            self.earnedTotalByClientMonth = earnedTotalByClientMonth
+        }
+
+        struct ClientMonth: Hashable {
+            let client: UUID
+            let month: Int
+        }
+
+        func key(for month: Date) -> Int { Insights.monthKey(of: month) }
+
+        func hasEntries(_ client: Client, monthKey: Int) -> Bool {
+            entriesByClientMonth[ClientMonth(client: client.id, month: monthKey)] != nil
+        }
+
+        /// The client's entries in the month, ledger row order — matches
+        /// `Insights.entries(of:in:)`.
+        func entries(of client: Client, monthKey: Int) -> [Entry] {
+            entriesByClientMonth[ClientMonth(client: client.id, month: monthKey)] ?? []
+        }
+
+        /// Earned total for one client in one month — matches `Insights.total(of:in:)`.
+        func total(of client: Client, monthKey: Int) -> Decimal {
+            earnedTotalByClientMonth[ClientMonth(client: client.id, month: monthKey)] ?? .zero
+        }
+
+        /// Earned total across clients for one month — matches `Insights.monthTotal(_:in:)`.
+        func monthTotal(monthKey: Int) -> Decimal {
+            earnedTotalByMonth[monthKey] ?? .zero
+        }
+    }
+
+    func ledgerSnapshot(_ clients: [Client]) -> LedgerSnapshot {
+        var entriesByClientMonth: [LedgerSnapshot.ClientMonth: [Entry]] = [:]
+        var earnedTotalByClientMonth: [LedgerSnapshot.ClientMonth: Decimal] = [:]
+        var earnedTotalByMonth: [Int: Decimal] = [:]
+        var monthKeys = Set<Int>()
+
+        // A sync pull can delete models mid-render; skip those the same way
+        // the ledger's row views do. `isDeleted` (not `isInvalidated`) on
+        // purpose: it reads only registration metadata, and free-standing
+        // models in unit tests have no context yet — `isInvalidated` would
+        // treat the whole fixture as dead.
+        for client in clients where !client.isDeleted {
+            for entry in client.entries where !entry.isDeleted {
+                let key = LedgerSnapshot.ClientMonth(client: client.id,
+                                                     month: Self.monthKey(of: entry.date, calendar: calendar))
+                monthKeys.insert(key.month)
+                entriesByClientMonth[key, default: []].append(entry)
+                if entry.status.isIncludedInEarnedTotals {
+                    let base = converter.toBase(entry.amount, code: entry.currencyCode)
+                    earnedTotalByClientMonth[key, default: .zero] += base
+                    earnedTotalByMonth[key.month, default: .zero] += base
+                }
+            }
+        }
+        for key in entriesByClientMonth.keys {
+            entriesByClientMonth[key]?.sort {
+                $0.sortIndex == $1.sortIndex ? $0.createdAt > $1.createdAt : $0.sortIndex < $1.sortIndex
+            }
+        }
+
+        monthKeys.insert(Self.monthKey(of: .now, calendar: calendar))
+        let months = monthKeys.sorted(by: >).compactMap { key in
+            calendar.date(from: DateComponents(year: key / 12, month: key % 12 + 1))
+        }
+        return LedgerSnapshot(months: months,
+                              earnedTotalByMonth: earnedTotalByMonth,
+                              entriesByClientMonth: entriesByClientMonth,
+                              earnedTotalByClientMonth: earnedTotalByClientMonth)
+    }
 }

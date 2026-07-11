@@ -492,7 +492,16 @@ final class AppModel {
     /// always matches the data without any delta tracking. Stateful (fetches the
     /// context), so it stays on `AppModel` rather than in `Insights`.
     func refreshPendingReminders(context: ModelContext) {
-        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        // Reminders only ever exist for in-progress lines with a hold date
+        // (`PendingNotifications.desiredRequests` drops everything else), so
+        // fetch just those instead of materializing the whole table after
+        // every save. Legacy raw statuses all map to `.paid`, so matching the
+        // raw column against `.inProgress` is exact.
+        let inProgress = EntryStatus.inProgress.rawValue
+        let descriptor = FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.holdUntil != nil && $0.statusRaw == inProgress }
+        )
+        let entries = (try? context.fetch(descriptor)) ?? []
         PendingNotifications.sync(entries)
     }
 

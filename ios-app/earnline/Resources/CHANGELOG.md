@@ -3,6 +3,7 @@
 ## July 11, 2026
 
 ### Ledger
+- Scrolling and editing stay smooth on ledgers with thousands of lines: the list and its summary cards now aggregate months, totals, and trends in a single pass instead of re-scanning every line for every month.
 - Removed the detached lower scroll fade so the ledger now meets the native Liquid Glass controls with a clean edge.
 - The summary cards now react with native interactive Liquid Glass.
 
@@ -11,6 +12,7 @@
 - The selected currency pair and exchange rate now sync through the shared Supabase workspace profile.
 
 ### Settings
+- Typing a conversion rate no longer makes the app stutter: the value now applies once you finish editing the field instead of re-converting every displayed amount on each keystroke.
 - Developer tools are grouped into Supabase, Sync, Data, and About sections again.
 
 ### Composer

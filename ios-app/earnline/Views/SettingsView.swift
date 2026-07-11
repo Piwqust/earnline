@@ -24,9 +24,17 @@ struct SettingsView: View {
     @State private var isFetchingRate = false
     @State private var rateFetchFailed = false
     @State private var rateFetchNote: String?
+    /// The rate field edits this draft, not `appModel.rate`. Binding the field
+    /// straight to the model published every keystroke through the observation
+    /// graph — the whole ledger re-derived its rows and every money label
+    /// reformatted per character, which made typing here visibly lag on a
+    /// large ledger. `nil` means "not editing": the field shows the model.
+    @State private var rateDraft: Double?
+    @FocusState private var rateFieldFocused: Bool
     @State private var pendingSyncRecoveryAction: SyncRecoveryAction?
     @State private var isResettingLocalData = false
     @State private var isDeveloperModeEnabled = false
+    @State private var stressSeedNote: String?
     private let currencies = AppModel.supportedCurrencyCodes
 
     init() {
@@ -93,10 +101,18 @@ struct SettingsView: View {
                     SettingsRowLabel(verbatim: "1 \(app.baseCurrencyCode)",
                                      glyph: "chart.line.uptrend.xyaxis")
                     Spacer()
-                    TextField("Rate", value: $app.rate, format: .number)
+                    // The decimal pad has no return key, so the draft commits
+                    // when focus leaves the field (tap elsewhere, keyboard
+                    // drag-dismiss) and when the sheet goes away.
+                    TextField("Rate", value: rateFieldBinding, format: .number)
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 110)
+                        .focused($rateFieldFocused)
+                        .onChange(of: rateFieldFocused) { _, focused in
+                            if !focused { commitRateDraft() }
+                        }
+                        .onDisappear(perform: commitRateDraft)
                     Text(app.secondaryCurrencyCode)
                         .foregroundStyle(.secondary)
                 }
@@ -148,8 +164,14 @@ struct SettingsView: View {
                 }
 
                 #if DEBUG
-                Section("Data") {
+                Section {
                     developerDataContent
+                } header: {
+                    Text("Data")
+                } footer: {
+                    if let stressSeedNote {
+                        Text(stressSeedNote)
+                    }
                 }
                 #endif
 
@@ -262,6 +284,10 @@ struct SettingsView: View {
                         action: .reloadCurrent)
         Button(action: importSampleLedger) {
             SettingsRowLabel("Import sample ledger", glyph: "square.and.arrow.down")
+        }
+        .disabled(isResettingLocalData)
+        Button(action: seedStressDataset) {
+            SettingsRowLabel("Seed stress dataset", glyph: "speedometer")
         }
         .disabled(isResettingLocalData)
     }
@@ -436,6 +462,24 @@ struct SettingsView: View {
         }
     }
 
+    /// Shows the model's rate until the user edits, then their draft.
+    private var rateFieldBinding: Binding<Double> {
+        Binding(
+            get: { rateDraft ?? appModel.rate },
+            set: { rateDraft = $0 }
+        )
+    }
+
+    /// Push the finished edit into the model in one write — the same
+    /// commit-on-leave contract as the client rename in `ClientDetailView`.
+    private func commitRateDraft() {
+        guard let draft = rateDraft else { return }
+        rateDraft = nil
+        let normalized = AppModel.validExchangeRate(draft, fallback: appModel.rate)
+        guard normalized != appModel.rate else { return }
+        appModel.rate = normalized
+    }
+
     /// One-tap rate refresh. Fetch only ever runs on this explicit tap — the
     /// typed-in rate stays authoritative, this just saves looking it up.
     private func fetchRate() {
@@ -447,6 +491,9 @@ struct SettingsView: View {
         Task { @MainActor in
             do {
                 appModel.rate = try await ExchangeRateService.fetch(base: base, secondary: secondary)
+                // The fetched value replaces whatever was mid-edit; keeping a
+                // stale draft would visually override the fetch result.
+                rateDraft = nil
                 rateFetchFailed = false
                 rateFetchNote = String(localized: "Rate updated")
             } catch {
@@ -455,6 +502,17 @@ struct SettingsView: View {
             }
             isFetchingRate = false
         }
+    }
+
+    /// DEBUG-only profiling aid: thousands of local-only lines (pre-marked
+    /// synced, so nothing ever pushes to a workspace). "Reset and pull"
+    /// removes them again.
+    private func seedStressDataset() {
+        let inserted = SampleData.seedStress(context)
+        stressSeedNote = inserted > 0
+            ? String(localized: "Inserted \(inserted) local-only stress rows. Reset and pull removes them.")
+            : String(localized: "Stress rows already present. Reset and pull removes them.")
+        refreshCounts()
     }
 
     private func importSampleLedger() {
