@@ -12,6 +12,7 @@
 		089E3EC6BE904283607DD1C4 /* SupabaseProjectDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 151FA53FE5F4C19E1C534018 /* SupabaseProjectDefaults.swift */; };
 		0B64CAFFAE07047B17039889 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A871324D0289D0C90B7F6F59 /* Theme.swift */; };
 		0CE2F8C503A9D1C602BFCCF0 /* GlassButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE801B1A80A6CBE06F53FB5 /* GlassButtons.swift */; };
+		1388B6D60DA20DB6B6B67786 /* ClientDetailSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76D3ADCA4AFDD249B39165A1 /* ClientDetailSnapshot.swift */; };
 		205CC0BDABC6A78F169C3D8A /* SyncModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4B5D260A8BB987EDE42871 /* SyncModelTests.swift */; };
 		21E87A8247C04C867DA6B2B0 /* SyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFC8544B974B558F4C88F8C6 /* SyncState.swift */; };
 		3147BC4B4262974D888B959C /* SheetChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61B2FA53E8231E102210C14A /* SheetChrome.swift */; };
@@ -128,6 +129,7 @@
 		66929B24A2A4A6387C1094B2 /* DateFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormat.swift; sourceTree = "<group>"; };
 		68409CBA9E89C99485D6BB5B /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		6C8017F6B63E954DAD326C8C /* EditEntrySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditEntrySheet.swift; sourceTree = "<group>"; };
+		76D3ADCA4AFDD249B39165A1 /* ClientDetailSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDetailSnapshot.swift; sourceTree = "<group>"; };
 		778C5101198F7EEC774E2E95 /* EarnlineUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarnlineUITests.swift; sourceTree = "<group>"; };
 		79625F3F23FE9A39E4096DD0 /* SmartComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartComposer.swift; sourceTree = "<group>"; };
 		7AA92183ECCEF8766232F943 /* earnlineTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = earnlineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -215,6 +217,7 @@
 			isa = PBXGroup;
 			children = (
 				6265FDD442052E08ECCA0964 /* AppLock.swift */,
+				76D3ADCA4AFDD249B39165A1 /* ClientDetailSnapshot.swift */,
 				A07540DA6550B8E8BF2A5AB8 /* CurrencyConverter.swift */,
 				CCFA8FC0B2CD2EC391908D19 /* DeterministicID.swift */,
 				A2D7BB1BA5D43A868804F33C /* EntrySearch.swift */,
@@ -511,6 +514,7 @@
 				A2DC2CC37F679A9F725D2A82 /* ChangelogView.swift in Sources */,
 				48CD1B544633ED9C3ADAC6D9 /* Client.swift in Sources */,
 				B110BB1870C59D95B7D9B39C /* ClientChip.swift in Sources */,
+				1388B6D60DA20DB6B6B67786 /* ClientDetailSnapshot.swift in Sources */,
 				4C2D65F63D901A5BC04119B7 /* ClientDetailView.swift in Sources */,
 				9AB3CD53CFCA60FA1F9A503F /* ClientOrbChart.swift in Sources */,
 				51F317749DB8410DE8A8371F /* Color+Hex.swift in Sources */,

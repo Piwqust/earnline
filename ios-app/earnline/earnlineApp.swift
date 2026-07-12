@@ -101,8 +101,15 @@ private struct WorkspaceContainerHost: View {
         let context = store.container.mainContext
         if AppModel.isRunningUIAutomation {
             // Keep smoke tests deterministic and isolated from the user's
-            // personal Supabase workspace. The test only verifies navigation
-            // and visible controls, so it does not need a live sync.
+            // personal Supabase workspace. Insights visual/UI tests explicitly
+            // request the deterministic generated ledger; other tests remain
+            // empty and fast.
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("-demoInsights") {
+                SampleData.seedGenerated(context)
+            } else if arguments.contains("-demoClientProfile") {
+                SampleData.seedStress(context)
+            }
             return
         }
         app.lockOnLaunchIfNeeded()

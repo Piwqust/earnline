@@ -203,6 +203,66 @@ struct ChromeDivider: View {
     }
 }
 
+// MARK: - Client color picker
+
+/// The client swatch grid shared by the New- and Edit-client sheets: the ten
+/// `Theme.clientPalette` dots laid out in rows of five, justified edge to edge,
+/// with a 2 pt white ring that springs between picks (matched geometry) exactly
+/// as the Figma color card draws its selection.
+struct ClientColorGrid: View {
+    @Binding var selection: String
+    /// Dots per row — the Figma lays the ten swatches out five and five.
+    var perRow = 5
+
+    @Namespace private var ring
+
+    private var rows: [[String]] {
+        stride(from: 0, to: Theme.clientPalette.count, by: perRow).map { start in
+            Array(Theme.clientPalette[start..<min(start + perRow, Theme.clientPalette.count)])
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.element) { index, hex in
+                        swatch(hex)
+                        if index < row.count - 1 { Spacer(minLength: 0) }
+                    }
+                }
+            }
+        }
+        .padding(16)
+    }
+
+    private func swatch(_ hex: String) -> some View {
+        let selected = hex == selection
+        return Circle()
+            .fill(Color(hex: hex))
+            .frame(width: 30, height: 30)
+            .overlay {
+                if selected {
+                    // The Figma "selection ring": a 2 pt white ring inset inside
+                    // the dot (22 pt across the 30 pt swatch).
+                    Circle()
+                        .strokeBorder(.white, lineWidth: 2)
+                        .padding(4)
+                        .matchedGeometryEffect(id: "clientSwatchRing", in: ring)
+                }
+            }
+            .contentShape(.circle)
+            .onTapGesture {
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
+                    selection = hex
+                }
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+            .accessibilityLabel(Text("Color"))
+            .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 // MARK: - Primary action
 
 /// Full-width Liquid Glass prominent pill CTA in the user's accent color

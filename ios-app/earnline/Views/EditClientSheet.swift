@@ -28,11 +28,6 @@ struct EditClientSheet: View {
     /// the same self-sizing contract as `NewClientSheet`.
     @State private var contentHeight: CGFloat = 420
 
-    /// One namespace so the selection ring slides between swatches (matched
-    /// geometry) — the same treatment as `NewClientSheet`.
-    @Namespace private var swatchSelection
-
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
     /// Fixed chrome around the scrollable content — the inline nav header and
     /// the home-indicator inset (no CTA dock: the ✓ commits from the bar).
     private let chrome: CGFloat = 96
@@ -56,6 +51,7 @@ struct EditClientSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                nameChip
                 nameSection
                 colorSection
                 deleteSection
@@ -86,16 +82,31 @@ struct EditClientSheet: View {
         }
     }
 
+    /// The live identity chip from the profile page, mirrored at the top of the
+    /// editor so a rename or recolor previews instantly — the same glass capsule
+    /// tinted with the draft color.
+    private var nameChip: some View {
+        Text(name.isEmpty ? " " : name)
+            .appFont(24, .semibold, relativeTo: .title2)
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .glassEffect(.regular.tint(Color(hex: colorHex)).interactive(), in: .capsule)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            .accessibilityHidden(true)
+    }
+
     private var nameSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             CardHeader("Name")
             ChromeCard {
-                ChromeRow {
-                    Circle()
-                        .fill(Color(hex: colorHex))
-                        .frame(width: 12, height: 12)
+                ChromeRow(icon: "person.circle.fill") {
                     TextField("Client name", text: $name)
-                        .appFont(17, .medium)
+                        .appFont(17)
                         .onChange(of: name) { _, value in
                             name = Validation.capped(value, max: Limits.maxClientNameLength)
                         }
@@ -112,67 +123,24 @@ struct EditClientSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             CardHeader("Color")
             ChromeCard {
-                LazyVGrid(columns: columns, spacing: 18) {
-                    ForEach(Theme.clientPalette, id: \.self) { hex in
-                        swatch(hex)
-                    }
-                }
-                .padding(18)
+                ClientColorGrid(selection: $colorHex)
             }
         }
     }
 
-    /// Destructive action isolated in its own card — ChatGPT's "Log out" row.
+    /// Destructive action isolated in its own card — a single centered red row,
+    /// as the Figma draws it. The confirmation alert carries the warning copy.
     private var deleteSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ChromeCard {
-                Button { confirmDelete = true } label: {
-                    ChromeRow(icon: nil) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 17, weight: .regular))
-                            .foregroundStyle(Theme.statusCanceled)
-                            .frame(width: 24)
-                        Text("Delete Client").foregroundStyle(Theme.statusCanceled)
-                        Spacer()
-                    }
+        ChromeCard {
+            Button { confirmDelete = true } label: {
+                Text("Delete Client")
+                    .appFont(17)
+                    .foregroundStyle(Theme.statusCanceled)
+                    .frame(maxWidth: .infinity, minHeight: 52)
                     .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
             }
-            CardFootnote {
-                Text("Removes the client and all of its income lines everywhere.")
-            }
+            .buttonStyle(.plain)
         }
-    }
-
-    /// Palette swatch — the ChatGPT accent-picker treatment shared with
-    /// `NewClientSheet`: an ink selection ring that springs between swatches.
-    private func swatch(_ hex: String) -> some View {
-        let selected = hex == colorHex
-        return Circle()
-            .fill(Color(hex: hex))
-            .frame(height: 36)
-            .overlay {
-                Circle().strokeBorder(Theme.label(0.08), lineWidth: 0.5)
-            }
-            .overlay {
-                if selected {
-                    Circle()
-                        .stroke(Theme.label(0.85), lineWidth: 2.5)
-                        .padding(-4)
-                        .matchedGeometryEffect(id: "swatchRing", in: swatchSelection)
-                }
-            }
-            .scaleEffect(selected ? 1.08 : 1)
-            .contentShape(.circle)
-            .onTapGesture {
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
-                    colorHex = hex
-                }
-                UISelectionFeedbackGenerator().selectionChanged()
-            }
-            .accessibilityLabel(Text("Color"))
-            .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func save() {

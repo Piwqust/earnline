@@ -73,16 +73,19 @@ enum Theme {
         }
     }
 
-    /// Calm palette offered when creating new clients.
+    /// Client swatch palette — the ten system accent tones from the Figma
+    /// picker, laid out as two rows of five (green→purple, then blue→magenta).
     static let clientPalette: [String] = [
+        "#34C759", // green
+        "#FFCC00", // yellow
+        "#FF8D28", // orange
+        "#FF383C", // red
+        "#CB30E0", // purple
         "#0088FF", // blue
-        "#7B00FF", // purple
-        "#FF7A45", // coral
-        "#16B364", // green
-        "#E8467C", // pink
-        "#0FB5BA", // teal
-        "#F5A623", // amber
-        "#6E56CF", // indigo
+        "#6155F5", // indigo
+        "#FF2D55", // pink
+        "#AC7F5E", // brown
+        "#AB34C9", // magenta
     ]
 
     // MARK: Status

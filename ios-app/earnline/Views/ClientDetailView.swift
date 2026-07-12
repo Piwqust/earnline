@@ -2,13 +2,9 @@ import SwiftUI
 import SwiftData
 import Charts
 
-/// One client's page, redesigned as a content-first profile: an earned-total
-/// hero, a scrubbable 12-month earnings chart in the client's color (the same
-/// Health/Stocks idiom as Insights), a quiet at-a-glance stat block, the
-/// status/project breakdowns, and the full history grouped by month — lazily,
-/// so a client with years of lines opens instantly. Renaming, recoloring, and
-/// deletion live behind the toolbar's Edit button in `EditClientSheet`,
-/// keeping the page itself read-and-act.
+/// One client's compact profile: identity, three key figures, income trend,
+/// and drill-down rows for statuses, projects, and the complete history.
+/// Renaming, recoloring, and deletion stay behind the toolbar edit action.
 struct ClientDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -17,17 +13,33 @@ struct ClientDetailView: View {
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     let client: Client
 
-    @State private var editingEntry: Entry?
-    @State private var pendingDelete: Entry?
     @State private var showEditSheet = false
-    @State private var saveError: String?
     /// Scrub position on the earnings chart; snapped to the plotted month.
     @State private var chartSelection: Date?
+    @State private var snapshot: ClientDetailSnapshot?
+    @State private var snapshotError: String?
+    @State private var dataRevision = 0
 
     private var calendar: Calendar { .current }
 
     private var chartHeight: CGFloat {
         dynamicTypeSize.isAccessibilitySize ? 220 : 170
+    }
+
+    private struct SnapshotRevision: Hashable {
+        let baseCurrencyCode: String
+        let secondaryCurrencyCode: String
+        let rate: Double
+        let dataRevision: Int
+    }
+
+    private var snapshotRevision: SnapshotRevision {
+        SnapshotRevision(
+            baseCurrencyCode: app.baseCurrencyCode,
+            secondaryCurrencyCode: app.secondaryCurrencyCode,
+            rate: app.rate,
+            dataRevision: dataRevision
+        )
     }
 
     var body: some View {
@@ -42,43 +54,45 @@ struct ClientDetailView: View {
     }
 
     private var detailBody: some View {
-        // One bucketing pass feeds the hero, chart, stats, and month sections.
-        let monthTotals = app.insights.earnedTotalsByMonth(of: client)
-        let sections = historySections(monthTotals)
-        return ScrollView {
-            // Lazy so the month sections build as they scroll in — a client
-            // with years of lines must not render them all on push.
-            LazyVStack(alignment: .leading, spacing: 22) {
-                heroBlock(totalAll: allTimeTotal(monthTotals))
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                profileSummary(snapshot)
+                if let snapshot {
+                    trendCard(snapshot.months)
+                    statusCard(snapshot.statusTotals)
 
-                section("Last 12 months") { trendCard(monthTotals) }
+                    if !snapshot.projectTotals.isEmpty {
+                        section("By project") { projectsCard(snapshot.projectTotals) }
+                    }
 
-                section("At a glance") { statsCard(monthTotals) }
-
-                section("By status") { statusCard }
-
-                if projectTotals.count > 1 || (projectTotals.first?.name ?? "—") != "—" {
-                    section("By project") { projectsCard }
-                }
-
-                ForEach(sections, id: \.month) { monthSection in
-                    historyMonth(monthSection)
+                    allTransactionsCard(snapshot.transactionCount)
+                } else if snapshotError == nil {
+                    ProgressView("Loading history…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 48)
+                        .accessibilityIdentifier("client.profileLoading")
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.bottom, 32)
+            .accessibilityIdentifier("client.profile")
         }
         .background(Theme.background)
-        .navigationTitle(client.name)
+        .navigationTitle("Client Info")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") { showEditSheet = true }
-                    .accessibilityIdentifier("client.edit")
+                Button { showEditSheet = true } label: {
+                    Image(systemName: "pencil")
+                }
+                // Figma draws the edit glyph in the primary label ink, not the
+                // app accent — black in light mode, white in dark — matching
+                // the back chevron beside it rather than standing out in blue.
+                .tint(.primary)
+                .accessibilityLabel("Edit client")
+                .accessibilityIdentifier("client.edit")
             }
         }
-        .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
         .sheet(isPresented: $showEditSheet) {
             EditClientSheet(
                 client: client,
@@ -86,60 +100,89 @@ struct ClientDetailView: View {
                 onDelete: deleteClient
             )
         }
-        .alert(
-            "Delete income line?",
-            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-            presenting: pendingDelete
-        ) { entry in
-            Button("Delete", role: .destructive) {
-                delete(entry)
-                pendingDelete = nil
-            }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: { entry in
-            Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)")
-        }
-        .saveErrorAlert($saveError)
         .undoToastHost()
+        .task(id: snapshotRevision) {
+            await loadSnapshot()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
+            dataRevision &+= 1
+        }
+        .saveErrorAlert($snapshotError)
     }
 
-    // MARK: Hero — the one figure this page exists for
+    // MARK: Profile summary
 
-    private func heroBlock(totalAll: Decimal) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 7) {
-                // The client's identity color as a compact marker — the nav
-                // title already carries the name.
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(Color(hex: client.colorHex))
-                    .frame(width: 10, height: 10)
-                Text("Total earned")
-                    .appFont(13, .medium)
-                    .foregroundStyle(Theme.label(0.5))
+    private func profileSummary(_ snapshot: ClientDetailSnapshot?) -> some View {
+        VStack(spacing: 40) {
+            Text(client.name)
+                .appFont(24, .semibold, relativeTo: .title2)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
+                .glassEffect(
+                    .regular.tint(Color(hex: client.colorHex)).interactive(),
+                    in: .capsule
+                )
+                .accessibilityAddTraits(.isHeader)
+
+            HStack(alignment: .top, spacing: 4) {
+                moneySummaryStat("Total earned", value: snapshot?.total)
+                moneySummaryStat("Avg / month", value: snapshot?.averagePerActiveMonth.rounded())
+                summaryStat("Share of income", value: shareOfIncomeString(snapshot?.shareOfIncome))
             }
-            MoneyAmountText(baseAmount: totalAll,
-                            size: 34, weight: .bold, design: .rounded,
-                            relativeTo: .largeTitle,
-                            color: Theme.label)
-                .animation(.snappy(duration: 0.3), value: totalAll)
-            metaLine
-                .appFont(13)
-                .foregroundStyle(Theme.label(0.45))
         }
-        .padding(.horizontal, 4)
-        .padding(.top, 4)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 32)
+        .padding(.bottom, 4)
     }
 
-    /// "12 lines · since March 2025" — or an invitation while the page is
-    /// empty. A `Text` so the `^[…](inflect:)` grammar agreement actually
-    /// parses (it only works through `LocalizedStringKey`, not
-    /// `String(localized:)`).
-    private var metaLine: Text {
-        let count = client.entries.count
-        guard count > 0, let first = client.entries.map(\.date).min() else {
-            return Text("No income lines yet")
+    private func moneySummaryStat(_ title: LocalizedStringKey, value: Decimal?) -> some View {
+        VStack(spacing: 2) {
+            summaryLabel(title)
+            if let value {
+                MoneyAmountText(
+                    baseAmount: value,
+                    size: 24,
+                    weight: .bold,
+                    design: .rounded,
+                    relativeTo: .title2,
+                    color: Theme.label,
+                    minimumScaleFactor: 0.55
+                )
+                .animation(.snappy(duration: 0.3), value: value)
+            } else {
+                Text("—")
+                    .appFont(24, .bold, design: .rounded, relativeTo: .title2)
+                    .foregroundStyle(Theme.label(0.25))
+            }
         }
-        return Text("^[\(count) line](inflect: true) · since \(DateFormat.monthAndYear(first))")
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func summaryStat(_ title: LocalizedStringKey, value: String) -> some View {
+        VStack(spacing: 2) {
+            summaryLabel(title)
+            Text(value)
+                .appFont(24, .bold, design: .rounded, relativeTo: .title2)
+                .monospacedDigit()
+                .foregroundStyle(Theme.label)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func summaryLabel(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .appFont(13, .medium, relativeTo: .footnote)
+            .foregroundStyle(Theme.label(0.5))
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .minimumScaleFactor(0.8)
     }
 
     // MARK: Sections
@@ -154,36 +197,37 @@ struct ClientDetailView: View {
 
     // MARK: Earnings chart — 12 months of this client, scrubbable
 
-    private func chartData(_ monthTotals: [Int: Decimal]) -> [(month: Date, total: Decimal)] {
-        let thisMonth = DateFormat.monthStart(of: .now)
-        return (0..<12).reversed().compactMap { offset in
-            guard let month = calendar.date(byAdding: .month, value: -offset, to: thisMonth) else { return nil }
-            return (month: month, total: monthTotals[Insights.monthKey(of: month)] ?? .zero)
-        }
-    }
-
-    private func trendCard(_ monthTotals: [Int: Decimal]) -> some View {
-        let data = chartData(monthTotals)
+    private func trendCard(_ data: [ClientDetailSnapshot.MonthPoint]) -> some View {
         let selected = chartSelection.flatMap { selection in
             data.first { calendar.isDate($0.month, equalTo: selection, toGranularity: .month) }
         }
         let hasData = data.contains { $0.total > 0 }
-        let barColor = Color(hex: client.colorHex)
+        let lineColor = Color(hex: client.colorHex)
+        let highlighted = selected ?? data.last
         return ChromeCard {
             Chart {
                 ForEach(data, id: \.month) { point in
-                    let isSelected = selected.map {
-                        calendar.isDate($0.month, equalTo: point.month, toGranularity: .month)
-                    } ?? false
-                    BarMark(
+                    AreaMark(
                         x: .value("Month", point.month, unit: .month),
-                        y: .value("Earned", doubleValue(point.total)),
-                        width: .ratio(0.62)
+                        yStart: .value("Zero", 0),
+                        yEnd: .value("Earned", doubleValue(point.total))
                     )
-                    .foregroundStyle(selected != nil && !isSelected
-                                     ? AnyShapeStyle(barColor.opacity(0.3))
-                                     : AnyShapeStyle(barColor.gradient))
-                    .cornerRadius(4)
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [lineColor.opacity(0.22), lineColor.opacity(0.03)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                    LineMark(
+                        x: .value("Month", point.month, unit: .month),
+                        y: .value("Earned", doubleValue(point.total))
+                    )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(lineColor)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 }
 
                 if let selected {
@@ -194,6 +238,15 @@ struct ClientDetailView: View {
                                     overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                             chartCallout(selected)
                         }
+                }
+
+                if let highlighted {
+                    PointMark(
+                        x: .value("Highlighted month", highlighted.month, unit: .month),
+                        y: .value("Highlighted earnings", doubleValue(highlighted.total))
+                    )
+                    .foregroundStyle(lineColor)
+                    .symbolSize(55)
                 }
             }
             .chartYAxis {
@@ -208,17 +261,12 @@ struct ClientDetailView: View {
                     }
                 }
             }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .month, count: 3)) { _ in
-                    AxisValueLabel(format: .dateTime.month(.abbreviated))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Theme.label(0.5))
-                }
-            }
+            .chartXAxis(.hidden)
             .chartXSelection(value: $chartSelection)
             .frame(height: chartHeight)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
+            .padding(.leading, 0)
+            .padding(.trailing, 10)
+            .padding(.vertical, 14)
             .overlay {
                 if !hasData {
                     Text("No earned income in the last year")
@@ -229,7 +277,7 @@ struct ClientDetailView: View {
         }
     }
 
-    private func chartCallout(_ point: (month: Date, total: Decimal)) -> some View {
+    private func chartCallout(_ point: ClientDetailSnapshot.MonthPoint) -> some View {
         VStack(spacing: 1) {
             Text(app.primaryString(point.total))
                 .appFont(12, .semibold, design: .rounded)
@@ -245,190 +293,128 @@ struct ClientDetailView: View {
         .shadow(color: Theme.label(0.12), radius: 6, y: 2)
     }
 
-    // MARK: At a glance — four quiet figures
-
-    private func statsCard(_ monthTotals: [Int: Decimal]) -> some View {
-        let thisMonth = monthTotals[Insights.monthKey(of: .now)] ?? .zero
-        let activeMonths = monthTotals.values.count { $0 > 0 }
-        let average = activeMonths == 0
-            ? Decimal.zero
-            : allTimeTotal(monthTotals) / Decimal(activeMonths)
-        return ChromeCard {
-            HStack(alignment: .top, spacing: 8) {
-                stat("This month", value: app.primaryString(thisMonth.rounded()))
-                stat("Avg / month", value: app.primaryString(average.rounded()))
-            }
-            .padding(.top, 16)
-            .padding(.horizontal, 12)
-            HStack(alignment: .top, spacing: 8) {
-                stat("Share of income", value: shareOfIncomeString(monthTotals))
-                stat("Pending", value: app.primaryString(pendingTotal.rounded()))
-            }
-            .padding(.vertical, 16)
-            .padding(.horizontal, 12)
-        }
-    }
-
-    private func stat(_ title: LocalizedStringKey, value: String) -> some View {
-        VStack(spacing: 4) {
-            Text(title)
-                .appFont(13)
-                .foregroundStyle(Theme.label(0.5))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(value)
-                .appFont(20, .semibold, design: .rounded, relativeTo: .title3)
-                .monospacedDigit()
-                .foregroundStyle(Theme.label)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func allTimeTotal(_ monthTotals: [Int: Decimal]) -> Decimal {
-        monthTotals.values.reduce(Decimal.zero, +)
-    }
-
     /// This client's slice of everything ever earned, e.g. "37%".
-    private func shareOfIncomeString(_ monthTotals: [Int: Decimal]) -> String {
-        let everyone = app.insights.ledgerSnapshot(clients)
-            .earnedTotalByMonth.values.reduce(Decimal.zero, +)
-        guard everyone > 0 else { return "—" }
-        let fraction = NSDecimalNumber(decimal: allTimeTotal(monthTotals)).doubleValue
-            / NSDecimalNumber(decimal: everyone).doubleValue
+    private func shareOfIncomeString(_ fraction: Double?) -> String {
+        guard let fraction else { return "—" }
         return "\(Int((min(fraction, 9.99) * 100).rounded()))%"
-    }
-
-    /// Base-currency sum of the lines still in progress.
-    private var pendingTotal: Decimal {
-        client.entries
-            .filter { $0.status == .inProgress }
-            .reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
     }
 
     // MARK: Status & project breakdowns
 
-    private func statusTotal(_ s: EntryStatus) -> (count: Int, sum: Decimal) {
-        let items = client.entries.filter { $0.status == s }
-        return (items.count, items.reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) })
-    }
-
-    private var projectTotals: [(name: String, sum: Decimal)] {
-        var dict: [String: Decimal] = [:]
-        for e in client.entries where e.status.isIncludedInEarnedTotals {
-            let key = (e.project?.isEmpty == false ? e.project! : "—")
-            dict[key, default: 0] += app.toBase(e.amount, code: e.currencyCode)
-        }
-        return dict.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
-    }
-
-    private var statusCard: some View {
+    private func statusCard(_ totals: [ClientDetailSnapshot.StatusTotal]) -> some View {
         ChromeCard {
-            ForEach(EntryStatus.allCases) { s in
-                let t = statusTotal(s)
-                ChromeRow(icon: nil) {
-                    Image(systemName: s.symbol)
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(s.tint)
-                        .frame(width: 24)
-                    Text(s.title).foregroundStyle(Theme.label)
-                    Spacer()
-                    Text("\(t.count)")
-                        .foregroundStyle(Theme.label(0.4)).monospacedDigit()
-                        .contentTransition(.numericText())
-                    MoneyAmountText(baseAmount: t.sum,
-                                    size: 17,
-                                    color: Theme.label(0.7))
+            ForEach(totals) { total in
+                let status = EntryStatus.fromSyncRawValue(total.statusRaw)
+                NavigationLink {
+                    ClientTransactionsView(
+                        title: status.title,
+                        clientID: client.id,
+                        filter: .status(status.rawValue)
+                    )
+                } label: {
+                    ChromeRow(icon: nil) {
+                        Image(systemName: status.symbol)
+                            .font(.system(size: 17, weight: .regular))
+                            .foregroundStyle(status.tint)
+                            .frame(width: 14)
+                        Text(status.title).foregroundStyle(Theme.label)
+                        Spacer()
+                        Text("\(total.count)")
+                            .foregroundStyle(Theme.label(0.4)).monospacedDigit()
+                            .contentTransition(.numericText())
+                        Text(app.primaryString(total.total))
+                            .foregroundStyle(Theme.label)
+                            .monospacedDigit()
+                        Image(systemName: "chevron.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.label(0.25))
+                    }
+                    .contentShape(.rect)
                 }
-                .animation(.snappy(duration: 0.3), value: t.sum)
-                if s != EntryStatus.allCases.last {
-                    ChromeDivider()
+                .buttonStyle(.plain)
+                .animation(.snappy(duration: 0.3), value: total.total)
+                if total.id != totals.last?.id {
+                    ChromeDivider(inset: 44)
                 }
             }
         }
     }
 
-    private var projectsCard: some View {
+    private func projectsCard(_ totals: [ClientDetailSnapshot.ProjectTotal]) -> some View {
         ChromeCard {
-            ForEach(Array(projectTotals.enumerated()), id: \.element.name) { index, p in
-                ChromeRow(icon: nil) {
-                    Text(p.name).foregroundStyle(Theme.label).lineLimit(1)
-                    Spacer()
-                    MoneyAmountText(baseAmount: p.sum,
-                                    size: 17,
-                                    color: Theme.label(0.7))
-                        .animation(.snappy(duration: 0.3), value: p.sum)
+            ForEach(Array(totals.enumerated()), id: \.element.id) { index, total in
+                NavigationLink {
+                    ClientTransactionsView(
+                        title: total.name,
+                        clientID: client.id,
+                        filter: .project(total.name)
+                    )
+                } label: {
+                    ChromeRow(icon: nil) {
+                        Text(total.name).foregroundStyle(Theme.label).lineLimit(1)
+                        Spacer()
+                        Text("\(total.count)")
+                            .foregroundStyle(Theme.label(0.4))
+                            .monospacedDigit()
+                        Text(app.primaryString(total.total))
+                            .foregroundStyle(Theme.label)
+                            .monospacedDigit()
+                        Image(systemName: "chevron.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.label(0.25))
+                    }
+                    .contentShape(.rect)
                 }
-                if index < projectTotals.count - 1 {
+                .buttonStyle(.plain)
+                .animation(.snappy(duration: 0.3), value: total.total)
+                if index < totals.count - 1 {
                     ChromeDivider(inset: 16)
                 }
             }
         }
     }
 
-    // MARK: History — every line, grouped by month, newest first
-
-    private struct HistorySection {
-        let month: Date
-        let total: Decimal
-        let entries: [Entry]
-    }
-
-    /// One grouping pass over the client's entries: newest month first,
-    /// newest line first within a month, each month carrying its earned total
-    /// from the shared bucketing pass.
-    private func historySections(_ monthTotals: [Int: Decimal]) -> [HistorySection] {
-        var buckets: [Int: [Entry]] = [:]
-        for entry in client.entries where !entry.isDeleted {
-            buckets[Insights.monthKey(of: entry.date, calendar: calendar), default: []].append(entry)
-        }
-        return buckets.keys.sorted(by: >).compactMap { key in
-            guard let month = calendar.date(from: DateComponents(year: key / 12, month: key % 12 + 1)) else {
-                return nil
-            }
-            let entries = (buckets[key] ?? []).sorted { $0.date > $1.date }
-            return HistorySection(month: month, total: monthTotals[key] ?? .zero, entries: entries)
-        }
-    }
-
-    private func historyMonth(_ section: HistorySection) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(DateFormat.monthAndYear(section.month))
-                    .appFont(15, .medium)
-                    .foregroundStyle(Theme.label(0.5))
-                Spacer()
-                MoneyAmountText(baseAmount: section.total,
-                                size: 15, weight: .medium,
-                                color: Theme.label(0.5))
-            }
-            .padding(.horizontal, 4)
-            .padding(.bottom, 7)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-
-            ChromeCard {
-                ForEach(Array(section.entries.enumerated()), id: \.element.id) { index, entry in
-                    EntryRow(
-                        entry: entry,
-                        onSetStatus: { setStatus(entry, $0) },
-                        onEdit: { editingEntry = entry },
-                        onDelete: { pendingDelete = entry }
-                    )
-                    .id(entry.id)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    if index < section.entries.count - 1 {
-                        ChromeDivider(inset: 16)
-                    }
+    private func allTransactionsCard(_ count: Int) -> some View {
+        ChromeCard {
+            NavigationLink {
+                ClientTransactionsView(
+                    title: String(localized: "All Transactions"),
+                    clientID: client.id,
+                    filter: .all
+                )
+            } label: {
+                ChromeRow(icon: nil) {
+                    Text("All Transactions")
+                        .foregroundStyle(Theme.label)
+                    Spacer()
+                    Text("\(count)")
+                        .foregroundStyle(Theme.label(0.4))
+                        .monospacedDigit()
+                    Image(systemName: "chevron.right")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.label(0.25))
                 }
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
         }
     }
 
     // MARK: Actions
+
+    private func loadSnapshot() async {
+        snapshotError = nil
+        let loader = ClientDetailSnapshotLoader(modelContainer: context.container)
+        do {
+            let loaded = try await loader.load(clientID: client.id, converter: app.converter)
+            guard !Task.isCancelled else { return }
+            snapshot = loaded
+        } catch is CancellationError {
+            return
+        } catch {
+            snapshotError = error.localizedDescription
+        }
+    }
 
     private func deleteClient() {
         let target = client
@@ -452,24 +438,6 @@ struct ClientDetailView: View {
         }
     }
 
-    private func setStatus(_ e: Entry, _ s: EntryStatus) {
-        withAnimation(.snappy) {
-            e.status = s
-            e.markDirty()
-        }
-        _ = saveChanges()
-    }
-
-    private func delete(_ e: Entry) {
-        saveError = app.delete(e, context: context)
-    }
-
-    @discardableResult
-    private func saveChanges() -> Bool {
-        saveError = app.save(context)
-        return saveError == nil
-    }
-
     // MARK: Helpers
 
     private func doubleValue(_ value: Decimal) -> Double {
@@ -485,5 +453,135 @@ struct ClientDetailView: View {
             return "\(CurrencyFormatter.grouped(Decimal(value / 1000), code: app.baseCurrencyCode))k"
         }
         return CurrencyFormatter.grouped(Decimal(value), code: app.baseCurrencyCode)
+    }
+}
+
+/// A focused drill-down used by status, project, and all-transactions rows.
+/// It keeps the ledger's existing edit, status, delete, undo, and save-error
+/// behavior instead of turning the summary page into another long ledger.
+private struct ClientTransactionsView: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.modelContext) private var context
+    @Query(sort: \Client.sortIndex) private var clients: [Client]
+
+    enum Filter {
+        case all
+        case status(String)
+        case project(String)
+    }
+
+    let title: String
+    let filter: Filter
+    @Query private var entries: [Entry]
+
+    @State private var editingEntry: Entry?
+    @State private var pendingDelete: Entry?
+    @State private var saveError: String?
+
+    init(title: String, clientID: UUID, filter: Filter) {
+        self.title = title
+        self.filter = filter
+        let targetID = clientID
+        _entries = Query(
+            filter: #Predicate<Entry> { entry in
+                entry.client?.id == targetID
+            },
+            sort: [SortDescriptor(\Entry.date, order: .reverse)]
+        )
+    }
+
+    private var liveEntries: [Entry] {
+        entries
+            .filter { !$0.isInvalidated && !$0.isDeleted }
+            .filter { entry in
+                switch filter {
+                case .all:
+                    return true
+                case .status(let rawValue):
+                    return entry.statusRaw == rawValue
+                        || (rawValue == EntryStatus.paid.rawValue && entry.statusRaw == "logged")
+                case .project(let name):
+                    return (entry.project?.isEmpty == false ? entry.project! : "—") == name
+                }
+            }
+    }
+
+    private var sections: [(month: Date, entries: [Entry])] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: liveEntries) {
+            calendar.date(
+                from: calendar.dateComponents([.year, .month], from: $0.date)
+            ) ?? $0.date
+        }
+        return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
+    }
+
+    var body: some View {
+        Group {
+            if liveEntries.isEmpty {
+                ContentUnavailableView(
+                    "No transactions",
+                    systemImage: "tray",
+                    description: Text("Transactions matching this group will appear here.")
+                )
+            } else {
+                List {
+                    ForEach(sections, id: \.month) { section in
+                        Section {
+                            ForEach(section.entries, id: \.id) { entry in
+                                EntryRow(
+                                    entry: entry,
+                                    onSetStatus: { setStatus(entry, $0) },
+                                    onEdit: { editingEntry = entry },
+                                    onDelete: { pendingDelete = entry }
+                                )
+                                .padding(.vertical, 8)
+                                .listRowInsets(
+                                    EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
+                                )
+                                .listRowBackground(Theme.background)
+                            }
+                        } header: {
+                            Text(DateFormat.monthAndYear(section.month))
+                                .appFont(15, .medium)
+                                .foregroundStyle(Theme.label(0.5))
+                                .textCase(nil)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .background(Theme.background)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $editingEntry) { EditEntrySheet(entry: $0, clients: clients) }
+        .alert(
+            "Delete income line?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            presenting: pendingDelete
+        ) { entry in
+            Button("Delete", role: .destructive) {
+                saveError = app.delete(entry, context: context)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { entry in
+            Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)")
+        }
+        .saveErrorAlert($saveError)
+        .undoToastHost()
+    }
+
+    private func setStatus(_ entry: Entry, _ status: EntryStatus) {
+        withAnimation(.snappy) {
+            entry.status = status
+            entry.markDirty()
+        }
+        saveError = app.save(context)
     }
 }

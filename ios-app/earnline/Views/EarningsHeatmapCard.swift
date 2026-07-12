@@ -8,6 +8,7 @@ import SwiftUI
 /// parent and passed in as `map`.
 struct EarningsHeatmapCard: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let clients: [Client]
     let map: [Date: Decimal]
     let maxDaily: Decimal
@@ -15,16 +16,7 @@ struct EarningsHeatmapCard: View {
     let months: [Date]
     @Binding var selectedDay: Date?
 
-    /// The selected cell's frame, in the scrollable grid's own coordinate
-    /// space, reported up via `SelectedCellFrameKey`. Drawing the selection
-    /// ring from this — one overlay on top of the *entire* grid, rather than
-    /// a per-cell overlay — is what makes it safe to draw bigger than the
-    /// cell: a per-cell overlay only "wins" against whichever neighboring
-    /// cell happens to paint after it, which is unreliable for accidental
-    /// overlap in a plain VStack/HStack grid (that unreliability was the
-    /// cropped-square bug). An overlay attached once, above every cell,
-    /// is unambiguously the topmost layer no matter which day is selected.
-    @State private var selectedCellFrame: CGRect?
+    @State private var hasRevealedData = false
 
     // Fixed cell metrics — the grid keeps one comfortable size and scrolls
     // horizontally for longer windows rather than shrinking to fit.
@@ -63,10 +55,20 @@ struct EarningsHeatmapCard: View {
                     ChromeDivider(inset: 0).padding(.top, 14)
                     dayDetail(day: day, map: map, heatTotal: heatTotal)
                         .padding(.top, 14)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+                        .accessibilityIdentifier("insights.selectedDay")
                 }
             }
             .padding(16)
+        }
+        .opacity(hasRevealedData ? 1 : 0.45)
+        .scaleEffect(hasRevealedData ? 1 : 0.985, anchor: .top)
+        .task {
+            guard !hasRevealedData else { return }
+            await Task.yield()
+            withAnimation(reduceMotion ? nil : .smooth(duration: 0.32)) {
+                hasRevealedData = true
+            }
         }
     }
 
@@ -86,25 +88,45 @@ struct EarningsHeatmapCard: View {
                     }
                 }
                 .padding(.horizontal, 6)
-                // Headroom for the selection ring's halo at the very first or
-                // last day row, so it sits inside this padded area instead of
-                // needing to render past the grid's own measured bounds.
                 .padding(.vertical, 4)
-                .coordinateSpace(name: "heatGrid")
-                .overlay(alignment: .topLeading) {
-                    if let frame = selectedCellFrame {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(Theme.label, lineWidth: 2)
-                            .frame(width: frame.width + 6, height: frame.height + 6)
-                            .position(x: frame.midX, y: frame.midY)
-                            .allowsHitTesting(false)
+                .overlayPreferenceValue(DayCellBoundsKey.self) { anchors in
+                    GeometryReader { proxy in
+                        let frames = anchors.mapValues { proxy[$0] }
+                        ZStack(alignment: .topLeading) {
+                            Color.clear
+                                .contentShape(.rect)
+                                .simultaneousGesture(
+                                    SpatialTapGesture().onEnded { event in
+                                        selectNearest(to: event.location, frames: frames)
+                                    }
+                                )
+
+                            if let selectedDay,
+                               let frame = frames[calendar.startOfDay(for: selectedDay)] {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(app.accentColor, lineWidth: 2)
+                                    .frame(width: frame.width + 6, height: frame.height + 6)
+                                    .position(x: frame.midX, y: frame.midY)
+                                    .shadow(color: app.accentColor.opacity(0.28), radius: 4)
+                                    .allowsHitTesting(false)
+                                    .animation(
+                                        reduceMotion ? nil : .snappy(duration: 0.25, extraBounce: 0.08),
+                                        value: selectedDay
+                                    )
+                            }
+                        }
                     }
                 }
-                .onPreferenceChange(SelectedCellFrameKey.self) { selectedCellFrame = $0 }
             }
             .defaultScrollAnchor(.trailing)
             .mask(scrollEdgeFade)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Income calendar")
+        .accessibilityValue(heatmapAccessibilityValue)
+        .accessibilityHint("Swipe up or down to move between days")
+        .accessibilityAdjustableAction { direction in moveSelection(direction) }
+        .accessibilityIdentifier("insights.heatmap")
     }
 
     /// Fades the leading and trailing few points of the scroll so a half-shown
@@ -168,41 +190,26 @@ struct EarningsHeatmapCard: View {
 
     private func dayCell(_ day: Date, map: [Date: Decimal], maxDaily: Decimal) -> some View {
         let value = map[calendar.startOfDay(for: day)] ?? 0
-        let isSelected = selectedDay.map { calendar.isDate($0, inSameDayAs: day) } ?? false
         let isToday = calendar.isDateInToday(day)
         return RoundedRectangle(cornerRadius: 4, style: .continuous)
             .fill(cellColor(value, maxDaily: maxDaily))
             .frame(width: cell, height: cell)
             .overlay {
-                if isToday && !isSelected {
+                if isToday && selectedDay.map({ !calendar.isDate($0, inSameDayAs: day) }) != false {
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(app.accentColor.opacity(0.9), lineWidth: 1.5)
+                        .strokeBorder(app.accentColor.opacity(0.78), lineWidth: 1.25)
                 }
             }
-            // Report this cell's frame, in the grid's shared coordinate
-            // space, instead of drawing its own halo ring here — see
-            // `selectedCellFrame` for why the ring is drawn once, above the
-            // whole grid, rather than per-cell.
-            .background {
-                GeometryReader { geo in
-                    Color.clear.preference(
-                        key: SelectedCellFrameKey.self,
-                        value: isSelected ? geo.frame(in: .named("heatGrid")) : nil)
-                }
+            .anchorPreference(key: DayCellBoundsKey.self, value: .bounds) { anchor in
+                [calendar.startOfDay(for: day): anchor]
             }
-            .contentShape(.rect)
-            .onTapGesture { select(day) }
-            .accessibilityLabel(DateFormat.weekdayAndDate(day))
-            .accessibilityValue(value > 0 ? app.primaryString(value) : String(localized: "No income"))
+            .accessibilityHidden(true)
     }
 
-    /// Carries the selected day cell's frame up to `heatGrid`, which draws
-    /// the halo ring once, above every cell, instead of each cell drawing its
-    /// own ring that could be painted over by a neighbor.
-    private struct SelectedCellFrameKey: PreferenceKey {
-        static let defaultValue: CGRect? = nil
-        static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
-            value = nextValue() ?? value
+    private struct DayCellBoundsKey: PreferenceKey {
+        static let defaultValue: [Date: Anchor<CGRect>] = [:]
+        static func reduce(value: inout [Date: Anchor<CGRect>], nextValue: () -> [Date: Anchor<CGRect>]) {
+            value.merge(nextValue(), uniquingKeysWith: { _, new in new })
         }
     }
 
@@ -234,14 +241,58 @@ struct EarningsHeatmapCard: View {
         }
     }
 
-    private func select(_ day: Date?) {
-        UISelectionFeedbackGenerator().selectionChanged()
-        withAnimation(.snappy(duration: 0.24)) {
-            if let day, selectedDay.map({ calendar.isDate($0, inSameDayAs: day) }) == true {
-                selectedDay = nil
-            } else {
-                selectedDay = day
+    private func selectNearest(to location: CGPoint, frames: [Date: CGRect]) {
+        guard let nearest = frames.min(by: {
+            hypot($0.value.midX - location.x, $0.value.midY - location.y)
+                < hypot($1.value.midX - location.x, $1.value.midY - location.y)
+        })?.key else { return }
+        select(nearest)
+    }
+
+    private var availableDays: [Date] {
+        months.flatMap { month -> [Date] in
+            guard let range = calendar.range(of: .day, in: .month, for: month) else { return [] }
+            return range.compactMap { day in
+                calendar.date(byAdding: .day, value: day - 1, to: month).map(calendar.startOfDay(for:))
             }
+        }.sorted()
+    }
+
+    private var heatmapAccessibilityValue: String {
+        guard let selectedDay else { return String(localized: "No day selected") }
+        let amount = map[calendar.startOfDay(for: selectedDay)] ?? .zero
+        return "\(DateFormat.weekdayAndDate(selectedDay)), \(app.primaryString(amount))"
+    }
+
+    private func moveSelection(_ direction: AccessibilityAdjustmentDirection) {
+        let days = availableDays
+        guard !days.isEmpty else { return }
+        let currentIndex = selectedDay.flatMap { selected in
+            days.firstIndex { calendar.isDate($0, inSameDayAs: selected) }
+        } ?? max(days.count - 1, 0)
+        let nextIndex: Int
+        switch direction {
+        case .increment: nextIndex = min(currentIndex + 1, days.count - 1)
+        case .decrement: nextIndex = max(currentIndex - 1, 0)
+        @unknown default: return
+        }
+        setSelectedDay(days[nextIndex])
+    }
+
+    private func select(_ day: Date?) {
+        let next: Date?
+        if let day, selectedDay.map({ calendar.isDate($0, inSameDayAs: day) }) == true {
+            next = nil
+        } else {
+            next = day
+        }
+        setSelectedDay(next)
+    }
+
+    private func setSelectedDay(_ day: Date?) {
+        UISelectionFeedbackGenerator().selectionChanged()
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25, extraBounce: 0.08)) {
+            selectedDay = day
         }
     }
 
@@ -265,6 +316,7 @@ struct EarningsHeatmapCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Clear selection"))
+        .accessibilityIdentifier("insights.clearDaySelection")
     }
 
     /// A tappable date label mirroring `MoneyAmountText`'s tap-to-reveal

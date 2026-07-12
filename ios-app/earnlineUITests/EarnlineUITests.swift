@@ -69,4 +69,42 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(submit.frame.width, 44)
         XCTAssertGreaterThanOrEqual(submit.frame.height, 44)
     }
+
+    func testInsightsLoadsAndDaySelectionIsReachable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-demoInsights"]
+        app.launch()
+
+        let sheet = app.descendants(matching: .any)["insights.sheet"]
+        XCTAssertTrue(sheet.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["3M"].exists)
+
+        let chart = app.descendants(matching: .any)["insights.monthlyIncomeChart"]
+        XCTAssertTrue(chart.waitForExistence(timeout: 8))
+
+        let heatmap = app.descendants(matching: .any)["insights.heatmap"]
+        XCTAssertTrue(heatmap.waitForExistence(timeout: 3))
+        heatmap.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.55)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["insights.selectedDay"].waitForExistence(timeout: 3))
+
+        let clear = app.buttons["insights.clearDaySelection"]
+        XCTAssertTrue(clear.exists)
+        clear.tap()
+        XCTAssertFalse(app.descendants(matching: .any)["insights.selectedDay"].exists)
+
+        app.buttons["6M"].tap()
+        XCTAssertTrue(chart.waitForExistence(timeout: 3))
+    }
+
+    func testLargeLedgerClientProfileAppearsBeforeAggregationCompletes() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-demoClientProfile"]
+        app.launch()
+
+        let profile = app.descendants(matching: .any)["client.profile"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 12))
+        XCTAssertTrue(app.staticTexts["Stress Client 1"].exists)
+        XCTAssertTrue(app.staticTexts["Total earned"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["All Transactions"].waitForExistence(timeout: 8))
+    }
 }

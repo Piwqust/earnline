@@ -4,7 +4,7 @@ import Foundation
 /// value type from `AppModel`'s current currency settings, so the money math is
 /// testable in isolation from UI state and sync — `AppModel` keeps thin
 /// forwarders (`toBase`, `primaryString`, …) that delegate here.
-struct CurrencyConverter {
+struct CurrencyConverter: Sendable {
     let baseCurrencyCode: String
     let secondaryCurrencyCode: String
     /// Secondary units per 1 base unit (e.g. RUB per USD).

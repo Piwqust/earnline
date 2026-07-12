@@ -183,4 +183,103 @@ struct InsightsAggregationTests {
         #expect(snapshot.pendingCount == 1)
         #expect(snapshot.hasEntries)
     }
+
+    // MARK: Dashboard snapshot (off-main presentation data)
+
+    @Test func dashboardSnapshotBuildsAllPresentationFiguresInOnePass() {
+        let now = date(2026, 7, 11)
+        let previousMonth = date(2026, 6, 15)
+        let acme = Client(name: "Acme", colorHex: "#0088FF")
+        let northstar = Client(name: "Northstar", colorHex: "#7B00FF")
+        let unsupported = Client(name: "Unsupported")
+        acme.entries = [
+            Entry(amount: 300, task: "held", date: date(2026, 7, 10),
+                  holdUntil: date(2026, 7, 12), status: .inProgress),
+            Entry(amount: 999, currencyCode: "EUR", task: "canceled", date: now, status: .canceled),
+        ]
+        northstar.entries = [
+            Entry(amount: 8_300, currencyCode: "RUB", task: "prior", date: previousMonth, status: .paid),
+        ]
+        unsupported.entries = [
+            Entry(amount: 500, currencyCode: "EUR", task: "unknown", date: now, status: .paid),
+        ]
+
+        let input = InsightsDashboardInput(
+            clients: [acme, northstar, unsupported],
+            converter: CurrencyConverter(baseCurrencyCode: "USD", secondaryCurrencyCode: "RUB", rate: 83)
+        )
+        let snapshot = input.dashboardSnapshot(windowMonths: 3, now: now)
+
+        #expect(snapshot.monthlyIncome.count == 3)
+        #expect(snapshot.monthlyIncome.last?.total == 300)
+        #expect(snapshot.monthlyIncome.last?.previousTotal == 100)
+        #expect(snapshot.clientTotals.map(\.name) == ["Acme", "Northstar"])
+        #expect(snapshot.unsupportedCurrencyCount == 1)
+        #expect(snapshot.yearToDateTotal == 400)
+        #expect(snapshot.dailyEarnings[Calendar.current.startOfDay(for: date(2026, 7, 11))] == 100)
+        #expect(snapshot.bestMonth?.total == 300)
+        #expect(snapshot.averageMonth == 200)
+    }
+
+    // MARK: Client profile snapshot
+
+    @Test func clientDetailSnapshotBuildsAllBreakdownsInOnePass() {
+        let targetID = UUID()
+        let otherID = UUID()
+        let input = ClientDetailSnapshotInput(
+            clientID: targetID,
+            entries: [
+                .init(clientID: targetID, amount: 300, currencyCode: "USD", project: "Launch",
+                      date: date(2026, 7, 10), statusRaw: EntryStatus.paid.rawValue),
+                .init(clientID: targetID, amount: 8_300, currencyCode: "RUB", project: "Launch",
+                      date: date(2026, 6, 10), statusRaw: EntryStatus.inProgress.rawValue),
+                .init(clientID: targetID, amount: 999, currencyCode: "USD", project: "Ignored",
+                      date: date(2026, 7, 10), statusRaw: EntryStatus.canceled.rawValue),
+                .init(clientID: otherID, amount: 600, currencyCode: "USD", project: nil,
+                      date: date(2026, 7, 10), statusRaw: EntryStatus.paid.rawValue),
+            ],
+            converter: CurrencyConverter(baseCurrencyCode: "USD", secondaryCurrencyCode: "RUB", rate: 83)
+        )
+
+        let snapshot = input.snapshot(now: date(2026, 7, 11))
+
+        #expect(snapshot.total == 400)
+        #expect(snapshot.averagePerActiveMonth == 200)
+        #expect(snapshot.shareOfIncome == 0.4)
+        #expect(snapshot.transactionCount == 3)
+        #expect(snapshot.months.count == 12)
+        #expect(snapshot.months.last?.total == 300)
+        #expect(snapshot.statusTotals.map(\.count) == [1, 1, 1])
+        #expect(snapshot.projectTotals.count == 1)
+        #expect(snapshot.projectTotals.first?.name == "Launch")
+        #expect(snapshot.projectTotals.first?.count == 2)
+        #expect(snapshot.projectTotals.first?.total == 400)
+    }
+
+    @Test func clientDetailSnapshotStaysLinearAtStressLedgerSize() {
+        let targetID = UUID()
+        let otherID = UUID()
+        let entries = (0..<6_000).map { index in
+            ClientDetailSnapshotInput.EntryRecord(
+                clientID: index.isMultiple(of: 8) ? targetID : otherID,
+                amount: Decimal(index % 900 + 1),
+                currencyCode: "USD",
+                project: "Project \(index % 12)",
+                date: Date(timeIntervalSinceReferenceDate: TimeInterval(index * 86_400)),
+                statusRaw: EntryStatus.paid.rawValue
+            )
+        }
+        let input = ClientDetailSnapshotInput(
+            clientID: targetID,
+            entries: entries,
+            converter: CurrencyConverter(baseCurrencyCode: "USD", secondaryCurrencyCode: "RUB", rate: 83)
+        )
+
+        let clock = ContinuousClock()
+        let duration = clock.measure {
+            _ = input.snapshot(now: date(2026, 7, 11))
+        }
+
+        #expect(duration < .seconds(1))
+    }
 }

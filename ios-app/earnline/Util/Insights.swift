@@ -1,5 +1,180 @@
 import Foundation
 
+/// Immutable, actor-independent input for the Insights dashboard. SwiftData
+/// models are copied once on the main actor, then all dashboard aggregation can
+/// run away from SwiftUI's render path without crossing model isolation.
+struct InsightsDashboardInput: Sendable {
+    struct ClientRecord: Sendable {
+        let id: UUID
+        let name: String
+        let colorHex: String
+        let entries: [EntryRecord]
+    }
+
+    struct EntryRecord: Sendable {
+        let amount: Decimal
+        let currencyCode: String
+        let date: Date
+        let holdUntil: Date?
+        let isEarned: Bool
+    }
+
+    let clients: [ClientRecord]
+    let converter: CurrencyConverter
+
+    @MainActor
+    init(clients: [Client], converter: CurrencyConverter) {
+        self.converter = converter
+        self.clients = clients.compactMap { client in
+            guard !client.isDeleted else { return nil }
+            return ClientRecord(
+                id: client.id,
+                name: client.name,
+                colorHex: client.colorHex,
+                entries: client.entries.compactMap { entry in
+                    guard !entry.isDeleted else { return nil }
+                    return EntryRecord(
+                        amount: entry.amount,
+                        currencyCode: entry.currencyCode,
+                        date: entry.date,
+                        holdUntil: entry.holdUntil,
+                        isEarned: entry.status.isIncludedInEarnedTotals
+                    )
+                }
+            )
+        }
+    }
+
+    /// One pass produces every figure the sheet needs. The leading month before
+    /// the visible window is retained only as the first bar's comparison base.
+    nonisolated func dashboardSnapshot(
+        windowMonths: Int,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> InsightsDashboardSnapshot {
+        let count = max(windowMonths, 1)
+        let thisMonth = monthStart(now, calendar: calendar)
+        let visibleMonths = (0..<count).reversed().compactMap {
+            calendar.date(byAdding: .month, value: -$0, to: thisMonth)
+        }
+        let previousMonth = calendar.date(byAdding: .month, value: -count, to: thisMonth)
+        let visibleKeys = Set(visibleMonths.map { monthKey($0, calendar: calendar) })
+        let comparisonKeys = visibleKeys.union(previousMonth.map { [monthKey($0, calendar: calendar)] } ?? [])
+        let windowStart = visibleMonths.first ?? thisMonth
+        let windowEnd = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: thisMonth) ?? thisMonth
+        let currentYear = calendar.component(.year, from: now)
+
+        var totalsByMonth: [Int: Decimal] = [:]
+        var totalsByClient: [UUID: Decimal] = [:]
+        var dailyEarnings: [Date: Decimal] = [:]
+        var yearToDate: Decimal = .zero
+        var unsupportedCurrencyCount = 0
+
+        for client in clients {
+            for entry in client.entries {
+                guard entry.isEarned else { continue }
+                if !converter.canConvert(entry.currencyCode) {
+                    unsupportedCurrencyCount += 1
+                    continue
+                }
+
+                let base = converter.toBase(entry.amount, code: entry.currencyCode)
+                let entryMonthKey = monthKey(entry.date, calendar: calendar)
+                if comparisonKeys.contains(entryMonthKey) {
+                    totalsByMonth[entryMonthKey, default: .zero] += base
+                }
+                if visibleKeys.contains(entryMonthKey) {
+                    totalsByClient[client.id, default: .zero] += base
+                }
+                if calendar.component(.year, from: entry.date) == currentYear {
+                    yearToDate += base
+                }
+
+                let start = calendar.startOfDay(for: entry.date)
+                let rawEnd = entry.holdUntil.map { calendar.startOfDay(for: $0) } ?? start
+                let end = max(start, rawEnd)
+                let dayCount = max((calendar.dateComponents([.day], from: start, to: end).day ?? 0) + 1, 1)
+                let perDay = base / Decimal(dayCount)
+                var day = max(start, calendar.startOfDay(for: windowStart))
+                let last = min(end, calendar.startOfDay(for: windowEnd))
+                while day <= last {
+                    dailyEarnings[day, default: .zero] += perDay
+                    guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+                    day = next
+                }
+            }
+        }
+
+        let monthlyIncome = visibleMonths.map { month in
+            let key = monthKey(month, calendar: calendar)
+            let previous = calendar.date(byAdding: .month, value: -1, to: month)
+                .map { totalsByMonth[monthKey($0, calendar: calendar)] ?? .zero } ?? .zero
+            return InsightsDashboardSnapshot.MonthPoint(
+                month: month,
+                total: totalsByMonth[key] ?? .zero,
+                previousTotal: previous
+            )
+        }
+        let clientTotals = clients.compactMap { client -> InsightsDashboardSnapshot.ClientTotal? in
+            let total = totalsByClient[client.id] ?? .zero
+            guard total > 0 else { return nil }
+            return .init(id: client.id, name: client.name, colorHex: client.colorHex, total: total)
+        }.sorted { $0.total > $1.total }
+
+        let windowTotal = monthlyIncome.reduce(Decimal.zero) { $0 + $1.total }
+        let activeMonthCount = monthlyIncome.count { $0.total > 0 }
+        return InsightsDashboardSnapshot(
+            windowMonths: count,
+            months: visibleMonths,
+            monthlyIncome: monthlyIncome,
+            dailyEarnings: dailyEarnings,
+            clientTotals: clientTotals,
+            yearToDateTotal: yearToDate,
+            averageMonth: activeMonthCount == 0 ? .zero : windowTotal / Decimal(activeMonthCount),
+            bestMonth: windowTotal > 0 ? monthlyIncome.max { $0.total < $1.total } : nil,
+            unsupportedCurrencyCount: unsupportedCurrencyCount
+        )
+    }
+
+    private nonisolated func monthStart(_ date: Date, calendar: Calendar) -> Date {
+        calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+    }
+
+    private nonisolated func monthKey(_ date: Date, calendar: Calendar) -> Int {
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return (components.year ?? 0) * 12 + (components.month ?? 1) - 1
+    }
+}
+
+/// Complete presentation state for one Insights period. Views read this value
+/// directly, so selecting a day or chart bar never re-aggregates the ledger.
+struct InsightsDashboardSnapshot: Sendable {
+    struct MonthPoint: Identifiable, Sendable {
+        let month: Date
+        let total: Decimal
+        let previousTotal: Decimal
+        var id: Date { month }
+        var change: Decimal { total - previousTotal }
+    }
+
+    struct ClientTotal: Identifiable, Sendable {
+        let id: UUID
+        let name: String
+        let colorHex: String
+        let total: Decimal
+    }
+
+    let windowMonths: Int
+    let months: [Date]
+    let monthlyIncome: [MonthPoint]
+    let dailyEarnings: [Date: Decimal]
+    let clientTotals: [ClientTotal]
+    let yearToDateTotal: Decimal
+    let averageMonth: Decimal
+    let bestMonth: MonthPoint?
+    let unsupportedCurrencyCount: Int
+}
+
 /// Pure income aggregation over the ledger: grouping and totals, the monthly
 /// series and its month-over-month deltas, the daily-earnings heatmap, and the
 /// pending queue. Every figure is in the base currency via the injected

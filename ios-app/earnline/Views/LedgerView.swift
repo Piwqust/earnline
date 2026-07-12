@@ -320,6 +320,7 @@ struct LedgerView: View {
                 }
             }
             .onAppear(perform: runDemoIfNeeded)
+            .onChange(of: clients.count) { _, _ in runDemoIfNeeded() }
     }
 
     /// Ledger list + undo toast. Bottom chrome lives in the system toolbar
@@ -799,6 +800,13 @@ struct LedgerView: View {
         } else if args.contains("-demoSearch") {
             didRunDemo = true
             isSearching = true
+        } else if args.contains("-demoInsights") {
+            didRunDemo = true
+            showInsights = true
+        } else if args.contains("-demoClientProfile"),
+                  let stressClient = clients.first(where: { $0.name == "Stress Client 1" }) {
+            didRunDemo = true
+            detailClient = stressClient
         }
     }
 

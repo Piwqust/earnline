@@ -1,10 +1,23 @@
 # What's new
 
+## July 12, 2026
+
+### Performance
+- Client profiles now open immediately even with years of transactions: history totals and breakdowns are prepared once in the background instead of repeatedly scanning the ledger during navigation.
+- Status, project, and transaction drill-downs fetch only the selected client's rows when opened, keeping the compact profile lightweight.
+
 ## July 11, 2026
 
+### Insights
+- Insights opens immediately on large ledgers by preparing its dashboard totals once outside the render path and lazily building lower sections.
+- The monthly chart now shows actual income totals, with exact selection details and a secondary comparison to the previous month.
+- The client-share orb is crisper and calmer, sits above a full-width ranked client list, and no longer relies on a heavy blurred glow.
+- Top clients now restores the share-shaped color orb with a finer, better-separated outer ring and a redesigned ranked list with aligned income, percentages, and proportional tracks.
+- The earnings heatmap now has a smooth blue day-selection ring, a quieter reveal, Reduce Motion support, and one accessible adjustable calendar surface.
+
 ### Client profile
-- The client page is a full profile now: a large earned total, a scrubbable chart of the last 12 months in the client's color, at-a-glance stats (this month, average month, share of income, pending), and the full history grouped by month.
-- Long histories load lazily, so opening a client with years of lines is instant.
+- The client page now matches the new compact profile: a client-color name chip, total/average/share figures, and a scrubbable 12-month line chart.
+- Statuses, projects, and all transactions are concise summary rows that open focused transaction lists instead of stretching the profile into a second ledger.
 - Renaming, recoloring, and deleting a client moved behind an Edit button into their own sheet — changes apply when you confirm, and Cancel really cancels.
 
 ### Ledger
