@@ -11,6 +11,7 @@ struct ClientDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Query(sort: \Client.sortIndex) private var clients: [Client]
+    @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
     let client: Client
 
     @State private var showEditSheet = false
@@ -19,6 +20,7 @@ struct ClientDetailView: View {
     @State private var snapshot: ClientDetailSnapshot?
     @State private var snapshotError: String?
     @State private var dataRevision = 0
+    @State private var rendersAchievementPreview = true
 
     private var calendar: Calendar { .current }
 
@@ -58,6 +60,9 @@ struct ClientDetailView: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 profileSummary(snapshot)
                 if let snapshot {
+                    if app.clientBadgesEnabled {
+                        section("Achievements") { achievementsCard(snapshot.achievements) }
+                    }
                     trendCard(snapshot.months)
                     statusCard(snapshot.statusTotals)
 
@@ -107,6 +112,8 @@ struct ClientDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
             dataRevision &+= 1
         }
+        .onAppear { rendersAchievementPreview = true }
+        .onDisappear { rendersAchievementPreview = false }
         .saveErrorAlert($snapshotError)
     }
 
@@ -155,7 +162,7 @@ struct ClientDetailView: View {
             } else {
                 Text("—")
                     .appFont(24, .bold, design: .rounded, relativeTo: .title2)
-                    .foregroundStyle(Theme.label(0.25))
+                    .foregroundStyle(.tertiary)
             }
         }
         .frame(maxWidth: .infinity)
@@ -179,7 +186,7 @@ struct ClientDetailView: View {
     private func summaryLabel(_ title: LocalizedStringKey) -> some View {
         Text(title)
             .appFont(13, .medium, relativeTo: .footnote)
-            .foregroundStyle(Theme.label(0.5))
+            .foregroundStyle(.secondary)
             .lineLimit(2)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.8)
@@ -196,6 +203,53 @@ struct ClientDetailView: View {
     }
 
     // MARK: Earnings chart — 12 months of this client, scrubbable
+
+    private func achievementsCard(_ achievements: [ClientAchievement]) -> some View {
+        let earnedCount = achievements.count(where: \.isUnlocked)
+        return ChromeCard {
+            NavigationLink {
+                ClientBadgesView(clientName: client.name, achievements: achievements)
+            } label: {
+                VStack(spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("\(earnedCount) of \(achievements.count) earned")
+                            .appFont(14, .medium, relativeTo: .subheadline)
+                            .foregroundStyle(.secondary)
+                            .contentTransition(.numericText())
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    HStack(spacing: 6) {
+                        ForEach(Array(achievements.prefix(3))) { achievement in
+                            Group {
+                                if rendersAchievementPreview {
+                                    ClientBadgeModelView(achievement: achievement)
+                                } else {
+                                    Color.clear
+                                }
+                            }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 84)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .contentShape(.rect)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Achievements")
+                .accessibilityValue("\(earnedCount) of \(achievements.count) earned")
+                .accessibilityHint("Open the 3D award collection")
+                .accessibilityIdentifier("client.achievements.open")
+            }
+            .buttonStyle(.plain)
+        }
+    }
 
     private func trendCard(_ data: [ClientDetailSnapshot.MonthPoint]) -> some View {
         let selected = chartSelection.flatMap { selection in
@@ -232,7 +286,7 @@ struct ClientDetailView: View {
 
                 if let selected {
                     RuleMark(x: .value("Month", selected.month, unit: .month))
-                        .foregroundStyle(Theme.label(0.14))
+                        .foregroundStyle(.quaternary)
                         .lineStyle(StrokeStyle(lineWidth: 1))
                         .annotation(position: .top, spacing: 6,
                                     overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
@@ -256,7 +310,7 @@ struct ClientDetailView: View {
                         if let amount = value.as(Double.self) {
                             Text(compactAmount(amount))
                                 .font(.caption2)
-                                .foregroundStyle(Theme.label(0.4))
+                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
@@ -271,7 +325,7 @@ struct ClientDetailView: View {
                 if !hasData {
                     Text("No earned income in the last year")
                         .appFont(11)
-                        .foregroundStyle(Theme.label(0.4))
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
@@ -285,7 +339,7 @@ struct ClientDetailView: View {
                 .foregroundStyle(Theme.label)
             Text(DateFormat.monthAndYear(point.month))
                 .appFont(9)
-                .foregroundStyle(Theme.label(0.5))
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -320,14 +374,14 @@ struct ClientDetailView: View {
                         Text(status.title).foregroundStyle(Theme.label)
                         Spacer()
                         Text("\(total.count)")
-                            .foregroundStyle(Theme.label(0.4)).monospacedDigit()
+                            .foregroundStyle(.tertiary).monospacedDigit()
                             .contentTransition(.numericText())
                         Text(app.primaryString(total.total))
                             .foregroundStyle(Theme.label)
                             .monospacedDigit()
                         Image(systemName: "chevron.right")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(Theme.label(0.25))
+                            .foregroundStyle(.tertiary)
                     }
                     .contentShape(.rect)
                 }
@@ -351,17 +405,21 @@ struct ClientDetailView: View {
                     )
                 } label: {
                     ChromeRow(icon: nil) {
+                        Image(systemName: projectSymbol(for: total.name).systemImageName)
+                            .font(.system(size: 17, weight: .regular))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18)
                         Text(total.name).foregroundStyle(Theme.label).lineLimit(1)
                         Spacer()
                         Text("\(total.count)")
-                            .foregroundStyle(Theme.label(0.4))
+                            .foregroundStyle(.tertiary)
                             .monospacedDigit()
                         Text(app.primaryString(total.total))
                             .foregroundStyle(Theme.label)
                             .monospacedDigit()
                         Image(systemName: "chevron.right")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(Theme.label(0.25))
+                            .foregroundStyle(.tertiary)
                     }
                     .contentShape(.rect)
                 }
@@ -388,11 +446,11 @@ struct ClientDetailView: View {
                         .foregroundStyle(Theme.label)
                     Spacer()
                     Text("\(count)")
-                        .foregroundStyle(Theme.label(0.4))
+                        .foregroundStyle(.tertiary)
                         .monospacedDigit()
                     Image(systemName: "chevron.right")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(Theme.label(0.25))
+                        .foregroundStyle(.tertiary)
                 }
                 .contentShape(.rect)
             }
@@ -442,6 +500,10 @@ struct ClientDetailView: View {
 
     private func doubleValue(_ value: Decimal) -> Double {
         NSDecimalNumber(decimal: value).doubleValue
+    }
+
+    private func projectSymbol(for projectName: String) -> ProjectSymbol {
+        ProjectIconResolver.symbol(for: projectName, in: projectIconPreferences)
     }
 
     /// Compact axis label ("2k", "1.5M") — earned values are never negative here.
@@ -544,7 +606,7 @@ private struct ClientTransactionsView: View {
                         } header: {
                             Text(DateFormat.monthAndYear(section.month))
                                 .appFont(15, .medium)
-                                .foregroundStyle(Theme.label(0.5))
+                                .foregroundStyle(.secondary)
                                 .textCase(nil)
                         }
                     }

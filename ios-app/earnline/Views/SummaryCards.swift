@@ -60,7 +60,7 @@ struct SummaryCards: View {
             if !parts.suffix.isEmpty { Text(parts.suffix) }
         }
         .appFont(14, .medium)
-        .foregroundStyle(Theme.label(0.6))
+        .foregroundStyle(.secondary)
         .accessibilityElement(children: .combine)
     }
 
@@ -94,7 +94,7 @@ struct SummaryCards: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Stats")
                         .appFont(14, .medium)
-                        .foregroundStyle(Theme.label(0.6))
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Spacer(minLength: 12)
                     Text(growthText)

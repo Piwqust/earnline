@@ -1,11 +1,14 @@
-import { useEffect } from "react";
+import { lazy, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { syncController } from "./state/store";
 import { useSettings } from "./state/settings";
 import { AppShell } from "./ui/components/AppShell";
-import { LedgerView } from "./ui/LedgerView";
-import { ClientDetailView } from "./ui/ClientDetailView";
-import { SettingsView } from "./ui/SettingsView";
+
+const LedgerView = lazy(() => import("./ui/LedgerView").then((module) => ({ default: module.LedgerView })));
+const ClientDetailView = lazy(() =>
+  import("./ui/ClientDetailView").then((module) => ({ default: module.ClientDetailView })),
+);
+const SettingsView = lazy(() => import("./ui/SettingsView").then((module) => ({ default: module.SettingsView })));
 
 const THEME_COLOR = { light: "#F4F5F7", dark: "#14161b" };
 
@@ -14,6 +17,7 @@ export default function App() {
 
   useEffect(() => {
     syncController.start();
+    return () => syncController.stop();
   }, []);
 
   // Apply the theme preference (omit the attribute for "auto" so the OS drives

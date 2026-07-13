@@ -7,13 +7,21 @@ import SwiftUI
 enum Theme {
     // MARK: Surfaces
     static let background = dynamic(light: "#F2F2F7", dark: "#0C0C0F")
-    static let card = label.opacity(0.03)
+    static let card = Color(uiColor: .tertiarySystemGroupedBackground)
     /// Solid card surface for sheet content — white on the gray sheet
     /// background (dark: elevated near-black), the ChatGPT grouped-card idiom.
     static let surface = dynamic(light: "#FFFFFF", dark: "#1C1C1E")
 
-    // MARK: Labels (vibrant primary, used with opacity steps)
+    // MARK: Labels
     static let label = dynamic(light: "#1A1A1A", dark: "#F2F2F4")
+    /// UIKit semantic label colors for contexts that require a concrete `Color`
+    /// (for example conditional styles and attributed strings). Prefer SwiftUI's
+    /// `.secondary` and `.tertiary` hierarchical styles where type inference allows.
+    static let secondaryLabel = Color(uiColor: .secondaryLabel)
+    static let tertiaryLabel = Color(uiColor: .tertiaryLabel)
+    static let quaternaryLabel = Color(uiColor: .quaternaryLabel)
+    /// Reserved for continuous chart/decorative intensity. Text and controls
+    /// use the semantic label tokens above so hierarchy adapts automatically.
     static func label(_ opacity: Double) -> Color { label.opacity(opacity) }
 
     static let hairline = Color(UIColor { trait in

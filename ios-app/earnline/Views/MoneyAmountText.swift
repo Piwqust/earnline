@@ -46,14 +46,13 @@ struct MoneyAmountText: View {
             withAnimation(.snappy(duration: 0.24)) {
                 showSecondary.toggle()
             }
-            UISelectionFeedbackGenerator().selectionChanged()
         } label: {
             HStack(spacing: 2) {
                 Text(amountText)
                     .contentTransition(.numericText(countsDown: countsDown))
                 if isApproximate {
                     Text("·?")
-                        .foregroundStyle(color.opacity(0.4))
+                        .foregroundStyle(.tertiary)
                 }
             }
             .appFont(size, weight, design: design, relativeTo: relativeTo)
@@ -63,6 +62,7 @@ struct MoneyAmountText: View {
             .minimumScaleFactor(minimumScaleFactor)
         }
         .buttonStyle(.plain)
+        .sensoryFeedback(.selection, trigger: showSecondary)
         .accessibilityLabel(isApproximate ? String(localized: "\(amountText), approximate") : amountText)
         .accessibilityHint(Text("Tap to show \(nextCode)"))
     }

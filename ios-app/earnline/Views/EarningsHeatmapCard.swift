@@ -46,7 +46,7 @@ struct EarningsHeatmapCard: View {
                 } else {
                     Text("No earned income in this period")
                         .appFont(11)
-                        .foregroundStyle(Theme.label(0.4))
+                        .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 14)
                 }
@@ -70,6 +70,7 @@ struct EarningsHeatmapCard: View {
                 hasRevealedData = true
             }
         }
+        .sensoryFeedback(.selection, trigger: selectedDay)
     }
 
     // MARK: Heatmap grid — fixed cell size, weekday labels pinned, months scroll
@@ -148,7 +149,7 @@ struct EarningsHeatmapCard: View {
             ForEach(Array(weekdayInitials.enumerated()), id: \.offset) { _, initial in
                 Text(initial)
                     .appFont(9, .medium)
-                    .foregroundStyle(Theme.label(0.4))
+                    .foregroundStyle(.tertiary)
                     .frame(width: weekdayColumnWidth, height: cell)
             }
         }
@@ -166,7 +167,7 @@ struct EarningsHeatmapCard: View {
         VStack(alignment: .leading, spacing: cellSpacing) {
             Text(month.formatted(.dateTime.month(.abbreviated)))
                 .appFont(12, .semibold)
-                .foregroundStyle(Theme.label(0.55))
+                .foregroundStyle(.secondary)
                 .fixedSize()
                 .frame(height: monthHeaderHeight, alignment: .leading)
 
@@ -229,7 +230,7 @@ struct EarningsHeatmapCard: View {
             Spacer()
             Text("Less")
                 .appFont(10)
-                .foregroundStyle(Theme.label(0.4))
+                .foregroundStyle(.tertiary)
             ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { step in
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(step == 0 ? Theme.label(0.06) : app.accentColor.opacity(0.20 + 0.80 * step))
@@ -237,7 +238,7 @@ struct EarningsHeatmapCard: View {
             }
             Text("More")
                 .appFont(10)
-                .foregroundStyle(Theme.label(0.4))
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -290,7 +291,6 @@ struct EarningsHeatmapCard: View {
     }
 
     private func setSelectedDay(_ day: Date?) {
-        UISelectionFeedbackGenerator().selectionChanged()
         withAnimation(reduceMotion ? nil : .snappy(duration: 0.25, extraBounce: 0.08)) {
             selectedDay = day
         }
@@ -308,7 +308,7 @@ struct EarningsHeatmapCard: View {
         Button { select(nil) } label: {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 22))
-                .foregroundStyle(Theme.label(0.28))
+                .foregroundStyle(.tertiary)
                 // 44 pt hit region around the 22 pt glyph.
                 .padding(11)
                 .contentShape(.circle)
@@ -334,16 +334,16 @@ struct EarningsHeatmapCard: View {
         var body: some View {
             Button {
                 withAnimation(.snappy(duration: 0.24)) { showFull.toggle() }
-                UISelectionFeedbackGenerator().selectionChanged()
             } label: {
                 Text(text)
                     .appFont(11, .semibold)
                     .textCase(.uppercase)
                     .kerning(0.4)
                     .contentTransition(.opacity)
-                    .foregroundStyle(Theme.label(0.4))
+                    .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
+            .sensoryFeedback(.selection, trigger: showFull)
             .accessibilityLabel(Text(DateFormat.weekdayAndDate(day)))
         }
     }
@@ -376,7 +376,7 @@ struct EarningsHeatmapCard: View {
                     HStack {
                         Text("Share of period")
                             .appFont(12)
-                            .foregroundStyle(Theme.label(0.45))
+                            .foregroundStyle(.tertiary)
                         Spacer()
                         Text(percentString(ratio(dayTotal, heatTotal)))
                             .appFont(13, .semibold, design: .rounded)
@@ -392,7 +392,7 @@ struct EarningsHeatmapCard: View {
             if rows.isEmpty {
                 Text("No income recorded on this day")
                     .appFont(13)
-                    .foregroundStyle(Theme.label(0.4))
+                    .foregroundStyle(.tertiary)
                     .padding(.vertical, 2)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
@@ -437,21 +437,21 @@ struct EarningsHeatmapCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(lineDescription(entry))
                         .appFont(12)
-                        .foregroundStyle(Theme.label(0.5))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 6)
                     if showShare, dayTotal > 0 {
                         Text(percentString(ratio(row.amount, dayTotal)))
                             .appFont(11, .medium, design: .rounded)
                             .monospacedDigit()
-                            .foregroundStyle(Theme.label(0.4))
+                            .foregroundStyle(.tertiary)
                     }
                 }
                 if row.isHeldSlice, let hold = entry.holdUntil {
                     let full = app.toBase(entry.amount, code: entry.currencyCode)
                     Text("Slice of \(app.primaryString(full)) · held until \(DateFormat.dotted(hold))")
                         .appFont(11)
-                        .foregroundStyle(Theme.label(0.4))
+                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }

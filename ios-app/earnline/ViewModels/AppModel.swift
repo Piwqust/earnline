@@ -20,6 +20,8 @@ final class AppModel {
     nonisolated static let defaultExchangeRate = 83.0
     nonisolated static let productionWorkspaceID = "earnline-personal"
     nonisolated static let testWorkspaceID = "earnline-dev"
+    nonisolated static let workspaceCurrencyProfileStorageVersion = 1
+    nonisolated static let uiAutomationDefaultsSuite = "com.earnline.app.ui-tests"
 
     enum WorkspaceEnvironment: String, CaseIterable, Identifiable {
         case production
@@ -63,7 +65,7 @@ final class AppModel {
             if secondaryCurrencyCode == baseCurrencyCode {
                 secondaryCurrencyCode = Self.replacementCurrencyCode(excluding: baseCurrencyCode)
             }
-            defaults.set(baseCurrencyCode, forKey: "baseCurrencyCode")
+            defaults.set(baseCurrencyCode, forKey: workspaceDefaultKey("baseCurrencyCode"))
             markWorkspaceProfileDirtyIfNeeded()
         }
     }
@@ -78,7 +80,7 @@ final class AppModel {
                 secondaryCurrencyCode = Self.replacementCurrencyCode(excluding: baseCurrencyCode)
                 return
             }
-            defaults.set(secondaryCurrencyCode, forKey: "secondaryCurrencyCode")
+            defaults.set(secondaryCurrencyCode, forKey: workspaceDefaultKey("secondaryCurrencyCode"))
             markWorkspaceProfileDirtyIfNeeded()
         }
     }
@@ -90,7 +92,7 @@ final class AppModel {
                 rate = normalized
                 return
             }
-            defaults.set(rate, forKey: "rate")
+            defaults.set(rate, forKey: workspaceDefaultKey("rate"))
             markWorkspaceProfileDirtyIfNeeded()
         }
     }
@@ -115,6 +117,7 @@ final class AppModel {
             // Each environment points at its own Supabase project — swap the
             // URL/key over to the new one before rebuilding the client.
             loadWorkspaceSupabaseConfig()
+            loadWorkspaceCurrencyProfile()
             loadWorkspaceSyncState()
             loadWorkspaceProfileSyncState()
             detachWorkspaceStore()
@@ -159,6 +162,17 @@ final class AppModel {
         didSet { defaults.set(accent.rawValue, forKey: "accentColor") }
     }
     var accentColor: Color { accent.color }
+    /// Advanced controls affect both Settings and the ledger chrome, so the
+    /// preference belongs to the app model and survives sheet recreation and
+    /// relaunches. UI automation explicitly resets it with a launch argument.
+    var developerModeEnabled: Bool {
+        didSet { defaults.set(developerModeEnabled, forKey: "developerModeEnabled") }
+    }
+    /// Client badges are still being evaluated, so they stay off by default
+    /// and are only configurable from the Experimental developer section.
+    var clientBadgesEnabled: Bool {
+        didSet { defaults.set(clientBadgesEnabled, forKey: "clientBadgesEnabled") }
+    }
     /// Face ID / passcode lock on backgrounding — opt-in via Settings.
     var requireAppLock: Bool {
         didSet { defaults.set(requireAppLock, forKey: "requireAppLock") }
@@ -200,7 +214,7 @@ final class AppModel {
     // can live in `AppModel+Sync.swift` while remaining owned by `AppModel`;
     // `@ObservationIgnored` keeps them off the observation graph. Treat as
     // private to the type — nothing outside `AppModel` should touch them.
-    let defaults = UserDefaults.standard
+    let defaults: UserDefaults
     @ObservationIgnored var supabaseClient: SupabaseClient?
     @ObservationIgnored var queuedSyncTask: Task<Void, Never>?
     @ObservationIgnored var realtimeChannel: RealtimeChannelV2?
@@ -229,27 +243,29 @@ final class AppModel {
     @ObservationIgnored private var lockWindow: UIWindow?
     @ObservationIgnored private var isUnlocking = false
 
-    init() {
-        let resolvedBaseCurrencyCode = Self.normalizedCurrencyCode(defaults.string(forKey: "baseCurrencyCode"),
-                                                                   fallback: Self.defaultBaseCurrencyCode)
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        Self.migrateWorkspaceCurrencyProfilesIfNeeded(defaults: defaults)
+
+        let savedEnvironment = defaults.string(forKey: "workspaceEnvironment").flatMap(WorkspaceEnvironment.init(rawValue:))
+        let resolvedEnvironment = savedEnvironment ?? .production
+        let resolvedBaseCurrencyCode = Self.normalizedCurrencyCode(
+            defaults.string(forKey: Self.workspaceDefaultKey("baseCurrencyCode", environment: resolvedEnvironment)),
+            fallback: Self.defaultBaseCurrencyCode
+        )
         baseCurrencyCode = resolvedBaseCurrencyCode
-        let savedSecondary = Self.normalizedCurrencyCode(defaults.string(forKey: "secondaryCurrencyCode"),
-                                                         fallback: Self.defaultSecondaryCurrencyCode)
+        let savedSecondary = Self.normalizedCurrencyCode(
+            defaults.string(forKey: Self.workspaceDefaultKey("secondaryCurrencyCode", environment: resolvedEnvironment)),
+            fallback: Self.defaultSecondaryCurrencyCode
+        )
         secondaryCurrencyCode = savedSecondary == resolvedBaseCurrencyCode
             ? Self.replacementCurrencyCode(excluding: resolvedBaseCurrencyCode)
             : savedSecondary
-        var r = defaults.double(forKey: "rate")
-        // One-time reset to the current shipped rate (83 ₽/$): values carried
-        // over from older builds move to the new default on first launch;
-        // afterwards whatever the user types always wins.
-        if !defaults.bool(forKey: "didApplyDefaultRate83") {
-            r = Self.defaultExchangeRate
-            defaults.set(r, forKey: "rate")
-            defaults.set(true, forKey: "didApplyDefaultRate83")
-        }
+        let rateKey = Self.workspaceDefaultKey("rate", environment: resolvedEnvironment)
+        let r = defaults.object(forKey: rateKey) == nil
+            ? Self.defaultExchangeRate
+            : defaults.double(forKey: rateKey)
         rate = Self.validExchangeRate(r, fallback: Self.defaultExchangeRate)
-        let savedEnvironment = defaults.string(forKey: "workspaceEnvironment").flatMap(WorkspaceEnvironment.init(rawValue:))
-        let resolvedEnvironment = savedEnvironment ?? .production
         // Supabase config is per environment: seed each field from its stored
         // per-workspace value, falling back to the project preloaded for that
         // environment so the app syncs out of the box with nothing to paste.
@@ -282,6 +298,19 @@ final class AppModel {
             appearanceMode = .system
         }
         accent = Theme.Accent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .blue
+        let launchArguments = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("-resetDeveloperMode") {
+            defaults.set(false, forKey: "developerModeEnabled")
+        }
+        if launchArguments.contains("-demoDeveloperSettings") {
+            developerModeEnabled = true
+        } else {
+            developerModeEnabled = defaults.bool(forKey: "developerModeEnabled")
+        }
+        if launchArguments.contains("-resetExperimentalFeatures") {
+            defaults.set(false, forKey: "clientBadgesEnabled")
+        }
+        clientBadgesEnabled = defaults.bool(forKey: "clientBadgesEnabled")
         requireAppLock = defaults.bool(forKey: "requireAppLock")
         syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
     }
@@ -503,6 +532,42 @@ final class AppModel {
         )
         let entries = (try? context.fetch(descriptor)) ?? []
         PendingNotifications.sync(entries)
+    }
+
+    static func workspaceDefaultKey(_ key: String, environment: WorkspaceEnvironment) -> String {
+        "\(key).\(environment.rawValue)"
+    }
+
+    /// Currency settings used to share three global UserDefaults keys across
+    /// Production and Test. Migrate the last cached tuple to Production only,
+    /// then force the first pass for both environments to read the authoritative
+    /// cloud profile instead of pushing a potentially cross-contaminated cache.
+    private static func migrateWorkspaceCurrencyProfilesIfNeeded(defaults: UserDefaults) {
+        let migrationKey = "workspaceCurrencyProfileStorageVersion"
+        guard defaults.integer(forKey: migrationKey) < workspaceCurrencyProfileStorageVersion else { return }
+
+        let production = WorkspaceEnvironment.production
+        let productionBaseKey = workspaceDefaultKey("baseCurrencyCode", environment: production)
+        let productionSecondaryKey = workspaceDefaultKey("secondaryCurrencyCode", environment: production)
+        let productionRateKey = workspaceDefaultKey("rate", environment: production)
+
+        if defaults.object(forKey: productionBaseKey) == nil,
+           let legacyBase = defaults.string(forKey: "baseCurrencyCode") {
+            defaults.set(legacyBase, forKey: productionBaseKey)
+        }
+        if defaults.object(forKey: productionSecondaryKey) == nil,
+           let legacySecondary = defaults.string(forKey: "secondaryCurrencyCode") {
+            defaults.set(legacySecondary, forKey: productionSecondaryKey)
+        }
+        if defaults.object(forKey: productionRateKey) == nil,
+           defaults.object(forKey: "rate") != nil {
+            defaults.set(defaults.double(forKey: "rate"), forKey: productionRateKey)
+        }
+
+        for environment in WorkspaceEnvironment.allCases {
+            defaults.set(false, forKey: workspaceDefaultKey("profileNeedsSync", environment: environment))
+        }
+        defaults.set(workspaceCurrencyProfileStorageVersion, forKey: migrationKey)
     }
 
     nonisolated static func validExchangeRate(_ value: Double, fallback: Double = defaultExchangeRate) -> Double {

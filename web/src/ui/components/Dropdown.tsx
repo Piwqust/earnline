@@ -1,20 +1,24 @@
-// Anchored dropdown menu — the web-native replacement for the iOS-style Menu.
-// Renders into a portal with fixed positioning (so it never clips inside the
-// scrolling ledger), flips near viewport edges, and supports keyboard nav.
+// Anchored menu/popover that renders into a portal so scrolling surfaces never
+// clip it. Menu mode follows the ARIA menu keyboard pattern; dialog mode is for
+// compact forms such as the Smart Composer options.
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { CloseIcon } from "../icons";
+import { IconButton } from "./Button";
 
 type Align = "left" | "right";
 type Vertical = "down" | "up";
+type Mode = "menu" | "dialog";
 
 const DropdownCtx = createContext<{ close: () => void }>({ close: () => {} });
 
@@ -26,6 +30,8 @@ export function Dropdown({
   triggerClassName,
   ariaLabel,
   disabled,
+  mode = "menu",
+  popoverTitle,
 }: {
   trigger: ReactNode;
   children: ReactNode;
@@ -34,96 +40,123 @@ export function Dropdown({
   triggerClassName?: string;
   ariaLabel?: string;
   disabled?: boolean;
+  mode?: Mode;
+  popoverTitle?: string;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const popupId = useId();
+
+  const close = useCallback((restoreFocus = false) => {
+    setOpen(false);
+    setPos(null);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
+  }, []);
 
   const place = useCallback(() => {
-    const t = triggerRef.current;
-    const m = menuRef.current;
-    if (!t || !m) return;
-    const r = t.getBoundingClientRect();
-    const mw = m.offsetWidth;
-    const mh = m.offsetHeight;
+    const triggerElement = triggerRef.current;
+    const popup = popupRef.current;
+    if (!triggerElement || !popup) return;
+    const rect = triggerElement.getBoundingClientRect();
+    const width = popup.offsetWidth;
+    const height = popup.offsetHeight;
     const gap = 6;
     const pad = 8;
 
-    let top = vertical === "down" ? r.bottom + gap : r.top - gap - mh;
-    if (vertical === "down" && top + mh > window.innerHeight - pad && r.top - gap - mh > pad) {
-      top = r.top - gap - mh;
-    } else if (vertical === "up" && top < pad && r.bottom + gap + mh < window.innerHeight - pad) {
-      top = r.bottom + gap;
+    let top = vertical === "down" ? rect.bottom + gap : rect.top - gap - height;
+    if (vertical === "down" && top + height > window.innerHeight - pad && rect.top - gap - height > pad) {
+      top = rect.top - gap - height;
+    } else if (vertical === "up" && top < pad && rect.bottom + gap + height < window.innerHeight - pad) {
+      top = rect.bottom + gap;
     }
 
-    let left = align === "left" ? r.left : r.right - mw;
-    left = Math.max(pad, Math.min(left, window.innerWidth - mw - pad));
-    top = Math.max(pad, Math.min(top, window.innerHeight - mh - pad));
+    let left = align === "left" ? rect.left : rect.right - width;
+    left = Math.max(pad, Math.min(left, window.innerWidth - width - pad));
+    top = Math.max(pad, Math.min(top, window.innerHeight - height - pad));
     setPos({ top, left });
   }, [align, vertical]);
 
   useLayoutEffect(() => {
     if (!open) return;
     place();
-    const id = requestAnimationFrame(place);
-    return () => cancelAnimationFrame(id);
+    const frame = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(frame);
   }, [open, place]);
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
-      setOpen(false);
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (popupRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      close(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(true);
       }
     };
-    const onReflow = () => setOpen(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
+    const onReflow = () => close(false);
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
     window.addEventListener("scroll", onReflow, true);
     window.addEventListener("resize", onReflow);
     return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("scroll", onReflow, true);
       window.removeEventListener("resize", onReflow);
     };
-  }, [open]);
+  }, [close, open]);
 
-  // Roving focus inside the open menu.
   useEffect(() => {
     if (!open || !pos) return;
-    const m = menuRef.current;
-    if (!m) return;
-    const items = () => Array.from(m.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'));
-    items()[0]?.focus({ preventScroll: true });
-    const onKey = (e: KeyboardEvent) => {
-      const list = items();
+    const popup = popupRef.current;
+    if (!popup) return;
+    const focusables = () =>
+      Array.from(
+        popup.querySelectorAll<HTMLElement>(
+          mode === "menu"
+            ? '[role="menuitem"]:not([disabled])'
+            : 'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((item) => item.offsetWidth > 0 || item.offsetHeight > 0 || item === document.activeElement);
+    const preferred = popup.querySelector<HTMLElement>("[data-popover-autofocus]");
+    (preferred ?? focusables()[0])?.focus({ preventScroll: true });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const list = focusables();
       if (!list.length) return;
-      const idx = list.indexOf(document.activeElement as HTMLElement);
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        list[(idx + 1) % list.length]?.focus();
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        list[(idx - 1 + list.length) % list.length]?.focus();
-      } else if (e.key === "Home") {
-        e.preventDefault();
+      const index = list.indexOf(document.activeElement as HTMLElement);
+      if (mode === "dialog" && event.key === "Tab") {
+        const first = list[0];
+        const last = list[list.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      } else if (mode === "menu" && event.key === "ArrowDown") {
+        event.preventDefault();
+        list[(index + 1) % list.length]?.focus();
+      } else if (mode === "menu" && event.key === "ArrowUp") {
+        event.preventDefault();
+        list[(index - 1 + list.length) % list.length]?.focus();
+      } else if (mode === "menu" && event.key === "Home") {
+        event.preventDefault();
         list[0]?.focus();
-      } else if (e.key === "End") {
-        e.preventDefault();
+      } else if (mode === "menu" && event.key === "End") {
+        event.preventDefault();
         list[list.length - 1]?.focus();
       }
     };
-    m.addEventListener("keydown", onKey);
-    return () => m.removeEventListener("keydown", onKey);
-  }, [open, pos]);
+    popup.addEventListener("keydown", onKeyDown);
+    return () => popup.removeEventListener("keydown", onKeyDown);
+  }, [mode, open, pos]);
 
   return (
     <>
@@ -132,31 +165,44 @@ export function Dropdown({
         type="button"
         className={triggerClassName}
         aria-label={ariaLabel}
-        aria-haspopup="menu"
+        aria-haspopup={mode}
         aria-expanded={open}
+        aria-controls={open ? popupId : undefined}
         disabled={disabled}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((o) => !o);
+        onClick={(event) => {
+          event.stopPropagation();
+          if (open) close(false);
+          else setOpen(true);
         }}
       >
         {trigger}
       </button>
       {open &&
         createPortal(
-          <DropdownCtx.Provider value={{ close: () => setOpen(false) }}>
+          <DropdownCtx.Provider value={{ close: () => close(true) }}>
             <div
-              ref={menuRef}
-              className="dropdown"
-              role="menu"
+              id={popupId}
+              ref={popupRef}
+              className={"dropdown" + (mode === "dialog" ? " dropdown--dialog" : "")}
+              role={mode}
+              aria-label={mode === "dialog" ? popoverTitle ?? ariaLabel : undefined}
+              tabIndex={mode === "dialog" ? -1 : undefined}
               style={{
                 position: "fixed",
                 top: pos?.top ?? -9999,
                 left: pos?.left ?? -9999,
                 visibility: pos ? "visible" : "hidden",
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
             >
+              {mode === "dialog" && (
+                <div className="dropdown__dialog-head">
+                  <span>{popoverTitle ?? ariaLabel ?? "Options"}</span>
+                  <IconButton label="Close options" size="sm" onClick={() => close(true)}>
+                    <CloseIcon size={16} />
+                  </IconButton>
+                </div>
+              )}
               {children}
             </div>
           </DropdownCtx.Provider>,
@@ -195,7 +241,11 @@ export function DropdownItem({
 }
 
 export function DropdownSection({ children }: { children: ReactNode }) {
-  return <div className="dropdown__section">{children}</div>;
+  return (
+    <div className="dropdown__section" role="presentation">
+      {children}
+    </div>
+  );
 }
 
 export function DropdownDivider() {

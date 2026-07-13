@@ -322,7 +322,32 @@ extension AppModel {
     /// `internal` — the workspace/cursor `didSet`s in the main file key their
     /// UserDefaults through here.
     func workspaceDefaultKey(_ key: String) -> String {
-        "\(key).\(workspaceEnvironment.rawValue)"
+        Self.workspaceDefaultKey(key, environment: workspaceEnvironment)
+    }
+
+    /// Swap the cached currency tuple together with the selected workspace.
+    /// The cache is only an offline/first-frame value; a configured workspace
+    /// always reconciles it against `earnline_profiles` during bootstrap.
+    func loadWorkspaceCurrencyProfile() {
+        isApplyingRemoteProfile = true
+        let base = Self.normalizedCurrencyCode(
+            defaults.string(forKey: workspaceDefaultKey("baseCurrencyCode")),
+            fallback: Self.defaultBaseCurrencyCode
+        )
+        let secondary = Self.normalizedCurrencyCode(
+            defaults.string(forKey: workspaceDefaultKey("secondaryCurrencyCode")),
+            fallback: Self.defaultSecondaryCurrencyCode
+        )
+        baseCurrencyCode = base
+        secondaryCurrencyCode = secondary == base
+            ? Self.replacementCurrencyCode(excluding: base)
+            : secondary
+        let rateKey = workspaceDefaultKey("rate")
+        let cachedRate = defaults.object(forKey: rateKey) == nil
+            ? Self.defaultExchangeRate
+            : defaults.double(forKey: rateKey)
+        rate = Self.validExchangeRate(cachedRate)
+        isApplyingRemoteProfile = false
     }
 
     /// `internal` — invoked from `workspaceEnvironment.didSet` in the main file.

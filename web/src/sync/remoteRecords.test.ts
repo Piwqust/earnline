@@ -9,6 +9,8 @@ import {
   parseTimestamp,
   rowToEntry,
   timestampString,
+  decodeEntryRows,
+  RemoteDecodeError,
 } from "./remoteRecords";
 
 function makeEntry(amount: number, status: Entry["status"]): Entry {
@@ -83,5 +85,13 @@ describe("remoteRecords — wire parity", () => {
     expect(parseDay("2026-01-05")).toBe(day);
     const ts = Date.UTC(2026, 0, 5, 9, 30, 15, 250);
     expect(parseTimestamp(timestampString(ts))).toBe(ts);
+  });
+
+  it("rejects malformed timestamps, days, money, and status", () => {
+    const valid = entryToRow(makeEntry(10, "paid"), "ws");
+    expect(() => decodeEntryRows([{ ...valid, updated_at: "not-a-date" }])).toThrow(RemoteDecodeError);
+    expect(() => decodeEntryRows([{ ...valid, date: "2026-99-99" }])).toThrow(RemoteDecodeError);
+    expect(() => decodeEntryRows([{ ...valid, amount: "not-money" }])).toThrow(RemoteDecodeError);
+    expect(() => decodeEntryRows([{ ...valid, status: "mystery" }])).toThrow(RemoteDecodeError);
   });
 });

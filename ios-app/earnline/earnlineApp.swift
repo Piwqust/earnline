@@ -6,7 +6,15 @@ struct earnlineApp: App {
     @State private var app: AppModel
 
     init() {
-        let model = AppModel()
+        let defaults: UserDefaults
+        if AppModel.isRunningUIAutomation,
+           let isolatedDefaults = UserDefaults(suiteName: AppModel.uiAutomationDefaultsSuite) {
+            isolatedDefaults.removePersistentDomain(forName: AppModel.uiAutomationDefaultsSuite)
+            defaults = isolatedDefaults
+        } else {
+            defaults = .standard
+        }
+        let model = AppModel(defaults: defaults)
         _app = State(initialValue: model)
     }
 
@@ -113,6 +121,15 @@ private struct WorkspaceContainerHost: View {
             return
         }
         app.lockOnLaunchIfNeeded()
+        if store.environment == .production {
+            do {
+                try SampleData.cleanupLeakedProductionFixturesIfNeeded(context)
+            } catch {
+                app.syncMessage = String(localized: "Needs sync")
+                app.syncError = "Could not remove leaked test fixtures: \(error.localizedDescription)"
+                return
+            }
+        }
         // Demo data exists so an unconfigured first launch feels alive; a
         // device pointed at a real workspace must start from the remote truth.
         if !app.isSupabaseConfigured {
@@ -145,8 +162,16 @@ private struct WorkspaceStore {
 
     init(environment: AppModel.WorkspaceEnvironment) throws {
         self.environment = environment
-        let schema = Schema(versionedSchema: EarnlineSchemaV1.self)
-        let configuration = ModelConfiguration(environment.storeName, schema: schema)
+        let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
+        // UI automation seeds deterministic demo/stress fixtures. Persisting
+        // that container let a later normal launch upload those fixtures into
+        // whichever real workspace happened to be selected. Tests now get an
+        // isolated in-memory store that cannot survive the test process.
+        let configuration = ModelConfiguration(
+            environment.storeName,
+            schema: schema,
+            isStoredInMemoryOnly: AppModel.isRunningUIAutomation
+        )
         container = try ModelContainer(for: schema,
                                        migrationPlan: EarnlineMigrationPlan.self,
                                        configurations: configuration)

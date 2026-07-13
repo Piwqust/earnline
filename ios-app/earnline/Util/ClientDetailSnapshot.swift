@@ -31,6 +31,7 @@ struct ClientDetailSnapshot: Sendable {
     let statusTotals: [StatusTotal]
     let projectTotals: [ProjectTotal]
     let transactionCount: Int
+    let achievements: [ClientAchievement]
 }
 
 /// Sendable input used by both the background SwiftData loader and unit tests.
@@ -57,8 +58,9 @@ struct ClientDetailSnapshotInput: Sendable {
         var clientEarned = Decimal.zero
         var monthlyTotals: [Int: Decimal] = [:]
         var statusTotals: [String: (count: Int, total: Decimal)] = [:]
-        var projectTotals: [String: (count: Int, total: Decimal)] = [:]
+        var projectTotals: [String: (name: String, count: Int, total: Decimal)] = [:]
         var transactionCount = 0
+        var achievementAccumulator = ClientAchievementAccumulator(calendar: calendar)
 
         for entry in entries {
             let status = EntryStatus.fromSyncRawValue(entry.statusRaw)
@@ -69,6 +71,11 @@ struct ClientDetailSnapshotInput: Sendable {
             guard entry.clientID == clientID else { continue }
 
             transactionCount += 1
+            achievementAccumulator.record(
+                date: entry.date,
+                project: entry.project,
+                statusRaw: entry.statusRaw
+            )
             statusTotals[status.rawValue, default: (0, .zero)].count += 1
             statusTotals[status.rawValue, default: (0, .zero)].total += base
 
@@ -76,9 +83,11 @@ struct ClientDetailSnapshotInput: Sendable {
             clientEarned += base
             let key = Self.monthKey(entry.date, calendar: calendar)
             monthlyTotals[key, default: .zero] += base
-            let project = entry.project?.isEmpty == false ? entry.project! : "—"
-            projectTotals[project, default: (0, .zero)].count += 1
-            projectTotals[project, default: (0, .zero)].total += base
+            let trimmedProject = entry.project?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let project = trimmedProject?.isEmpty == false ? trimmedProject! : "—"
+            let projectKey = ProjectIconResolver.normalizedKey(for: project)
+            projectTotals[projectKey, default: (project, 0, .zero)].count += 1
+            projectTotals[projectKey, default: (project, 0, .zero)].total += base
         }
 
         let activeMonths = monthlyTotals.values.count { $0 > 0 }
@@ -97,8 +106,8 @@ struct ClientDetailSnapshotInput: Sendable {
         }
         var projects: [ClientDetailSnapshot.ProjectTotal] = []
         projects.reserveCapacity(projectTotals.count)
-        for (name, value) in projectTotals {
-            projects.append(.init(name: name, count: value.count, total: value.total))
+        for value in projectTotals.values {
+            projects.append(.init(name: value.name, count: value.count, total: value.total))
         }
         projects.sort { lhs, rhs in
             if lhs.total != rhs.total { return lhs.total > rhs.total }
@@ -114,7 +123,8 @@ struct ClientDetailSnapshotInput: Sendable {
             months: months,
             statusTotals: statuses,
             projectTotals: projects,
-            transactionCount: transactionCount
+            transactionCount: transactionCount,
+            achievements: achievementAccumulator.achievements()
         )
     }
 

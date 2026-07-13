@@ -136,7 +136,7 @@ struct InsightsView: View {
                 ProgressView()
                 Text("Preparing insights")
                     .appFont(13, .medium)
-                    .foregroundStyle(Theme.label(0.5))
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 160)
         }
@@ -177,46 +177,57 @@ struct InsightsView: View {
     private func monthlyIncomeCard(_ data: [InsightsDashboardSnapshot.MonthPoint]) -> some View {
         let selected = selectedPoint(data)
         let hasData = data.contains { $0.total > 0 }
-        let labelBars = data.count <= 6
+        let highlighted = selected ?? data.last
 
         return ChromeCard {
             Chart {
                 ForEach(data) { point in
-                    let isSelected = selected.map {
-                        calendar.isDate($0.month, equalTo: point.month, toGranularity: .month)
-                    } ?? false
-                    BarMark(
+                    AreaMark(
                         x: .value("Month", point.month, unit: .month),
-                        y: .value("Income", doubleValue(point.total)),
-                        width: .ratio(data.count > 6 ? 0.7 : 0.58)
+                        yStart: .value("Zero", 0),
+                        yEnd: .value("Income", doubleValue(point.total))
                     )
-                    .foregroundStyle(monthlyBarStyle(point, selected: selected))
-                    .cornerRadius(6)
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [app.accentColor.opacity(0.18), app.accentColor.opacity(0.02)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                    LineMark(
+                        x: .value("Month", point.month, unit: .month),
+                        y: .value("Income", doubleValue(point.total))
+                    )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(app.accentColor)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                     .accessibilityLabel(DateFormat.monthAndYear(point.month))
                     .accessibilityValue(app.primaryString(point.total))
-                    .annotation(position: .top, spacing: 5,
-                                overflowResolution: .init(x: .disabled, y: .fit(to: .chart))) {
-                        if labelBars, point.total > 0, !isSelected {
-                            Text(compactAmount(doubleValue(point.total)))
-                                .font(.caption2.weight(.semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(app.accentColor)
-                        }
-                    }
                 }
 
                 RuleMark(y: .value("Zero", 0))
-                    .foregroundStyle(Theme.label(0.18))
+                    .foregroundStyle(.quaternary)
                     .lineStyle(StrokeStyle(lineWidth: 1))
 
                 if let selected {
                     RuleMark(x: .value("Month", selected.month, unit: .month))
-                        .foregroundStyle(Theme.label(0.12))
+                        .foregroundStyle(.quaternary)
                         .lineStyle(StrokeStyle(lineWidth: 1))
                         .annotation(position: .top, spacing: 7,
                                     overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                             monthlyIncomeCallout(selected)
                         }
+                }
+
+                if let highlighted {
+                    PointMark(
+                        x: .value("Highlighted month", highlighted.month, unit: .month),
+                        y: .value("Highlighted income", doubleValue(highlighted.total))
+                    )
+                    .foregroundStyle(app.accentColor)
+                    .symbolSize(55)
                 }
             }
             .chartYScale(domain: .automatic(includesZero: true))
@@ -227,7 +238,7 @@ struct InsightsView: View {
                         if let amount = value.as(Double.self) {
                             Text(compactAmount(amount))
                                 .font(.caption2)
-                                .foregroundStyle(Theme.label(0.42))
+                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
@@ -236,7 +247,7 @@ struct InsightsView: View {
                 AxisMarks(values: .stride(by: .month, count: max(data.count / 6, 1))) { _ in
                     AxisValueLabel(format: .dateTime.month(.abbreviated))
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(Theme.label(0.52))
+                        .foregroundStyle(.secondary)
                 }
             }
             .chartXSelection(value: $chartSelection)
@@ -247,21 +258,11 @@ struct InsightsView: View {
                 if !hasData {
                     Text("No earned income in this period")
                         .appFont(11)
-                        .foregroundStyle(Theme.label(0.4))
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
         .accessibilityIdentifier("insights.monthlyIncomeChart")
-    }
-
-    private func monthlyBarStyle(
-        _ point: InsightsDashboardSnapshot.MonthPoint,
-        selected: InsightsDashboardSnapshot.MonthPoint?
-    ) -> AnyShapeStyle {
-        if let selected, !calendar.isDate(selected.month, equalTo: point.month, toGranularity: .month) {
-            return AnyShapeStyle(app.accentColor.opacity(0.24))
-        }
-        return AnyShapeStyle(app.accentColor.gradient)
     }
 
     private func monthlyIncomeCallout(_ point: InsightsDashboardSnapshot.MonthPoint) -> some View {
@@ -274,7 +275,7 @@ struct InsightsView: View {
                 .foregroundStyle(Theme.label)
             Text(DateFormat.monthAndYear(point.month))
                 .appFont(9)
-                .foregroundStyle(Theme.label(0.5))
+                .foregroundStyle(.secondary)
             Text("\(up ? "+" : "−")\(app.primaryString(abs(change))) \(String(localized: "vs previous month"))")
                 .appFont(9, .medium, design: .rounded)
                 .monospacedDigit()
@@ -304,7 +305,7 @@ struct InsightsView: View {
         VStack(spacing: 5) {
             Text(title)
                 .appFont(13)
-                .foregroundStyle(Theme.label(0.5))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             Text(value)
@@ -339,7 +340,7 @@ struct InsightsView: View {
                         Text("Income")
                     }
                     .appFont(12, .semibold)
-                    .foregroundStyle(Theme.label(0.42))
+                    .foregroundStyle(.tertiary)
                     .padding(.leading, 40)
                     .padding(.bottom, 6)
 
@@ -412,7 +413,7 @@ struct InsightsView: View {
                     Text(percentString(share))
                         .appFont(12, .semibold, design: .rounded)
                         .monospacedDigit()
-                        .foregroundStyle(Theme.label(0.5))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .frame(width: dynamicTypeSize.isAccessibilitySize ? 56 : 40,

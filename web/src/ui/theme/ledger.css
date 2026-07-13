@@ -9,6 +9,57 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklab, black 10%, transparent);
 }
 
+.ledger-skeleton {
+  flex: 1;
+  padding: 24px clamp(16px, 4vw, 40px);
+  background: var(--surface);
+}
+.ledger-skeleton__hero,
+.ledger-skeleton__rows {
+  display: flex;
+  flex-direction: column;
+}
+.ledger-skeleton__hero {
+  gap: 8px;
+}
+.ledger-skeleton__hero span,
+.ledger-skeleton__hero strong,
+.ledger-skeleton__composer,
+.ledger-skeleton__rows span {
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--ink-wash) 20%, var(--ink-wash-2) 50%, var(--ink-wash) 80%);
+  background-size: 220% 100%;
+  animation: skeleton-shift 1.2s var(--ease-in-out) infinite;
+}
+.ledger-skeleton__hero span:first-child {
+  width: 150px;
+  height: 13px;
+}
+.ledger-skeleton__hero strong {
+  width: min(260px, 68vw);
+  height: 40px;
+}
+.ledger-skeleton__hero span:last-child {
+  width: 190px;
+  height: 14px;
+}
+.ledger-skeleton__composer {
+  height: 58px;
+  margin-block: 32px 22px;
+  border-radius: var(--r-lg);
+}
+.ledger-skeleton__rows {
+  gap: 12px;
+}
+.ledger-skeleton__rows span {
+  height: 42px;
+}
+@keyframes skeleton-shift {
+  to {
+    background-position: -220% 0;
+  }
+}
+
 /* ---------------- ledger hero (topbar) ---------------- */
 
 .ledger-hero {
@@ -30,7 +81,7 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-4);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 /* tier 1 — the loudest figure on the screen */
 .ledger-hero__total {
@@ -43,6 +94,7 @@
 .ledger-hero__context {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   margin-top: 4px;
   font-size: 13px;
@@ -93,6 +145,14 @@
   align-items: center;
   gap: var(--s-2);
   flex: none;
+}
+.ledger-feedback {
+  padding: 9px clamp(16px, 4vw, 40px);
+  border-bottom: 1px solid color-mix(in oklab, var(--canceled-text) 24%, var(--border));
+  background: var(--danger-wash);
+  color: var(--canceled-text);
+  font-size: 13px;
+  line-height: 1.4;
 }
 .ledger-hero__new {
   gap: 6px;
@@ -159,6 +219,7 @@
 .composer--smart {
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 6px 8px 6px 12px;
 }
@@ -172,6 +233,12 @@
   font-size: 16px;
   color: var(--ink);
   padding: 8px 2px;
+  min-height: 44px;
+}
+.composer__note:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
 }
 .composer__note::placeholder {
   color: var(--ink-5);
@@ -182,8 +249,8 @@
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   flex: none;
   border-radius: var(--r-sm);
   color: var(--ink-4);
@@ -245,8 +312,8 @@
 .composer-opts__seg-opt {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 26px;
+  width: 38px;
+  height: 38px;
   border-radius: 6px;
   opacity: 0.45;
   transition:
@@ -293,6 +360,8 @@
   align-items: center;
   gap: 5px;
   padding: 3px 7px 3px 3px;
+  min-width: 0;
+  max-width: min(42%, 240px);
   border-radius: var(--r-pill);
   transition: background var(--dur-1) var(--ease-out);
 }
@@ -445,14 +514,14 @@
   box-shadow: 0 0 0 3px var(--blue-wash);
 }
 .composer__submit {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   flex: none;
   border-radius: var(--r-md);
   display: grid;
   place-items: center;
-  background: var(--blue);
-  color: #fff;
+  background: var(--blue-action);
+  color: var(--on-accent);
   box-shadow: 0 1px 2px color-mix(in oklab, var(--blue) 40%, transparent);
   transition:
     background var(--dur-1) var(--ease-out),
@@ -469,6 +538,14 @@
   color: var(--ink-5);
   box-shadow: none;
 }
+.composer__validation {
+  flex-basis: 100%;
+  order: 10;
+  padding: 2px 4px 1px;
+  color: var(--canceled-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
 
 /* ---------------- ledger content ---------------- */
 
@@ -479,12 +556,15 @@
 }
 .month {
   scroll-margin-top: 120px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 440px;
 }
 
 .month-divider {
   display: flex;
   align-items: baseline;
   gap: 12px;
+  flex-wrap: wrap;
   padding: 26px 2px 10px;
 }
 .month-divider__title {
@@ -505,6 +585,13 @@
   font-weight: 680;
   letter-spacing: -0.01em;
   color: var(--ink);
+}
+.month-divider__incomplete,
+.client-group__incomplete {
+  color: var(--progress-text);
+  font-size: 11.5px;
+  font-weight: 560;
+  white-space: nowrap;
 }
 
 /* compact leading empty month — a quiet prompt, not a hero-sized divider */
@@ -569,6 +656,11 @@
   height: 1px;
   background: var(--border);
 }
+.heading-row__error {
+  color: var(--canceled-text);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .heading-row__del {
   opacity: 0;
 }
@@ -586,6 +678,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
   padding: 12px 2px 4px;
 }
 /* tier 3 — client group subtotal (anchored by the colored tag beside it) */
@@ -610,7 +703,7 @@
 }
 .client-group__add:hover {
   background: var(--blue-wash);
-  color: var(--blue);
+  color: var(--blue-text);
 }
 
 /* ---------------- entry row ---------------- */
@@ -624,8 +717,9 @@
   }
 }
 .entry {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(92px, auto) minmax(0, 1fr) auto 30px 30px;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr) auto 36px 36px;
   align-items: center;
   gap: 14px;
   padding: 8px 8px 8px 6px;
@@ -634,12 +728,26 @@
   transition: background var(--dur-1) var(--ease-out);
   animation: entry-in var(--dur-2) var(--ease-out);
 }
+.entry > :not(.entry__row-action) {
+  position: relative;
+  z-index: 1;
+}
+.entry__row-action {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--r-md);
+}
+.entry__row-action:focus-visible {
+  outline-offset: 0;
+}
 .entry:hover {
   background: var(--ink-wash);
 }
-.entry:focus-visible {
+.entry:focus-within {
   background: var(--ink-wash);
-  box-shadow: var(--focus-ring);
 }
 /* tier 4 — individual line amount; the currency symbol steps back from the digits */
 .entry__amount {
@@ -647,6 +755,9 @@
   font-size: 15px;
   font-weight: 540;
   color: var(--ink);
+}
+.entry > span.entry__amount {
+  pointer-events: none;
 }
 .entry__amount .money__sym {
   color: var(--ink-4);
@@ -659,6 +770,7 @@
   white-space: nowrap;
   font-size: 15px;
   color: var(--ink);
+  pointer-events: none;
 }
 .entry__project {
   color: var(--ink-3);
@@ -675,6 +787,7 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   justify-self: end;
+  pointer-events: none;
 }
 /* hold reads as pending — it wants attention more than a plain grey date */
 .entry__hold {
@@ -686,8 +799,8 @@
 .entry__statusbtn {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--r-sm);
   transition: background var(--dur-1) var(--ease-out);
 }
@@ -708,8 +821,8 @@
 .entry__morebtn {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--r-sm);
   color: var(--ink-4);
   opacity: 0;
@@ -728,11 +841,50 @@
 }
 
 @media (max-width: 640px) {
+  .composer__opts-btn,
+  .composer-opts__seg-opt {
+    width: 44px;
+    height: 44px;
+  }
+  .composer__client {
+    min-height: 44px;
+  }
   .entry {
     grid-template-columns: minmax(80px, auto) minmax(0, 1fr) auto auto;
     gap: 10px;
   }
   .entry__date {
     display: none;
+  }
+  .entry__statusbtn,
+  .entry__morebtn {
+    width: 44px;
+    height: 44px;
+  }
+  .entry__morebtn {
+    opacity: 1;
+  }
+  .heading-row__del {
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .composer__client,
+  .composer__opts-btn,
+  .composer-opts__seg-opt,
+  .composer-opts__date,
+  .client-group__add,
+  .heading-row__title,
+  .entry__statusbtn,
+  .entry__morebtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .entry__morebtn,
+  .heading-row__del {
+    opacity: 1;
   }
 }

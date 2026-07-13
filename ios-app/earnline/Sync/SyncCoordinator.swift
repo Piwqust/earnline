@@ -165,6 +165,8 @@ enum SyncCoordinator {
             predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
         let entries = try context.fetch(FetchDescriptor<Entry>(
             predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
+        let projectIcons = try context.fetch(FetchDescriptor<ProjectIconPreference>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
 
         // Snapshot the dirty rows *and their edit stamps* before each upsert:
         // the UI stays live while the request is on the wire, so only the rows
@@ -185,6 +187,14 @@ enum SyncCoordinator {
             let stamps = dirtyHeadings.map(\.syncUpdatedAt)
             try await client.from("earnline_headings").upsert(payload).execute()
             markPushed(dirtyHeadings, stamps: stamps)
+        }
+
+        let dirtyProjectIcons = projectIcons.filter(\.needsSync)
+        if !dirtyProjectIcons.isEmpty {
+            let payload = dirtyProjectIcons.map { RemoteProjectIcon($0, workspaceID: workspaceID) }
+            let stamps = dirtyProjectIcons.map(\.syncUpdatedAt)
+            try await client.from("earnline_project_icons").upsert(payload).execute()
+            markPushed(dirtyProjectIcons, stamps: stamps)
         }
 
         var dirtyEntries: [Entry] = []
@@ -224,6 +234,19 @@ enum SyncCoordinator {
         return try context.fetch(FetchDescriptor<Client>(predicate: #Predicate { ids.contains($0.id) }))
     }
 
+    private static func localProjectIcons(
+        ids: [UUID],
+        context: ModelContext
+    ) throws -> [ProjectIconPreference] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else {
+            return try context.fetch(FetchDescriptor<ProjectIconPreference>())
+        }
+        return try context.fetch(FetchDescriptor<ProjectIconPreference>(
+            predicate: #Predicate { ids.contains($0.id) }
+        ))
+    }
+
     /// Mark exactly the pushed rows synced — skipping any that were edited or
     /// deleted while the upsert was in flight, so they stay dirty for the next
     /// pass instead of being silently dropped. The post-push pull sets the
@@ -251,17 +274,31 @@ enum SyncCoordinator {
         let clientSince = localClients.isEmpty ? nil : lastPulledAt
         let headingSince = try context.fetchCount(FetchDescriptor<Heading>()) == 0 ? nil : lastPulledAt
         let entrySince = try context.fetchCount(FetchDescriptor<Entry>()) == 0 ? nil : lastPulledAt
+        let projectIconSince = try context.fetchCount(FetchDescriptor<ProjectIconPreference>()) == 0
+            ? nil
+            : lastPulledAt
 
         let remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
         let remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
         let remoteEntries = try await fetchEntries(client: client, workspaceID: workspaceID, updatedAfter: entrySince)
+        let remoteProjectIcons = try await fetchProjectIcons(
+            client: client,
+            workspaceID: workspaceID,
+            updatedAfter: projectIconSince
+        )
 
         let localHeadings = try localHeadings(ids: remoteHeadings.map(\.id), context: context)
         let localEntries = try localEntries(ids: remoteEntries.map(\.id), context: context)
+        let localProjectIcons = try localProjectIcons(ids: remoteProjectIcons.map(\.id), context: context)
 
         let maxUpdatedAt = (remoteClients.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
             + remoteHeadings.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
-            + remoteEntries.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }).max()
+            + remoteEntries.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
+            + remoteProjectIcons.compactMap {
+                ProjectIconResolver.normalizedKey(for: $0.projectKey).isEmpty
+                    ? nil
+                    : SyncDateCodec.parseTimestamp($0.updatedAt)
+            }).max()
 
         var clientsByID = Dictionary(uniqueKeysWithValues: localClients.map { ($0.id, $0) })
         var conflictCount = 0
@@ -298,6 +335,42 @@ enum SyncCoordinator {
                                        lastSyncedAt: remoteUpdatedAt)
                 context.insert(newClient)
                 clientsByID[record.id] = newClient
+            }
+        }
+
+        var projectIconsByID = Dictionary(uniqueKeysWithValues: localProjectIcons.map { ($0.id, $0) })
+
+        for record in remoteProjectIcons {
+            let projectKey = ProjectIconResolver.normalizedKey(for: record.projectKey)
+            guard !projectKey.isEmpty,
+                  let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
+            let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
+            let symbol = ProjectSymbol.resolved(record.symbolName)
+            if let local = projectIconsByID[record.id] {
+                if conflictsWithDirtyLocal(remoteUpdatedAt: remoteUpdatedAt,
+                                           localLastSyncedAt: local.lastSyncedAt,
+                                           localState: local.syncState) {
+                    if conflictResolution == .requireUserChoice { conflictCount += 1 }
+                    continue
+                }
+                guard shouldApplyRemote(localState: local.syncState) else { continue }
+                local.projectKey = projectKey
+                local.symbol = symbol
+                local.createdAt = createdAt
+                local.updatedAt = remoteUpdatedAt
+                local.markSynced(at: remoteUpdatedAt)
+            } else {
+                let preference = ProjectIconPreference(
+                    id: record.id,
+                    projectKey: projectKey,
+                    symbol: symbol,
+                    createdAt: createdAt,
+                    updatedAt: remoteUpdatedAt,
+                    syncState: .synced,
+                    lastSyncedAt: remoteUpdatedAt
+                )
+                context.insert(preference)
+                projectIconsByID[record.id] = preference
             }
         }
 
@@ -517,6 +590,21 @@ enum SyncCoordinator {
                                      updatedAfter: Date?) async throws -> [RemoteEntry] {
         try await fetchPaged(RemoteEntry.self, client: client, table: "earnline_entries",
                              workspaceID: workspaceID, cursorColumn: "updated_at", since: updatedAfter)
+    }
+
+    private static func fetchProjectIcons(
+        client: SupabaseClient,
+        workspaceID: String,
+        updatedAfter: Date?
+    ) async throws -> [RemoteProjectIcon] {
+        try await fetchPaged(
+            RemoteProjectIcon.self,
+            client: client,
+            table: "earnline_project_icons",
+            workspaceID: workspaceID,
+            cursorColumn: "updated_at",
+            since: updatedAfter
+        )
     }
 
     private static func fetchTombstones(client: SupabaseClient,

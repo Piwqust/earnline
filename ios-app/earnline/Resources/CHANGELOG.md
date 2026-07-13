@@ -1,6 +1,45 @@
 # What's new
 
+## July 13, 2026
+
+### Search
+- Search now lives in the ledger's "…" menu and opens the system search experience focused and ready to type.
+- Fixed the resting search bar that floated over the bottom of the ledger.
+
+### Client achievements
+- Client profiles now include six automatic milestones derived from paid income history, with earned, locked, and progress states.
+- Every achievement is a real procedural RealityKit 3D medal with metallic geometry and lighting; open one to rotate it directly, in the familiar Apple Fitness awards pattern.
+- Client badges are now experimental, disabled by default, and controlled from the Experimental section in Developer Mode.
+
+### Composer
+- Restored the Smart Composer's original dimensions and control placement.
+
+### Reliability
+- Production and Test now keep separate currency profiles, local stores, and UI-test data; automated fixtures can no longer reach a real workspace.
+- Removed leaked automated-test clients from Production and propagated their deletion to synced devices.
+- App updates no longer reset the display conversion rate locally: configured workspaces read their authoritative currency profile from Supabase first.
+
+### Settings
+- Native menu pickers use the standard secondary-label gray while keeping the system popup, checkmark, and interaction behavior.
+
+### Projects
+- Every project already used in the ledger can now receive a familiar SF Symbol from Settings; the choice appears in project entry and client breakdowns and syncs through the shared workspace.
+
+### Insights
+- Monthly income now uses a smooth line with a soft area fill while keeping the familiar heatmap-first layout, summary figures, and client-share orb unchanged.
+
 ## July 12, 2026
+
+### Native iOS polish
+- Empty ledgers now use the system `ContentUnavailableView`, with a familiar primary action and built-in accessibility behavior.
+- Haptic outcomes now use SwiftUI sensory feedback, and secondary interface text follows adaptive semantic label colors in every appearance.
+- Developer Mode is remembered across Settings presentations and app launches.
+- Added the remaining Russian catalog translations, including Stats, Month, Week, and Total.
+
+### Reliability
+- Release and Archive builds now use their own automatic signing configuration while unsigned simulator and CI builds remain isolated to Debug.
+- The ledger's navigation, sheets, confirmations, composer, rows, headings, summary header, and bottom controls now use typed routes and focused SwiftUI views instead of one oversized screen state.
+- Bottom actions now live in a native SwiftUI safe-area bar, isolating them from the UIKit toolbar hierarchy used by the hosting controller.
 
 ### Performance
 - Client profiles now open immediately even with years of transactions: history totals and breakdowns are prepared once in the background instead of repeatedly scanning the ledger during navigation.

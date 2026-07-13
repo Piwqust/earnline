@@ -4,12 +4,42 @@
 
 import type { Client, Entry, EntryStatus } from "./types";
 import { isIncludedInEarnedTotals } from "./types";
-import { toBase, type CurrencySettings } from "./currency";
+import { convertToBase, toBase, type CurrencySettings } from "./currency";
 import { numberFromCents } from "./money";
 import { monthStartDayMs, sameMonthDay, todayDayMs } from "./dateFormat";
 
 function baseAmount(e: Entry, s: CurrencySettings): number {
   return toBase(numberFromCents(e.amountCents), e.currencyCode, s);
+}
+
+export interface TotalSummary {
+  value: number;
+  isComplete: boolean;
+  unsupportedCurrencyCodes: string[];
+  excludedEntryCount: number;
+}
+
+/** A total plus the information required to label it as incomplete. */
+export function summarizeEntries(entries: Entry[], s: CurrencySettings): TotalSummary {
+  let value = 0;
+  let excludedEntryCount = 0;
+  const unsupported = new Set<string>();
+  for (const entry of entries) {
+    if (!isIncludedInEarnedTotals(entry.status)) continue;
+    const converted = convertToBase(numberFromCents(entry.amountCents), entry.currencyCode, s);
+    if (converted == null) {
+      excludedEntryCount += 1;
+      unsupported.add(entry.currencyCode);
+    } else {
+      value += converted;
+    }
+  }
+  return {
+    value,
+    isComplete: excludedEntryCount === 0,
+    unsupportedCurrencyCodes: [...unsupported].sort(),
+    excludedEntryCount,
+  };
 }
 
 export function entriesOf(clientId: string, entries: Entry[], monthMs: number): Entry[] {
@@ -23,7 +53,7 @@ export function earnedEntriesOf(clientId: string, entries: Entry[], monthMs: num
 }
 
 export function totalOf(clientId: string, entries: Entry[], monthMs: number, s: CurrencySettings): number {
-  return earnedEntriesOf(clientId, entries, monthMs).reduce((sum, e) => sum + baseAmount(e, s), 0);
+  return summarizeEntries(earnedEntriesOf(clientId, entries, monthMs), s).value;
 }
 
 export function clientsWithEntries(clients: Client[], entries: Entry[], monthMs: number): Client[] {
@@ -51,9 +81,7 @@ export function clientEntries(clientId: string, entries: Entry[]): Entry[] {
 }
 
 export function clientTotalAll(clientId: string, entries: Entry[], s: CurrencySettings): number {
-  return clientEntries(clientId, entries)
-    .filter((e) => isIncludedInEarnedTotals(e.status))
-    .reduce((sum, e) => sum + baseAmount(e, s), 0);
+  return summarizeEntries(clientEntries(clientId, entries), s).value;
 }
 
 export function statusTotal(

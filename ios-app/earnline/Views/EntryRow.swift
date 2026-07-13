@@ -28,7 +28,7 @@ struct EntryRow: View {
             HStack(alignment: .top, spacing: 7) {
                 Image(systemName: "plus")
                     .appFont(11, .semibold)
-                    .foregroundStyle(Theme.label(0.45))
+                    .foregroundStyle(.tertiary)
                     .padding(.top, 7)
 
                 entryAmount
@@ -103,7 +103,7 @@ struct EntryRow: View {
         var result = AttributedString()
         if let project = entry.project, !project.isEmpty {
             var p = AttributedString(project); p.foregroundColor = Theme.label
-            var sep = AttributedString(" : "); sep.foregroundColor = Theme.label(0.55)
+            var sep = AttributedString(" : "); sep.foregroundColor = Theme.secondaryLabel
             result = p + sep
         }
         var t = AttributedString(entry.task); t.foregroundColor = Theme.label
@@ -163,16 +163,16 @@ struct EntryRow: View {
         HStack(spacing: 4) {
             Image(systemName: "arrow.turn.down.right")
                 .appFont(9, .regular)
-                .foregroundStyle(Theme.label(0.35))
+                .foregroundStyle(.tertiary)
             Text(DateFormat.dotted(entry.date))
-                .foregroundStyle(Theme.label(0.7))
+                .foregroundStyle(.secondary)
             if let hold = entry.holdUntil {
-                Text("·").foregroundStyle(Theme.label(0.5))
+                Text("·").foregroundStyle(.secondary)
                 HStack(spacing: 3) {
                     Image(systemName: "calendar").appFont(10)
                     Text("hold until \(DateFormat.dotted(hold))")
                 }
-                .foregroundStyle(Theme.label(0.7))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
         }
@@ -215,7 +215,7 @@ private struct EntryContextPreview: View {
             if let project = entry.project, !project.isEmpty {
                 Text(project)
                     .appFont(14, .semibold)
-                    .foregroundStyle(Theme.label(0.55))
+                    .foregroundStyle(.secondary)
             }
             Text(entry.task)
                 .appFont(17)
@@ -225,12 +225,12 @@ private struct EntryContextPreview: View {
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
                     .appFont(12)
-                    .foregroundStyle(Theme.label(0.45))
+                    .foregroundStyle(.tertiary)
                 Text(DateFormat.dotted(entry.date))
-                    .foregroundStyle(Theme.label(0.7))
+                    .foregroundStyle(.secondary)
                 if let hold = entry.holdUntil {
                     Text("· hold until \(DateFormat.dotted(hold))")
-                        .foregroundStyle(Theme.label(0.5))
+                        .foregroundStyle(.secondary)
                 }
             }
             .appFont(13)

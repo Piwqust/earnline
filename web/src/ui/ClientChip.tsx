@@ -10,16 +10,23 @@ export function ClientChip({
   total,
   onOpen,
   onAdd,
+  unsupportedCount = 0,
 }: {
   client: Client;
   total: number;
   onOpen: () => void;
   onAdd: () => void;
+  unsupportedCount?: number;
 }) {
   return (
     <div className="client-group__head">
       <ClientTag name={client.name} color={client.colorHex} size="md" onClick={onOpen} />
       <MoneyAmountText baseAmount={total} className="client-group__total tabular" />
+      {unsupportedCount > 0 && (
+        <span className="client-group__incomplete" title="Unsupported currencies are excluded from this total">
+          incomplete
+        </span>
+      )}
       <span className="u-spacer" />
       <button type="button" className="client-group__add" onClick={onAdd} aria-label={`Add a line for ${client.name}`}>
         <PlusIcon size={15} />

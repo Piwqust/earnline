@@ -171,6 +171,33 @@ struct RemoteClient: Codable, Identifiable {
     }
 }
 
+struct RemoteProjectIcon: Codable, Identifiable {
+    let id: UUID
+    let workspaceID: String
+    let projectKey: String
+    let symbolName: String
+    let createdAt: String
+    let updatedAt: String
+
+    init(_ preference: ProjectIconPreference, workspaceID: String) {
+        id = preference.id
+        self.workspaceID = workspaceID
+        projectKey = preference.projectKey
+        symbolName = preference.symbol.rawValue
+        createdAt = SyncDateCodec.timestampString(preference.createdAt)
+        updatedAt = SyncDateCodec.timestampString(preference.syncUpdatedAt)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case workspaceID = "workspace_id"
+        case projectKey = "project_key"
+        case symbolName = "symbol_name"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
 struct RemoteEntry: Codable, Identifiable {
     let id: UUID
     let workspaceID: String

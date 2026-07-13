@@ -1,0 +1,4 @@
+[functions.earnline-sync]
+# This endpoint uses its own high-entropy per-device capability. Supabase JWT
+# verification is intentionally disabled so no login/account is introduced.
+verify_jwt = false

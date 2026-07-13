@@ -7,6 +7,8 @@ enum SampleData {
     private static let bundledLedgerImportKey = "bundledIncomeLedgerImportVersion"
     private static let legacyDemoCleanupVersion = 1
     private static let legacyDemoCleanupKey = "legacyDemoCleanupVersion"
+    private static let leakedProductionFixtureCleanupVersion = 1
+    private static let leakedProductionFixtureCleanupKey = "leakedProductionFixtureCleanupVersion"
     static let autoSeededDemoKey = "bundledLedgerAutoSeeded"
 
     static func seedIfNeeded(_ context: ModelContext) {
@@ -82,6 +84,55 @@ enum SampleData {
         } catch {
             return 0
         }
+    }
+
+    /// Older UI tests used the selected workspace's persistent store. Demo and
+    /// stress fixtures could therefore survive the test process and appear in
+    /// Production on the next normal launch. Remove only deterministic fixture
+    /// IDs; preserve any real entry the user attached to a fixture client.
+    @discardableResult
+    static func cleanupLeakedProductionFixturesIfNeeded(
+        _ context: ModelContext,
+        defaults: UserDefaults = .standard
+    ) throws -> Int {
+        guard defaults.integer(forKey: leakedProductionFixtureCleanupKey)
+                < leakedProductionFixtureCleanupVersion else { return 0 }
+
+        let demo = generate()
+        let demoClientIDs = Set(demo.clients.map(\.id))
+        let demoEntryIDs = Set(demo.entries.map(\.id))
+        let stressClientIDs = Set((0..<8).map {
+            DeterministicID.uuid("earnline-stress-client:\($0)")
+        })
+        let fixtureClientIDs = demoClientIDs.union(stressClientIDs)
+
+        let entries = try context.fetch(FetchDescriptor<Entry>())
+        let protectedClientIDs = Set(entries.compactMap { entry -> UUID? in
+            guard let ownerID = entry.client?.id, fixtureClientIDs.contains(ownerID) else { return nil }
+            let isFixture = demoEntryIDs.contains(entry.id) || stressClientIDs.contains(ownerID)
+            return isFixture ? nil : ownerID
+        })
+
+        var removed = 0
+        for entry in entries {
+            guard let ownerID = entry.client?.id else { continue }
+            if demoEntryIDs.contains(entry.id) || stressClientIDs.contains(ownerID) {
+                context.delete(entry)
+                removed += 1
+            }
+        }
+
+        let clients = try context.fetch(FetchDescriptor<Client>())
+        for client in clients
+        where fixtureClientIDs.contains(client.id) && !protectedClientIDs.contains(client.id) {
+            context.delete(client)
+            removed += 1
+        }
+
+        try context.save()
+        defaults.set(leakedProductionFixtureCleanupVersion,
+                     forKey: leakedProductionFixtureCleanupKey)
+        return removed
     }
 
     static func seed(_ context: ModelContext) {

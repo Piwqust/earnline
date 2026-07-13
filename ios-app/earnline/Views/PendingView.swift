@@ -15,6 +15,7 @@ struct PendingView: View {
     @State private var editingEntry: Entry?
     @State private var pendingDelete: Entry?
     @State private var saveError: String?
+    @State private var statusFeedback = 0
 
     private var pending: [Entry] { app.pendingEntries(clients) }
     private var totalPending: Decimal {
@@ -79,6 +80,7 @@ struct PendingView: View {
             Text("\(CurrencyFormatter.string(entry.amount, code: entry.currencyCode)) · \(entry.task)")
         }
         .saveErrorAlert($saveError)
+        .sensoryFeedback(.impact(weight: .light), trigger: statusFeedback)
     }
 
     private func row(_ entry: Entry) -> some View {
@@ -112,7 +114,7 @@ struct PendingView: View {
             if days <= 3 {
                 badge("Due \(DateFormat.dotted(hold))", systemImage: "clock.fill", tint: Theme.statusProgress)
             } else {
-                badge("Hold \(DateFormat.dotted(hold))", systemImage: "calendar", tint: Theme.label(0.45))
+                badge("Hold \(DateFormat.dotted(hold))", systemImage: "calendar", tint: Theme.tertiaryLabel)
             }
         }
     }
@@ -133,7 +135,7 @@ struct PendingView: View {
 
     private func setStatus(_ entry: Entry, _ status: EntryStatus) {
         withAnimation(.snappy) { entry.status = status; entry.markDirty() }
-        if save() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        if save() { statusFeedback += 1 }
     }
 
     private func delete(_ entry: Entry) {

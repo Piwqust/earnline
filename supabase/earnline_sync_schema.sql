@@ -38,6 +38,28 @@ create table if not exists public.earnline_headings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.earnline_project_icons (
+  id uuid primary key,
+  workspace_id text not null default 'your-workspace-id'
+    constraint earnline_project_icons_workspace_id_check check (workspace_id = 'your-workspace-id'),
+  project_key text not null
+    constraint earnline_project_icons_project_key_check check (
+      char_length(project_key) between 1 and 40
+      and project_key = lower(btrim(project_key))
+      and project_key !~ '[[:space:]]{2,}'
+    ),
+  symbol_name text not null default 'folder'
+    constraint earnline_project_icons_symbol_name_check check (symbol_name in (
+      'folder', 'briefcase', 'display', 'paintpalette', 'camera', 'video',
+      'music.note', 'doc.text', 'megaphone', 'cart', 'globe',
+      'wrench.and.screwdriver', 'shippingbox', 'sparkles',
+      'chart.line.uptrend.xyaxis', 'building.2'
+    )),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint earnline_project_icons_workspace_key_unique unique (workspace_id, project_key)
+);
+
 create table if not exists public.earnline_tombstones (
   id uuid primary key,
   workspace_id text not null default 'your-workspace-id'
@@ -72,12 +94,16 @@ create index if not exists earnline_entries_client_idx
 create index if not exists earnline_headings_workspace_updated_idx
   on public.earnline_headings (workspace_id, updated_at desc);
 
+create index if not exists earnline_project_icons_workspace_updated_idx
+  on public.earnline_project_icons (workspace_id, updated_at desc);
+
 create index if not exists earnline_tombstones_workspace_deleted_idx
   on public.earnline_tombstones (workspace_id, deleted_at desc);
 
 alter table public.earnline_clients enable row level security;
 alter table public.earnline_entries enable row level security;
 alter table public.earnline_headings enable row level security;
+alter table public.earnline_project_icons enable row level security;
 alter table public.earnline_tombstones enable row level security;
 alter table public.earnline_profiles enable row level security;
 
@@ -85,6 +111,7 @@ grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.earnline_clients to anon, authenticated;
 grant select, insert, update, delete on public.earnline_entries to anon, authenticated;
 grant select, insert, update, delete on public.earnline_headings to anon, authenticated;
+grant select, insert, update on public.earnline_project_icons to anon, authenticated;
 grant select, insert, update, delete on public.earnline_tombstones to anon, authenticated;
 revoke all privileges on table public.earnline_profiles from public, anon, authenticated;
 grant select, insert, update on public.earnline_profiles to anon, authenticated;
@@ -164,6 +191,25 @@ on public.earnline_headings for delete
 to anon, authenticated
 using (workspace_id = 'your-workspace-id');
 
+drop policy if exists "earnline_project_icons_select_workspace" on public.earnline_project_icons;
+create policy "earnline_project_icons_select_workspace"
+on public.earnline_project_icons for select
+to anon, authenticated
+using (workspace_id = 'your-workspace-id');
+
+drop policy if exists "earnline_project_icons_insert_workspace" on public.earnline_project_icons;
+create policy "earnline_project_icons_insert_workspace"
+on public.earnline_project_icons for insert
+to anon, authenticated
+with check (workspace_id = 'your-workspace-id');
+
+drop policy if exists "earnline_project_icons_update_workspace" on public.earnline_project_icons;
+create policy "earnline_project_icons_update_workspace"
+on public.earnline_project_icons for update
+to anon, authenticated
+using (workspace_id = 'your-workspace-id')
+with check (workspace_id = 'your-workspace-id');
+
 drop policy if exists "earnline_tombstones_select_workspace" on public.earnline_tombstones;
 create policy "earnline_tombstones_select_workspace"
 on public.earnline_tombstones for select
@@ -223,3 +269,48 @@ drop trigger if exists earnline_set_updated_at on public.earnline_profiles;
 create trigger earnline_set_updated_at
 before insert or update on public.earnline_profiles
 for each row execute function public.earnline_set_updated_at();
+
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array['earnline_clients', 'earnline_entries', 'earnline_headings', 'earnline_project_icons']
+  loop
+    execute format('drop trigger if exists earnline_set_updated_at on public.%I', table_name);
+    execute format(
+      'create trigger earnline_set_updated_at before insert or update on public.%I '
+      || 'for each row execute function public.earnline_set_updated_at()', table_name
+    );
+  end loop;
+end $$;
+
+create or replace function public.earnline_set_tombstone_clock()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  new.deleted_at := now();
+  if tg_op = 'INSERT' then new.created_at := now(); else new.created_at := old.created_at; end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists earnline_set_tombstone_clock on public.earnline_tombstones;
+create trigger earnline_set_tombstone_clock before insert or update on public.earnline_tombstones
+for each row execute function public.earnline_set_tombstone_clock();
+
+do $$
+declare
+  table_name text;
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+  foreach table_name in array array['earnline_clients', 'earnline_entries', 'earnline_headings', 'earnline_project_icons', 'earnline_tombstones', 'earnline_profiles']
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = table_name
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', table_name);
+    end if;
+  end loop;
+end $$;

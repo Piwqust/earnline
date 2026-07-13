@@ -3,7 +3,7 @@
 import type { Entry, EntryStatus } from "../domain/types";
 import { STATUS_ORDER, statusTitle } from "../domain/types";
 import { canConvert, toBase } from "../domain/currency";
-import { numberFromCents } from "../domain/money";
+import { formatMoney, numberFromCents } from "../domain/money";
 import { dottedDay } from "../domain/dateFormat";
 import { useSettings, currencySettings } from "../state/settings";
 import { MoneyAmountText } from "./MoneyAmountText";
@@ -23,23 +23,34 @@ export function EntryRow({
 }) {
   const settings = useSettings();
   const cs = currencySettings(settings);
-  const base = toBase(numberFromCents(entry.amountCents), entry.currencyCode, cs);
-  const approximate = !canConvert(entry.currencyCode, cs);
+  const sourceAmount = numberFromCents(entry.amountCents);
+  const convertible = canConvert(entry.currencyCode, cs);
+  const base = convertible ? toBase(sourceAmount, entry.currencyCode, cs) : null;
+  const description = entry.project ? `${entry.project}: ${entry.task}` : entry.task;
 
   return (
-    <div
-      className="entry"
-      role="button"
-      tabIndex={0}
-      onClick={onEdit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onEdit();
-        }
-      }}
-    >
-      <MoneyAmountText baseAmount={base} approximate={approximate} dim className="entry__amount tabular" />
+    <div className="entry">
+      <button
+        type="button"
+        className="entry__row-action"
+        onClick={onEdit}
+        aria-label={`Edit ${description}, ${formatMoney(sourceAmount, entry.currencyCode)}, ${dottedDay(entry.date)}`}
+      />
+
+      {base == null ? (
+        <span
+          className="money money--unsupported entry__amount tabular"
+          title={`${entry.currencyCode} is excluded from converted totals`}
+          aria-label={`${formatMoney(sourceAmount, entry.currencyCode)}, excluded from converted totals`}
+        >
+          {formatMoney(sourceAmount, entry.currencyCode)}
+          <span className="money__unsupported" aria-hidden>
+            !
+          </span>
+        </span>
+      ) : (
+        <MoneyAmountText baseAmount={base} dim className="entry__amount tabular" />
+      )}
 
       <div className="entry__desc" title={entry.task}>
         {entry.project && <span className="entry__project">{entry.project}</span>}
@@ -57,9 +68,9 @@ export function EntryRow({
         )}
       </div>
 
-      <span className="entry__status" onClick={(e) => e.stopPropagation()}>
+      <div className="entry__status">
         <Dropdown
-          ariaLabel="Change status"
+          ariaLabel={`Change status, currently ${statusTitle(entry.status)}`}
           triggerClassName={"entry__statusbtn is-" + entry.status}
           trigger={<StatusIcon status={entry.status} size={18} />}
         >
@@ -70,9 +81,9 @@ export function EntryRow({
             </DropdownItem>
           ))}
         </Dropdown>
-      </span>
+      </div>
 
-      <span className="entry__more" onClick={(e) => e.stopPropagation()}>
+      <div className="entry__more">
         <Dropdown ariaLabel="Line actions" triggerClassName="entry__morebtn" trigger={<MoreIcon size={17} />}>
           <DropdownItem onClick={onEdit}>
             <PencilIcon size={15} />
@@ -84,7 +95,7 @@ export function EntryRow({
             <span>Delete line</span>
           </DropdownItem>
         </Dropdown>
-      </span>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   DEFAULT_EXCHANGE_RATE,
   canConvert,
   conversionRate,
+  convertToBase,
   toBase,
   validExchangeRate,
 } from "./currency";
@@ -30,6 +31,7 @@ describe("currency — conversion", () => {
 
     expect(toBase(100, "USD", settings)).toBe(100);
     expect(toBase(1000, "RUB", settings)).toBe(10);
-    expect(toBase(100, "EUR", settings)).toBe(100); // lossy 1:1 fallback
+    expect(convertToBase(100, "EUR", settings)).toBeNull();
+    expect(toBase(100, "EUR", settings)).toBe(0); // excluded, never false 1:1
   });
 });

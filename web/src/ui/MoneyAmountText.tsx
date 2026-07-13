@@ -1,7 +1,6 @@
 // A tappable money label that flips between primary and secondary currency.
 // Ports Views/MoneyAmountText.swift.
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { useSettings, currencySettings } from "../state/settings";
 import { secondaryValue } from "../domain/currency";
 import { currencySymbol, formatMoney } from "../domain/money";
@@ -43,27 +42,24 @@ export function MoneyAmountText({
     <button
       type="button"
       className={"money" + (className ? " " + className : "")}
-      title={`Tap to show ${nextCode}`}
-      aria-label={approximate ? `${text}, approximate` : text}
+      title={`Show ${nextCode}`}
+      aria-label={`${approximate ? `${text}, approximate` : text}. Show ${nextCode}`}
+      aria-pressed={showSecondary}
       onClick={(e) => {
         e.stopPropagation();
         setShowSecondary((s) => !s);
       }}
     >
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
-          key={text}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
-        >
-          {lead && <span className="money__sym">{lead}</span>}
-          {core}
-          {trail && <span className="money__sym">{trail}</span>}
-        </motion.span>
-      </AnimatePresence>
-      {approximate && <span className="money__approx">·?</span>}
+      <span className="money__value">
+        {lead && <span className="money__sym">{lead}</span>}
+        {core}
+        {trail && <span className="money__sym">{trail}</span>}
+      </span>
+      {approximate && (
+        <span className="money__approx" aria-hidden>
+          ·?
+        </span>
+      )}
     </button>
   );
 }

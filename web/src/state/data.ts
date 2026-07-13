@@ -1,22 +1,44 @@
 // Reactive reads from the local store — the web analog of SwiftData @Query.
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../data/db";
+import { getDatabase, useDatabaseGeneration } from "../data/db";
 import type { Client, Entry, Heading } from "../domain/types";
 
-const EMPTY: never[] = [];
+const EMPTY_CLIENTS: Client[] = [];
+const EMPTY_ENTRIES: Entry[] = [];
+const EMPTY_HEADINGS: Heading[] = [];
 
 export function useClients(): Client[] {
-  return useLiveQuery(() => db.clients.orderBy("sortIndex").toArray(), [], EMPTY as Client[]);
+  const generation = useDatabaseGeneration();
+  return useLiveQuery(() => getDatabase().clients.orderBy("sortIndex").toArray(), [generation], EMPTY_CLIENTS);
 }
 
 export function useEntries(): Entry[] {
-  return useLiveQuery(() => db.entries.toArray(), [], EMPTY as Entry[]);
+  const generation = useDatabaseGeneration();
+  return useLiveQuery(() => getDatabase().entries.toArray(), [generation], EMPTY_ENTRIES);
 }
 
 export function useHeadings(): Heading[] {
-  return useLiveQuery(() => db.headings.orderBy("sortIndex").toArray(), [], EMPTY as Heading[]);
+  const generation = useDatabaseGeneration();
+  return useLiveQuery(() => getDatabase().headings.orderBy("sortIndex").toArray(), [generation], EMPTY_HEADINGS);
 }
 
 export function useClient(id: string | undefined): Client | undefined {
-  return useLiveQuery(() => (id ? db.clients.get(id) : undefined), [id], undefined);
+  const generation = useDatabaseGeneration();
+  return useLiveQuery(() => (id ? getDatabase().clients.get(id) : undefined), [generation, id], undefined);
+}
+
+/** Distinguish a genuinely empty ledger from Dexie's first unresolved frame. */
+export function useDataReady(): boolean {
+  const generation = useDatabaseGeneration();
+  return (
+    useLiveQuery(
+      async () => {
+        const database = getDatabase();
+        await Promise.all([database.clients.count(), database.entries.count(), database.headings.count()]);
+        return true;
+      },
+      [generation],
+      false,
+    ) ?? false
+  );
 }

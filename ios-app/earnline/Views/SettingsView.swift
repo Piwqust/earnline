@@ -33,15 +33,8 @@ struct SettingsView: View {
     @FocusState private var rateFieldFocused: Bool
     @State private var pendingSyncRecoveryAction: SyncRecoveryAction?
     @State private var isResettingLocalData = false
-    @State private var isDeveloperModeEnabled = false
     @State private var stressSeedNote: String?
     private let currencies = AppModel.supportedCurrencyCodes
-
-    init() {
-        _isDeveloperModeEnabled = State(
-            initialValue: ProcessInfo.processInfo.arguments.contains("-demoDeveloperSettings")
-        )
-    }
 
     var body: some View {
         @Bindable var app = appModel
@@ -75,6 +68,18 @@ struct SettingsView: View {
                 Text("Privacy")
             } footer: {
                 Text("Locks the ledger when the app goes to the background. Unlock with biometrics or your passcode.")
+            }
+
+            Section {
+                NavigationLink {
+                    ProjectIconsSettingsView()
+                } label: {
+                    SettingsRowLabel("Project icons", glyph: "folder")
+                }
+            } header: {
+                Text("Projects")
+            } footer: {
+                Text("Choose a familiar SF Symbol for every project already used in the ledger.")
             }
 
             Section {
@@ -139,14 +144,25 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle(isOn: $isDeveloperModeEnabled) {
+                Toggle(isOn: $app.developerModeEnabled) {
                     SettingsRowLabel("Developer Mode", glyph: "wrench.and.screwdriver")
                 }
             } footer: {
                 Text("Sync controls, workspace diagnostics, and data-recovery tools stay out of the everyday settings path.")
             }
 
-            if isDeveloperModeEnabled {
+            if app.developerModeEnabled {
+                Section {
+                    Toggle(isOn: $app.clientBadgesEnabled) {
+                        SettingsRowLabel("Client badges", glyph: "medal")
+                    }
+                    .accessibilityIdentifier("settings.clientBadges")
+                } header: {
+                    Text("Experimental")
+                } footer: {
+                    Text("Experimental features may change or be removed in a future version.")
+                }
+
                 #if DEBUG
                 Section("Supabase") {
                     developerSupabaseContent
@@ -189,14 +205,18 @@ struct SettingsView: View {
         .task { refreshCounts() }
         // The sheet outlives a workspace switch (it's presented by the host),
         // so re-read the counts from whatever store is now underneath.
-        .onChange(of: appModel.workspaceEnvironment) { refreshCounts() }
+        .onChange(of: appModel.workspaceEnvironment) {
+            rateDraft = nil
+            rateFetchNote = nil
+            refreshCounts()
+        }
         .onChange(of: appModel.baseCurrencyCode) { refreshCounts(); rateFetchNote = nil }
         .onChange(of: appModel.secondaryCurrencyCode) { refreshCounts(); rateFetchNote = nil }
         .onChange(of: appModel.isSyncing) { _, syncing in
             if !syncing { refreshCounts() }
         }
         .onChange(of: appModel.syncConflictCount) { _, count in
-            if count > 0 { isDeveloperModeEnabled = true }
+            if count > 0 { appModel.developerModeEnabled = true }
         }
         .confirmationDialog(syncRecoveryConfirmationTitle,
                             isPresented: syncRecoveryConfirmationBinding,
@@ -237,7 +257,9 @@ struct SettingsView: View {
         } label: {
             SettingsRowLabel("Workspace", glyph: "externaldrive")
         }
+        .pickerStyle(.menu)
         .tint(valueGray)
+        .accessibilityIdentifier("settings.workspace")
     }
 
     @ViewBuilder
@@ -331,11 +353,10 @@ struct SettingsView: View {
         .tint(valueGray)
     }
 
-    /// Collapsed picker values read as *state*, in the same gray as every
-    /// other trailing value (`valueRow`, the accent row) and as iOS Settings —
-    /// not in the accent, which the untinted system picker would use and which
-    /// this form reserves for actual action buttons ("Sync now", "Fetch…").
-    private var valueGray: Color { Theme.label(0.45) }
+    /// Settings picker values use the standard secondary-label gray while the
+    /// controls themselves remain native Pickers with the system popup and
+    /// selection behavior.
+    private var valueGray: Color { Theme.secondaryLabel }
 
     /// Accent picker — ChatGPT's "Accent color" row: the collapsed value is a
     /// colored dot + name; the menu rows keep their original-color dots (via
@@ -359,7 +380,7 @@ struct SettingsView: View {
                     .fill(selection.wrappedValue.color)
                     .frame(width: 10, height: 10)
                 Text(selection.wrappedValue.title)
-                    .foregroundStyle(Theme.label(0.45))
+                    .foregroundStyle(.secondary)
             }
         }
         .buttonStyle(.plain)
@@ -445,11 +466,15 @@ struct SettingsView: View {
         let dirtyClients = FetchDescriptor<Client>(predicate: #Predicate { $0.syncStateRaw != synced })
         let dirtyEntries = FetchDescriptor<Entry>(predicate: #Predicate { $0.syncStateRaw != synced })
         let dirtyHeadings = FetchDescriptor<Heading>(predicate: #Predicate { $0.syncStateRaw != synced })
+        let dirtyProjectIcons = FetchDescriptor<ProjectIconPreference>(
+            predicate: #Predicate { $0.syncStateRaw != synced }
+        )
         let tombstones = FetchDescriptor<SyncTombstone>()
         unsupportedCurrencyCount = (try? context.fetchCount(unsupported)) ?? 0
         pendingSyncCount = ((try? context.fetchCount(dirtyClients)) ?? 0)
             + ((try? context.fetchCount(dirtyEntries)) ?? 0)
             + ((try? context.fetchCount(dirtyHeadings)) ?? 0)
+            + ((try? context.fetchCount(dirtyProjectIcons)) ?? 0)
             + ((try? context.fetchCount(tombstones)) ?? 0)
     }
 

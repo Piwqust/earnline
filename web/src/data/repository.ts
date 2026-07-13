@@ -3,19 +3,25 @@
 // (matching SyncDeleteQueue) before removing the row. Deleting a client cascades
 // to its entries locally (the iOS relationship cascade / the Postgres FK cascade).
 
-import { db } from "./db";
+import { getDatabase, type EarnlineDB } from "./db";
 import { newUuid, deterministicUuid } from "../domain/deterministicId";
 import { nowMs } from "../domain/dateFormat";
 import type { Client, Entry, EntryStatus, Heading, SyncEntity } from "../domain/types";
 
-async function enqueueTombstone(entity: SyncEntity, recordId: string): Promise<void> {
+async function enqueueTombstone(
+  database: EarnlineDB,
+  entity: SyncEntity,
+  recordId: string,
+  lastSyncedAt?: number | null,
+): Promise<void> {
   const now = nowMs();
-  await db.tombstones.put({
+  await database.tombstones.put({
     id: deterministicUuid(`tombstone:${entity}:${recordId}`),
     entity,
     recordId,
     deletedAt: now,
     createdAt: now,
+    lastSyncedAt: lastSyncedAt ?? null,
   });
 }
 
@@ -26,6 +32,7 @@ export async function createClient(input: {
   colorHex: string;
   sortIndex: number;
 }): Promise<Client> {
+  const database = getDatabase();
   const now = nowMs();
   const client: Client = {
     id: newUuid(),
@@ -37,7 +44,7 @@ export async function createClient(input: {
     syncState: "dirty",
     lastSyncedAt: null,
   };
-  await db.clients.put(client);
+  await database.clients.put(client);
   return client;
 }
 
@@ -45,17 +52,21 @@ export async function updateClient(
   id: string,
   patch: Partial<Pick<Client, "name" | "colorHex" | "sortIndex">>,
 ): Promise<void> {
-  const cur = await db.clients.get(id);
+  const database = getDatabase();
+  const cur = await database.clients.get(id);
   if (!cur) return;
-  await db.clients.put({ ...cur, ...patch, updatedAt: nowMs(), syncState: "dirty" });
+  await database.clients.put({ ...cur, ...patch, updatedAt: nowMs(), syncState: "dirty" });
 }
 
 export async function deleteClient(id: string): Promise<void> {
-  await db.transaction("rw", db.clients, db.entries, db.tombstones, async () => {
-    const entries = await db.entries.where("clientId").equals(id).primaryKeys();
-    await db.entries.bulkDelete(entries as string[]);
-    await db.clients.delete(id);
-    await enqueueTombstone("client", id);
+  const database = getDatabase();
+  await database.transaction("rw", database.clients, database.entries, database.tombstones, async () => {
+    const client = await database.clients.get(id);
+    if (!client) return;
+    const entries = await database.entries.where("clientId").equals(id).primaryKeys();
+    await database.entries.bulkDelete(entries as string[]);
+    await database.clients.delete(id);
+    await enqueueTombstone(database, "client", id, client.lastSyncedAt);
   });
 }
 
@@ -72,6 +83,7 @@ export async function createEntry(input: {
   status: EntryStatus;
   sortIndex: number;
 }): Promise<Entry> {
+  const database = getDatabase();
   const now = nowMs();
   const entry: Entry = {
     id: newUuid(),
@@ -81,7 +93,7 @@ export async function createEntry(input: {
     syncState: "dirty",
     lastSyncedAt: null,
   };
-  await db.entries.put(entry);
+  await database.entries.put(entry);
   return entry;
 }
 
@@ -94,9 +106,10 @@ export async function updateEntry(
     >
   >,
 ): Promise<void> {
-  const cur = await db.entries.get(id);
+  const database = getDatabase();
+  const cur = await database.entries.get(id);
   if (!cur) return;
-  await db.entries.put({ ...cur, ...patch, updatedAt: nowMs(), syncState: "dirty" });
+  await database.entries.put({ ...cur, ...patch, updatedAt: nowMs(), syncState: "dirty" });
 }
 
 export async function setEntryStatus(id: string, status: EntryStatus): Promise<void> {
@@ -104,9 +117,12 @@ export async function setEntryStatus(id: string, status: EntryStatus): Promise<v
 }
 
 export async function deleteEntry(id: string): Promise<void> {
-  await db.transaction("rw", db.entries, db.tombstones, async () => {
-    await db.entries.delete(id);
-    await enqueueTombstone("entry", id);
+  const database = getDatabase();
+  await database.transaction("rw", database.entries, database.tombstones, async () => {
+    const entry = await database.entries.get(id);
+    if (!entry) return;
+    await database.entries.delete(id);
+    await enqueueTombstone(database, "entry", id, entry.lastSyncedAt);
   });
 }
 
@@ -117,6 +133,7 @@ export async function createHeading(input: {
   date: number;
   sortIndex: number;
 }): Promise<Heading> {
+  const database = getDatabase();
   const now = nowMs();
   const heading: Heading = {
     id: newUuid(),
@@ -126,7 +143,7 @@ export async function createHeading(input: {
     syncState: "dirty",
     lastSyncedAt: null,
   };
-  await db.headings.put(heading);
+  await database.headings.put(heading);
   return heading;
 }
 
@@ -134,26 +151,31 @@ export async function updateHeading(
   id: string,
   patch: Partial<Pick<Heading, "title" | "date" | "sortIndex">>,
 ): Promise<void> {
-  const cur = await db.headings.get(id);
+  const database = getDatabase();
+  const cur = await database.headings.get(id);
   if (!cur) return;
-  await db.headings.put({ ...cur, ...patch, updatedAt: nowMs(), syncState: "dirty" });
+  await database.headings.put({ ...cur, ...patch, updatedAt: nowMs(), syncState: "dirty" });
 }
 
 export async function deleteHeading(id: string): Promise<void> {
-  await db.transaction("rw", db.headings, db.tombstones, async () => {
-    await db.headings.delete(id);
-    await enqueueTombstone("heading", id);
+  const database = getDatabase();
+  await database.transaction("rw", database.headings, database.tombstones, async () => {
+    const heading = await database.headings.get(id);
+    if (!heading) return;
+    await database.headings.delete(id);
+    await enqueueTombstone(database, "heading", id, heading.lastSyncedAt);
   });
 }
 
 // --- counts (Settings: pending sync) ---
 
 export async function pendingSyncCount(): Promise<number> {
+  const database = getDatabase();
   const [clients, entries, headings, tombstones] = await Promise.all([
-    db.clients.where("syncState").notEqual("synced").count(),
-    db.entries.where("syncState").notEqual("synced").count(),
-    db.headings.where("syncState").notEqual("synced").count(),
-    db.tombstones.count(),
+    database.clients.where("syncState").notEqual("synced").count(),
+    database.entries.where("syncState").notEqual("synced").count(),
+    database.headings.where("syncState").notEqual("synced").count(),
+    database.tombstones.count(),
   ]);
   return clients + entries + headings + tombstones;
 }

@@ -1,5 +1,6 @@
 // The client's colored name capsule (white text on the client color).
 import type { ReactNode } from "react";
+import { readableForeground } from "../theme/theme";
 
 export function ClientTag({
   name,
@@ -17,7 +18,7 @@ export function ClientTag({
   trailing?: ReactNode;
 }) {
   const className = `client-tag client-tag--${size}` + (onClick ? " is-button" : "");
-  const style = { background: color } as React.CSSProperties;
+  const style = { background: color, color: readableForeground(color) } as React.CSSProperties;
   const inner = (
     <>
       <span className="client-tag__name">{name}</span>

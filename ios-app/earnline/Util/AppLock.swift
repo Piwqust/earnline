@@ -46,7 +46,7 @@ struct LockScreenView: View {
             VStack(spacing: 20) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 34, weight: .light))
-                    .foregroundStyle(Theme.label(0.35))
+                    .foregroundStyle(.tertiary)
                     .frame(width: 72, height: 72)
                     .glassEffect(.regular, in: .circle)
                 Text("earnline is locked")

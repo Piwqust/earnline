@@ -13,7 +13,7 @@ struct ChangelogView: View {
                     ForEach(section.items) { item in
                         Text(item.text)
                             .font(.subheadline)
-                            .foregroundStyle(Theme.label(0.85))
+                            .foregroundStyle(.primary)
                     }
                 } header: {
                     Text(section.title)

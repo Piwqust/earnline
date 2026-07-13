@@ -1,5 +1,5 @@
 // Centered modal dialog — used sparingly (new client, headings, confirm).
-import { useRef, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconButton } from "./Button";
 import { useOverlay } from "./useOverlay";
@@ -21,6 +21,8 @@ export function Dialog({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
   useOverlay(onClose, ref);
 
   return createPortal(
@@ -30,17 +32,24 @@ export function Dialog({
         className={`dialog dialog--${size}`}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="dialog__head">
-          <h2 className="dialog__title">{title}</h2>
+          <h2 id={titleId} className="dialog__title">
+            {title}
+          </h2>
           <IconButton label="Close" onClick={onClose}>
             <CloseIcon size={18} />
           </IconButton>
         </header>
-        {description && <p className="dialog__desc">{description}</p>}
+        {description && (
+          <p id={descriptionId} className="dialog__desc">
+            {description}
+          </p>
+        )}
         <div className="dialog__body">{children}</div>
         {footer && <footer className="dialog__foot">{footer}</footer>}
       </div>
@@ -62,9 +71,25 @@ export function ConfirmDialog({
   message: ReactNode;
   confirmLabel?: string;
   destructive?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onClose: () => void;
 }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirm() {
+    setPending(true);
+    setError(null);
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      setError("The change could not be completed. Try again.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <Dialog
       title={title}
@@ -72,24 +97,27 @@ export function ConfirmDialog({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn--secondary btn--md" onClick={onClose}>
+          <button type="button" className="btn btn--secondary btn--md" disabled={pending} onClick={onClose}>
             <span>Cancel</span>
           </button>
           <button
             type="button"
             data-autofocus
             className={`btn ${destructive ? "btn--danger" : "btn--primary"} btn--md`}
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
+            disabled={pending}
+            onClick={() => void confirm()}
           >
-            <span>{confirmLabel}</span>
+            <span>{pending ? "Working…" : confirmLabel}</span>
           </button>
         </>
       }
     >
       <p className="dialog__message">{message}</p>
+      {error && (
+        <p className="field__error" role="alert">
+          {error}
+        </p>
+      )}
     </Dialog>
   );
 }

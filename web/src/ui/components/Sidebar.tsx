@@ -1,14 +1,15 @@
 // Persistent left navigation: brand, primary nav, the client list, sync status.
-import { useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { clientTotalAll } from "../../domain/totals";
-import { formatMoney } from "../../domain/money";
+import { convertToBase } from "../../domain/currency";
+import { formatMoney, numberFromCents } from "../../domain/money";
+import { isIncludedInEarnedTotals } from "../../domain/types";
 import { useClients, useEntries } from "../../state/data";
 import { useSettings, setSettings, currencySettings } from "../../state/settings";
 import { useSyncStatus } from "../../state/store";
 import { NewClientDialog } from "../NewClientDialog";
 import { IconButton } from "./Button";
-import { GearIcon, MoonIcon, PlusIcon, ReceiptIcon, SunIcon, SyncIcon } from "../icons";
+import { CloseIcon, GearIcon, MoonIcon, PlusIcon, ReceiptIcon, SunIcon, SyncIcon } from "../icons";
 
 export function Wordmark() {
   return (
@@ -24,26 +25,73 @@ const navItemClass = ({ isActive }: { isActive: boolean }) =>
 const clientLinkClass = ({ isActive }: { isActive: boolean }) =>
   "sidebar__client" + (isActive ? " is-active" : "");
 
-export function Sidebar() {
+export const Sidebar = forwardRef<
+  HTMLElement,
+  { mobileHidden?: boolean; mobileDialog?: boolean; onRequestClose?: () => void }
+>(function Sidebar(
+  { mobileHidden = false, mobileDialog = false, onRequestClose },
+  ref,
+) {
   const clients = useClients();
   const entries = useEntries();
   const settings = useSettings();
   const cs = currencySettings(settings);
   const sync = useSyncStatus();
   const [newClient, setNewClient] = useState(false);
+  const localRef = useRef<HTMLElement>(null);
+  const [systemDark, setSystemDark] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystemDark(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useImperativeHandle(ref, () => localRef.current as HTMLElement);
+
+  useEffect(() => {
+    if (localRef.current) localRef.current.inert = mobileHidden;
+  }, [mobileHidden]);
 
   const sorted = [...clients].sort((a, b) => a.sortIndex - b.sortIndex);
+  const clientTotals = useMemo(() => {
+    const totals = new Map(clients.map((client) => [client.id, 0]));
+    for (const entry of entries) {
+      if (!isIncludedInEarnedTotals(entry.status)) continue;
+      const converted = convertToBase(numberFromCents(entry.amountCents), entry.currencyCode, cs);
+      if (converted == null || !totals.has(entry.clientId)) continue;
+      totals.set(entry.clientId, (totals.get(entry.clientId) ?? 0) + converted);
+    }
+    return totals;
+  }, [clients, entries, settings.baseCurrencyCode, settings.rate, settings.secondaryCurrencyCode]);
 
   const resolvedDark =
     settings.theme === "dark" ||
     (settings.theme === "auto" &&
       typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
+      systemDark);
 
   return (
-    <aside className="sidebar">
+    <aside
+      ref={localRef}
+      id="primary-sidebar"
+      className="sidebar"
+      role={mobileDialog ? "dialog" : undefined}
+      aria-modal={mobileDialog ? true : undefined}
+      aria-label={mobileDialog ? "Navigation" : undefined}
+      aria-hidden={mobileHidden ? true : undefined}
+    >
       <div className="sidebar__brand">
         <Wordmark />
+        {mobileDialog && onRequestClose && (
+          <IconButton label="Close navigation" className="sidebar__close" onClick={onRequestClose}>
+            <CloseIcon size={18} />
+          </IconButton>
+        )}
       </div>
 
       <nav className="sidebar__nav" aria-label="Primary">
@@ -73,7 +121,7 @@ export function Sidebar() {
                 <span className="sidebar__dot" style={{ background: c.colorHex }} />
                 <span className="sidebar__client-name">{c.name}</span>
                 <span className="sidebar__client-total tabular">
-                  {formatMoney(clientTotalAll(c.id, entries, cs), settings.baseCurrencyCode)}
+                  {formatMoney(clientTotals.get(c.id) ?? 0, settings.baseCurrencyCode)}
                 </span>
               </NavLink>
             ))
@@ -103,4 +151,4 @@ export function Sidebar() {
       )}
     </aside>
   );
-}
+});
