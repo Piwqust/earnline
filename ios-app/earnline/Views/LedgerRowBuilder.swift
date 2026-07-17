@@ -10,23 +10,29 @@ struct LedgerRowBuilder {
     let app: AppModel
     let composerRoute: LedgerComposerRoute?
     let searchQuery: String
+    let searchTokens: [LedgerSearchToken]
 
     var activeComposerClient: Client? {
         guard let id = composerRoute?.clientID else { return nil }
         return clients.first { !$0.isInvalidated && $0.id == id }
     }
 
-    var hasSearchQuery: Bool {
-        !EntrySearch.normalized(searchQuery).isEmpty
+    private var searchFilter: EntrySearch.Filter {
+        EntrySearch.Filter(query: searchQuery, tokens: searchTokens)
+    }
+
+    var hasSearchFilter: Bool {
+        searchFilter.isActive
     }
 
     var searchHits: [Entry] {
-        guard hasSearchQuery else { return [] }
+        let filter = searchFilter
+        guard filter.isActive else { return [] }
         return clients.flatMap { client -> [Entry] in
             guard !client.isInvalidated else { return [] }
             return client.entries.filter { entry in
                 !entry.isInvalidated
-                    && EntrySearch.matches(entry, query: searchQuery, clientName: client.name)
+                    && filter.matches(entry, clientID: client.id, clientName: client.name)
             }
         }
     }
@@ -38,7 +44,10 @@ struct LedgerRowBuilder {
     }
 
     func hasContent(in snapshot: Insights.LedgerSnapshot) -> Bool {
-        !headings.isEmpty || snapshot.hasEntries
+        // An active composer is content even before the first entry exists —
+        // otherwise creating your first client dead-ends on the empty state
+        // instead of opening the composer it promised.
+        !headings.isEmpty || snapshot.hasEntries || activeComposerClient != nil
     }
 
     func blocks(in month: Date, snapshot: Insights.LedgerSnapshot) -> [LedgerBlock] {
@@ -90,7 +99,8 @@ struct LedgerRowBuilder {
     }
 
     private func searchRows(in snapshot: Insights.LedgerSnapshot) -> [LedgerRow] {
-        guard hasSearchQuery else { return [] }
+        let filter = searchFilter
+        guard filter.isActive else { return [] }
         var rows: [LedgerRow] = []
         for month in snapshot.months {
             let key = snapshot.key(for: month)
@@ -100,7 +110,7 @@ struct LedgerRowBuilder {
                 guard case .client(let client) = block, !client.isInvalidated else { continue }
                 let matches = snapshot.entries(of: client, monthKey: key).filter { entry in
                     !entry.isInvalidated
-                        && EntrySearch.matches(entry, query: searchQuery, clientName: client.name)
+                        && filter.matches(entry, clientID: client.id, clientName: client.name)
                 }
                 guard !matches.isEmpty else { continue }
                 let earned = matches

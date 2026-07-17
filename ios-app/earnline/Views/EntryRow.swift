@@ -131,6 +131,7 @@ struct EntryRow: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
+        .accessibilityIdentifier("entry.status")
     }
 
     /// Status choices as a native inline picker section — the system draws

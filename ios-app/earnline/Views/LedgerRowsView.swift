@@ -10,6 +10,8 @@ struct LedgerRowsView: View {
     let isSearching: Bool
     let activeComposerClientID: UUID?
     let composerMonth: Date?
+    /// The entry whose row the first-run tour is spotlighting, if any.
+    let tourSpotlightEntryID: UUID?
     let onOpenClient: (UUID) -> Void
     let onToggleComposer: (Client, Date) -> Void
     let onSetStatus: (Entry, EntryStatus) -> Void
@@ -62,9 +64,11 @@ struct LedgerRowsView: View {
             .background(monthAnchorReader(month))
         case .composer(let client):
             SmartComposer(client: client, month: composerMonth ?? .now)
+                .tourAnchor(.composer)
                 .transition(.opacity)
         case .entry(let entry):
             entryRow(entry)
+                .tourAnchor(entry.id == tourSpotlightEntryID ? .entryStatus : nil)
                 .background(monthAnchorReader(DateFormat.monthStart(of: entry.date)))
         }
     }

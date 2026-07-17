@@ -208,9 +208,10 @@ struct InsightsAggregationTests {
             clients: [acme, northstar, unsupported],
             converter: CurrencyConverter(baseCurrencyCode: "USD", secondaryCurrencyCode: "RUB", rate: 83)
         )
-        let snapshot = input.dashboardSnapshot(windowMonths: 3, now: now)
+        let snapshot = input.dashboardSnapshot(now: now)
 
-        #expect(snapshot.monthlyIncome.count == 3)
+        #expect(snapshot.monthlyIncome.count == InsightsDashboardSnapshot.chartMonthCount)
+        #expect(snapshot.months.count == InsightsDashboardSnapshot.heatmapMonthCount)
         #expect(snapshot.monthlyIncome.last?.total == 300)
         #expect(snapshot.monthlyIncome.last?.previousTotal == 100)
         #expect(snapshot.clientTotals.map(\.name) == ["Acme", "Northstar"])

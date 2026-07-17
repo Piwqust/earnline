@@ -29,18 +29,24 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Display conversion rate"].exists)
     }
 
-    func testSearchOpensFromMoreMenuWithNativeSearchState() {
+    func testSearchOpensFromDockedBottomToolbarFieldWithFilterChips() {
         let app = launchApp()
 
-        let menu = app.buttons["ledger.menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 5))
-        menu.tap()
+        // The resting search field is docked in the bottom toolbar between
+        // the "…" and "+" circles, Notes/Mail-style.
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
 
-        let search = app.buttons["Search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 2))
-        search.tap()
+        // Minimal filter chips ride above the field while searching; Status
+        // is always offered, so it anchors the check.
+        let statusChip = app.buttons["Status"].firstMatch
+        XCTAssertTrue(statusChip.waitForExistence(timeout: 3))
+        statusChip.tap()
 
-        XCTAssertTrue(app.staticTexts["Search income"].waitForExistence(timeout: 3))
+        let paid = app.descendants(matching: .any)["Paid"].firstMatch
+        XCTAssertTrue(paid.waitForExistence(timeout: 2))
+        paid.tap()
     }
 
     func testDeveloperModeRevealsAdvancedSettingsOnlyWhenEnabled() {
@@ -138,6 +144,13 @@ final class EarnlineUITests: XCTestCase {
         let chart = app.descendants(matching: .any)["insights.monthlyIncomeChart"]
         XCTAssertTrue(chart.waitForExistence(timeout: 8))
 
+        // The range control lives inside the Monthly income card now.
+        app.buttons["1Y"].tap()
+        XCTAssertTrue(chart.waitForExistence(timeout: 3))
+
+        // The income chart leads the sheet; expand to the large detent to
+        // bring the heatmap card into view before touching it.
+        sheet.swipeUp()
         let heatmap = app.descendants(matching: .any)["insights.heatmap"]
         XCTAssertTrue(heatmap.waitForExistence(timeout: 3))
         heatmap.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.55)).tap()
@@ -147,9 +160,6 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(clear.exists)
         clear.tap()
         XCTAssertFalse(app.descendants(matching: .any)["insights.selectedDay"].exists)
-
-        app.buttons["6M"].tap()
-        XCTAssertTrue(chart.waitForExistence(timeout: 3))
     }
 
     func testLargeLedgerClientProfileAppearsBeforeAggregationCompletes() {

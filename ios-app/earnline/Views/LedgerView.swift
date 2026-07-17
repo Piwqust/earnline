@@ -22,6 +22,9 @@ struct LedgerView: View {
     /// Full-ledger snapshot for search, built when search opens: search spans
     /// every month, not just the materialized window.
     @State private var searchSnapshot: Insights.LedgerSnapshot?
+    /// Filter-chip inventory (months, clients, projects) gathered in the same
+    /// pass, so the chips never walk the store per render.
+    @State private var searchFilterSource: EntrySearch.FilterSource?
 
     /// Mutually exclusive UI presentations are represented as typed routes,
     /// avoiding combinations such as two active sheets or two delete alerts.
@@ -33,10 +36,11 @@ struct LedgerView: View {
     @State private var feedback = LedgerFeedbackState()
     @State private var didRunDemo = false
     @State private var saveError: String?
+    @State private var tour = FirstRunTourState()
 
     // MARK: Derived
 
-    private var isSearching: Bool { search.isActive }
+    private var isSearching: Bool { search.isPresented }
     private var searchQuery: String { search.query }
     private var rowBuilder: LedgerRowBuilder {
         LedgerRowBuilder(
@@ -44,14 +48,15 @@ struct LedgerView: View {
             headings: headings,
             app: app,
             composerRoute: composerRoute,
-            searchQuery: searchQuery
+            searchQuery: searchQuery,
+            searchTokens: search.tokens
         )
     }
 
     private var activeComposerClient: Client? { rowBuilder.activeComposerClient }
     private var searchHits: [Entry] { isSearching ? rowBuilder.searchHits : [] }
     private var searchEarnedTotal: Decimal { rowBuilder.searchEarnedTotal }
-    private var hasSearchQuery: Bool { rowBuilder.hasSearchQuery }
+    private var hasSearchFilter: Bool { rowBuilder.hasSearchFilter }
 
     private func ledgerRows(_ snapshot: Insights.LedgerSnapshot) -> [LedgerRow] {
         rowBuilder.rows(in: snapshot, isSearching: isSearching, searchSnapshot: searchSnapshot)
@@ -217,61 +222,59 @@ struct LedgerView: View {
     /// The inner navigation surface is kept separate from the sheet tree so
     /// SwiftUI can type-check toolbar and search modifiers independently.
     ///
-    /// The ledger has no resting search field: with the navigation bar hidden
-    /// and the bottom chrome being a custom safe-area bar, an always-attached
-    /// `.searchable` floats its own full-width field over the ledger (and
-    /// `.toolbar(removing: .search)` has no system toolbar to remove it from).
-    /// Search lives in the "…" menu instead, so the modifier is attached only
-    /// for the duration of a search session — mounted by `startSearch()`, then
-    /// presented from `.task` once it exists, which also keeps the menu's
-    /// dismissal from swallowing the presentation.
-    @ViewBuilder
+    /// Bottom chrome replicates Apple's iOS 26 list screens (Notes, Mail):
+    /// the system bottom toolbar carries a "…" circle, the resting search
+    /// field, and a "+" circle. `.searchable` stays attached so the field
+    /// docks into the toolbar's search slot; the system owns its focus,
+    /// cancel affordance, keyboard, and expand/collapse choreography.
     private var ledgerNavigationContent: some View {
-        if search.isActive {
-            ledgerBase
-                // System search owns its focus, cancel affordance, keyboard,
-                // and Liquid Glass presentation. There is no custom text
-                // field layered on top of the toolbar.
-                .searchable(text: $search.query,
-                            isPresented: $search.isPresented,
-                            placement: .automatic,
-                            prompt: "Search income")
-                .task {
-                    // The "…" menu is still animating its dismissal when this
-                    // mounts; presenting immediately leaves the field visible
-                    // but unfocused. Let the dismissal finish before asking
-                    // for focus.
-                    try? await Task.sleep(for: .milliseconds(400))
-                    guard !Task.isCancelled else { return }
-                    search.isPresented = true
-                }
-                .onChange(of: search.isPresented) { _, presented in
-                    if !presented { endSearch() }
-                }
-        } else {
-            ledgerBase
-        }
-    }
-
-    private var ledgerBase: some View {
         ledgerCore
             .navigationDestination(for: LedgerRoute.self, destination: navigationDestination)
             .toolbar(.hidden, for: .navigationBar)
+            .searchable(text: $search.query,
+                        tokens: $search.tokens,
+                        isPresented: $search.isPresented,
+                        placement: .automatic,
+                        prompt: "Search income") { token in
+                Label(token.label, systemImage: token.systemImage)
+            }
+            .toolbar { bottomToolbar }
+            .onChange(of: search.isPresented) { _, searching in
+                if searching {
+                    composerRoute = nil
+                    // One full pass, user-initiated: search must span every
+                    // month, while the ledger itself stays windowed.
+                    searchSnapshot = app.insights.ledgerSnapshot(clients)
+                    searchFilterSource = buildSearchFilterSource()
+                } else {
+                    search.query = ""
+                    search.tokens = []
+                    searchSnapshot = nil
+                    searchFilterSource = nil
+                }
+            }
             .onAppear(perform: runDemoIfNeeded)
             .onChange(of: clients.count) { _, _ in runDemoIfNeeded() }
     }
 
-    private func startSearch() {
-        composerRoute = nil
-        // One full pass, user-initiated: search must span every month, while
-        // the ledger itself stays windowed.
-        searchSnapshot = app.insights.ledgerSnapshot(clients)
-        search.isActive = true
-    }
-
-    private func endSearch() {
-        search = LedgerSearchState()
-        searchSnapshot = nil
+    private var bottomToolbar: some ToolbarContent {
+        LedgerBottomBarItems(
+            clients: clients,
+            pendingCount: ledgerSnapshot?.pendingCount ?? 0,
+            onInsights: { sheetRoute = .insights },
+            onPending: { sheetRoute = .pending },
+            onSettings: { app.showSettings = true },
+            onIncome: { client in
+                if let client {
+                    openComposer(for: client, month: app.displayedMonth)
+                } else {
+                    sheetRoute = .newClient
+                }
+            },
+            onNewClient: { sheetRoute = .newClient },
+            onNewHeading: { sheetRoute = .newHeading },
+            onPasteLines: { sheetRoute = .pasteLines }
+        )
     }
 
     @ViewBuilder
@@ -292,6 +295,15 @@ struct LedgerView: View {
             scrollContent
         }
         .undoToastHost()
+        // The spotlight tour rides above the whole ledger surface (list +
+        // safe-area bars). Sheets present above it, which also serves as the
+        // "pause while NewClientSheet is up" behavior for the compose step.
+        .overlayPreferenceValue(TourAnchorKey.self) { anchors in
+            if tour.step != nil, sheetRoute == nil, !isSearching {
+                FirstRunTourOverlay(tour: tour, anchors: anchors)
+            }
+        }
+        .animation(.smooth(duration: 0.3), value: tour.step)
     }
 
     // MARK: Header
@@ -307,7 +319,7 @@ struct LedgerView: View {
             isSearching: isSearching,
             searchHitCount: searchHits.count,
             searchEarnedTotal: searchEarnedTotal,
-            hasSearchQuery: hasSearchQuery,
+            hasSearchFilter: hasSearchFilter,
             onOpenStats: { sheetRoute = .insights }
         )
     }
@@ -326,6 +338,7 @@ struct LedgerView: View {
                     searchListContent(snapshot)
                 } else if !rowBuilder.hasContent(in: snapshot) {
                     EmptyStateView(onStart: startFirstLine)
+                        .tourAnchor(.emptyStateCTA)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -368,35 +381,18 @@ struct LedgerView: View {
         .safeAreaBar(edge: .top) {
             if let snapshot = ledgerSnapshot {
                 header(monthlyTotals: snapshot.earnedTotalByMonth)
+                    .tourAnchor(.summaryCards)
             }
         }
+        // Minimal filter chips ride directly above the search field for the
+        // duration of a search session — above the keyboard while typing,
+        // above the docked field at rest.
         .safeAreaBar(edge: .bottom) {
-            if !isSearching {
-                LedgerBottomBar(
-                    clients: clients,
-                    pendingCount: ledgerSnapshot?.pendingCount ?? 0,
-                    onSearch: startSearch,
-                    onInsights: { sheetRoute = .insights },
-                    onPending: { sheetRoute = .pending },
-                    onSettings: { app.showSettings = true },
-                    onIncome: { client in
-                        if let client {
-                            openComposer(for: client, month: app.displayedMonth)
-                        } else {
-                            sheetRoute = .newClient
-                        }
-                    },
-                    onNewClient: { sheetRoute = .newClient },
-                    onNewHeading: { sheetRoute = .newHeading },
-                    onPasteLines: { sheetRoute = .pasteLines }
-                )
+            if isSearching, let source = searchFilterSource {
+                LedgerSearchFilterBar(source: source, tokens: $search.tokens)
             }
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
-        // The bottom controls already provide their own native Liquid Glass
-        // contrast. Keep the list edge clean instead of layering a detached
-        // material gradient above the home indicator.
-        .scrollEdgeEffectHidden(true, for: .bottom)
         .scrollDismissesKeyboard(.interactively)
         .onPreferenceChange(MonthAnchorKey.self) { anchors in
             updateDisplayedMonth(anchors)
@@ -406,32 +402,68 @@ struct LedgerView: View {
         // settings re-price the totals. Data edits arrive via `didSave` below.
         .task(id: pricingRevision) {
             refreshLedgerSnapshot()
+            if let snapshot = ledgerSnapshot {
+                tour.evaluateStart(app: app, hasAnyEntries: snapshot.hasEntries)
+            }
         }
         // Every mutation in this app persists through a context save (the
         // AppModel.save contract, plus the sync pass's own saves), so this is
         // the one complete invalidation signal for the cached snapshot.
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
             refreshLedgerSnapshot()
+            if let snapshot = ledgerSnapshot {
+                tour.entrySaved(hasAnyEntries: snapshot.hasEntries)
+            }
         }
     }
 
     @ViewBuilder
     private func searchListContent(_ snapshot: Insights.LedgerSnapshot) -> some View {
-        if !hasSearchQuery {
+        if !hasSearchFilter {
+            // Visible only when the suggestion overlay has nothing to offer
+            // (an empty ledger); otherwise the browse filters cover this.
             ContentUnavailableView(
                 "Search income",
                 systemImage: "magnifyingglass",
-                description: Text("Find lines by client, project, task, or amount.")
+                description: Text("Find lines by client, project, task, amount, or date.")
             )
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else if searchHits.isEmpty {
-            ContentUnavailableView.search(text: searchQuery)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+            if EntrySearch.normalized(searchQuery).isEmpty {
+                ContentUnavailableView.search
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            } else {
+                ContentUnavailableView.search(text: searchQuery)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
         } else {
             rowsView(ledgerRows(snapshot))
         }
+    }
+
+    // MARK: Search filters
+
+    /// One walk over the store at search-open time: distinct months arrive
+    /// with the full snapshot; clients and their distinct project names are
+    /// collected here so chip rendering is pure lookup.
+    private func buildSearchFilterSource() -> EntrySearch.FilterSource {
+        var source = EntrySearch.FilterSource()
+        source.months = searchSnapshot?.months ?? []
+        var seenProjects: Set<String> = []
+        var projects: [String] = []
+        for client in clients where !client.isInvalidated {
+            source.clients.append(.init(id: client.id, name: client.name))
+            for entry in client.entries where !entry.isInvalidated {
+                guard let project = entry.project, !project.isEmpty,
+                      seenProjects.insert(EntrySearch.normalized(project)).inserted else { continue }
+                projects.append(project)
+            }
+        }
+        source.projects = projects.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        return source
     }
 
     private func rowsView(_ rows: [LedgerRow]) -> some View {
@@ -440,6 +472,7 @@ struct LedgerView: View {
             isSearching: isSearching,
             activeComposerClientID: activeComposerClient?.id,
             composerMonth: composerRoute?.month,
+            tourSpotlightEntryID: tour.step == .status ? firstEntryID(in: rows) : nil,
             onOpenClient: { navigationPath.append(.client($0)) },
             onToggleComposer: { toggleComposer($0, month: $1) },
             onSetStatus: setStatus,
@@ -507,6 +540,15 @@ struct LedgerView: View {
         clients.first { !$0.isInvalidated && $0.id == id }
     }
 
+    /// After the tour's compose step there is exactly one entry, so the first
+    /// entry row IS the just-created line the status step spotlights.
+    private func firstEntryID(in rows: [LedgerRow]) -> UUID? {
+        for row in rows {
+            if case .entry(let entry) = row, !entry.isInvalidated { return entry.id }
+        }
+        return nil
+    }
+
     private func entry(withID id: UUID) -> Entry? {
         for client in clients where !client.isInvalidated {
             if let entry = client.entries.first(where: { !$0.isInvalidated && $0.id == id }) {
@@ -543,7 +585,7 @@ struct LedgerView: View {
             }
         } else if args.contains("-demoSearch") {
             didRunDemo = true
-            startSearch()
+            search.isPresented = true
         } else if args.contains("-demoInsights") {
             didRunDemo = true
             sheetRoute = .insights

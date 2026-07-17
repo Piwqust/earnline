@@ -46,13 +46,13 @@ struct LedgerComposerRoute: Equatable {
 }
 
 struct LedgerSearchState {
-    /// Whether a search session is running — i.e. whether the `.searchable`
-    /// modifier is attached at all. The ledger has no resting search field;
-    /// the modifier exists only between `startSearch()` and `endSearch()`.
-    var isActive = false
-    /// Drives the system field's presentation once the modifier is mounted.
+    /// Drives the system search field docked in the bottom toolbar. True
+    /// while the field is expanded (keyboard up, ledger filtering in place).
     var isPresented = false
     var query = ""
+    /// Structured filter chips riding in the field alongside the typed text —
+    /// months, years, clients, projects, statuses.
+    var tokens: [LedgerSearchToken] = []
 }
 
 struct LedgerFeedbackState {

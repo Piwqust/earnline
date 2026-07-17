@@ -32,9 +32,11 @@ revoke all privileges on table public.earnline_project_icons from public, anon, 
 grant select, insert, update on table public.earnline_project_icons to anon, authenticated;
 
 -- Keep the repository free of the private workspace identifier. This
--- migration runs only on an established Earnline workspace and derives the
--- already-authorized value from existing rows before installing the same
--- check/default/RLS contract on the new table.
+-- On an established workspace, derive the already-authorized value from
+-- existing rows before installing the same check/default/RLS contract on the
+-- new table. A clean staging database has no value to derive; in that case
+-- leave RLS enabled without policies (deny all) until the authenticated
+-- workspace cutover installs membership policies a few migrations later.
 do $$
 declare
   allowed_workspace text;
@@ -50,7 +52,7 @@ begin
   end if;
 
   if allowed_workspace is null then
-    raise exception 'Cannot derive the Earnline workspace identifier';
+    return;
   end if;
 
   alter table public.earnline_project_icons

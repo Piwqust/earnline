@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import Charts
 
 /// One client's compact profile: identity, three key figures, income trend,
 /// and drill-down rows for statuses, projects, and the complete history.
@@ -15,18 +14,10 @@ struct ClientDetailView: View {
     let client: Client
 
     @State private var showEditSheet = false
-    /// Scrub position on the earnings chart; snapped to the plotted month.
-    @State private var chartSelection: Date?
     @State private var snapshot: ClientDetailSnapshot?
     @State private var snapshotError: String?
     @State private var dataRevision = 0
     @State private var rendersAchievementPreview = true
-
-    private var calendar: Calendar { .current }
-
-    private var chartHeight: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 220 : 170
-    }
 
     private struct SnapshotRevision: Hashable {
         let baseCurrencyCode: String
@@ -202,7 +193,7 @@ struct ClientDetailView: View {
         }
     }
 
-    // MARK: Earnings chart — 12 months of this client, scrubbable
+    // MARK: Achievements
 
     private func achievementsCard(_ achievements: [ClientAchievement]) -> some View {
         let earnedCount = achievements.count(where: \.isUnlocked)
@@ -251,100 +242,19 @@ struct ClientDetailView: View {
         }
     }
 
+    // MARK: Earnings chart — 12 months of this client, scrubbable
+
     private func trendCard(_ data: [ClientDetailSnapshot.MonthPoint]) -> some View {
-        let selected = chartSelection.flatMap { selection in
-            data.first { calendar.isDate($0.month, equalTo: selection, toGranularity: .month) }
-        }
-        let hasData = data.contains { $0.total > 0 }
-        let lineColor = Color(hex: client.colorHex)
-        let highlighted = selected ?? data.last
-        return ChromeCard {
-            Chart {
-                ForEach(data, id: \.month) { point in
-                    AreaMark(
-                        x: .value("Month", point.month, unit: .month),
-                        yStart: .value("Zero", 0),
-                        yEnd: .value("Earned", doubleValue(point.total))
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [lineColor.opacity(0.22), lineColor.opacity(0.03)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-
-                    LineMark(
-                        x: .value("Month", point.month, unit: .month),
-                        y: .value("Earned", doubleValue(point.total))
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(lineColor)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                }
-
-                if let selected {
-                    RuleMark(x: .value("Month", selected.month, unit: .month))
-                        .foregroundStyle(.quaternary)
-                        .lineStyle(StrokeStyle(lineWidth: 1))
-                        .annotation(position: .top, spacing: 6,
-                                    overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                            chartCallout(selected)
-                        }
-                }
-
-                if let highlighted {
-                    PointMark(
-                        x: .value("Highlighted month", highlighted.month, unit: .month),
-                        y: .value("Highlighted earnings", doubleValue(highlighted.total))
-                    )
-                    .foregroundStyle(lineColor)
-                    .symbolSize(55)
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
-                    AxisGridLine().foregroundStyle(Theme.hairline)
-                    AxisValueLabel {
-                        if let amount = value.as(Double.self) {
-                            Text(compactAmount(amount))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-            }
-            .chartXAxis(.hidden)
-            .chartXSelection(value: $chartSelection)
-            .frame(height: chartHeight)
-            .padding(.leading, 0)
-            .padding(.trailing, 10)
-            .padding(.vertical, 14)
-            .overlay {
-                if !hasData {
-                    Text("No earned income in the last year")
-                        .appFont(11)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-    }
-
-    private func chartCallout(_ point: ClientDetailSnapshot.MonthPoint) -> some View {
-        VStack(spacing: 1) {
-            Text(app.primaryString(point.total))
-                .appFont(12, .semibold, design: .rounded)
-                .monospacedDigit()
-                .foregroundStyle(Theme.label)
-            Text(DateFormat.monthAndYear(point.month))
-                .appFont(9)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(Theme.surface, in: .rect(cornerRadius: 8))
-        .shadow(color: Theme.label(0.12), radius: 6, y: 2)
+        EarningsChartCard(
+            points: data.enumerated().map { index, point in
+                .init(month: point.month,
+                      total: point.total,
+                      previousTotal: index > 0 ? data[index - 1].total : nil)
+            },
+            tint: Color(hex: client.colorHex),
+            emptyText: "No earned income in the last year"
+        )
+        .accessibilityIdentifier("client.earningsChart")
     }
 
     /// This client's slice of everything ever earned, e.g. "37%".
@@ -498,23 +408,8 @@ struct ClientDetailView: View {
 
     // MARK: Helpers
 
-    private func doubleValue(_ value: Decimal) -> Double {
-        NSDecimalNumber(decimal: value).doubleValue
-    }
-
     private func projectSymbol(for projectName: String) -> ProjectSymbol {
         ProjectIconResolver.symbol(for: projectName, in: projectIconPreferences)
-    }
-
-    /// Compact axis label ("2k", "1.5M") — earned values are never negative here.
-    private func compactAmount(_ value: Double) -> String {
-        if value >= 1_000_000 {
-            return "\(CurrencyFormatter.grouped(Decimal(value / 1_000_000), code: app.baseCurrencyCode))M"
-        }
-        if value >= 1000 {
-            return "\(CurrencyFormatter.grouped(Decimal(value / 1000), code: app.baseCurrencyCode))k"
-        }
-        return CurrencyFormatter.grouped(Decimal(value), code: app.baseCurrencyCode)
     }
 }
 

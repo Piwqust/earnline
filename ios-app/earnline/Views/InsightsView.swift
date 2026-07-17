@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import Charts
 
 /// Income at a glance. Ledger models are captured once into a Sendable input and
 /// aggregated off the main actor, keeping sheet presentation and interaction
@@ -12,20 +11,19 @@ struct InsightsView: View {
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     @Query(sort: \Entry.updatedAt, order: .reverse) private var entries: [Entry]
 
-    @State private var windowMonths = 3
+    /// The Monthly income card's charted window; the other cards keep fixed,
+    /// captioned periods instead of following a global toggle.
+    @State private var chartWindow = 6
     @State private var selectedDay: Date?
-    @State private var chartSelection: Date?
     @State private var dashboard: InsightsDashboardSnapshot?
-    @State private var isRefreshing = false
 
     private var calendar: Calendar { .current }
 
     /// O(1) in the entry count because the query is already newest-first. It
-    /// catches edits, insertions, deletions, client changes, period changes, and
+    /// catches edits, insertions, deletions, client changes, and
     /// currency-setting changes without hashing every field during every render.
     private var dashboardRevision: DashboardRevision {
         DashboardRevision(
-            windowMonths: windowMonths,
             entryCount: entries.count,
             latestEntryUpdate: entries.first?.updatedAt,
             clientCount: clients.count,
@@ -36,15 +34,9 @@ struct InsightsView: View {
         )
     }
 
-    private var trendChartHeight: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 280 : 210
-    }
-
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                periodPicker
-
                 if let dashboard {
                     dashboardContent(dashboard)
                 } else {
@@ -67,7 +59,6 @@ struct InsightsView: View {
     }
 
     private struct DashboardRevision: Hashable {
-        let windowMonths: Int
         let entryCount: Int
         let latestEntryUpdate: Date?
         let clientCount: Int
@@ -79,17 +70,14 @@ struct InsightsView: View {
 
     @MainActor
     private func loadDashboard() async {
-        isRefreshing = true
         let input = InsightsDashboardInput(clients: clients, converter: app.converter)
-        let requestedWindow = windowMonths
         await Task.yield()
         let snapshot = await Task.detached(priority: .userInitiated) {
-            input.dashboardSnapshot(windowMonths: requestedWindow)
+            input.dashboardSnapshot()
         }.value
-        guard !Task.isCancelled, requestedWindow == windowMonths else { return }
+        guard !Task.isCancelled else { return }
         withAnimation(.smooth(duration: 0.22)) {
             dashboard = snapshot
-            isRefreshing = false
         }
     }
 
@@ -107,26 +95,29 @@ struct InsightsView: View {
                 .accessibilityLabel("\(snapshot.unsupportedCurrencyCount) lines are excluded from consolidated totals because no conversion rate is set")
         }
 
+        // No section headings or period captions — each card explains itself
+        // (the chart carries its own total and period line), and the finer
+        // print lives in Help, not between the cards.
+        EarningsChartCard(
+            points: snapshot.monthlyIncome.map {
+                .init(month: $0.month, total: $0.total, previousTotal: $0.previousTotal)
+            },
+            tint: app.accentColor,
+            window: $chartWindow
+        )
+        .accessibilityIdentifier("insights.monthlyIncomeChart")
+
         EarningsHeatmapCard(clients: clients,
                             map: map,
                             maxDaily: maxDaily,
                             heatTotal: heatTotal,
                             months: snapshot.months,
                             selectedDay: $selectedDay)
-            .id(snapshot.windowMonths)
-
-        VStack(alignment: .leading, spacing: 0) {
-            CardHeader("Monthly income")
-            monthlyIncomeCard(snapshot.monthlyIncome)
-        }
 
         statsCard(snapshot)
 
         if !snapshot.clientTotals.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                CardHeader("Top clients")
-                topClientsCard(snapshot.clientTotals)
-            }
+            topClientsCard(snapshot.clientTotals)
         }
     }
 
@@ -141,150 +132,6 @@ struct InsightsView: View {
             .frame(maxWidth: .infinity, minHeight: 160)
         }
         .accessibilityIdentifier("insights.loading")
-    }
-
-    // MARK: Period
-
-    private var periodPicker: some View {
-        // Labels match the actual windows (3/6/12 months) — the Health-style
-        // "Week/Month/Year" wording lied about what was charted.
-        Picker("", selection: $windowMonths) {
-            Text("3M").tag(3)
-            Text("6M").tag(6)
-            Text("Y").tag(12)
-        }
-        .pickerStyle(.segmented)
-        .accessibilityLabel("Time range")
-        .overlay(alignment: .trailing) {
-            if isRefreshing, dashboard != nil {
-                ProgressView().controlSize(.mini).padding(.trailing, 8).allowsHitTesting(false)
-            }
-        }
-        .onChange(of: windowMonths) {
-            selectedDay = nil
-            chartSelection = nil
-        }
-    }
-
-    // MARK: Monthly income chart
-
-    private func selectedPoint(_ data: [InsightsDashboardSnapshot.MonthPoint])
-        -> InsightsDashboardSnapshot.MonthPoint? {
-        guard let chartSelection else { return nil }
-        return data.first { calendar.isDate($0.month, equalTo: chartSelection, toGranularity: .month) }
-    }
-
-    private func monthlyIncomeCard(_ data: [InsightsDashboardSnapshot.MonthPoint]) -> some View {
-        let selected = selectedPoint(data)
-        let hasData = data.contains { $0.total > 0 }
-        let highlighted = selected ?? data.last
-
-        return ChromeCard {
-            Chart {
-                ForEach(data) { point in
-                    AreaMark(
-                        x: .value("Month", point.month, unit: .month),
-                        yStart: .value("Zero", 0),
-                        yEnd: .value("Income", doubleValue(point.total))
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [app.accentColor.opacity(0.18), app.accentColor.opacity(0.02)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-
-                    LineMark(
-                        x: .value("Month", point.month, unit: .month),
-                        y: .value("Income", doubleValue(point.total))
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(app.accentColor)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    .accessibilityLabel(DateFormat.monthAndYear(point.month))
-                    .accessibilityValue(app.primaryString(point.total))
-                }
-
-                RuleMark(y: .value("Zero", 0))
-                    .foregroundStyle(.quaternary)
-                    .lineStyle(StrokeStyle(lineWidth: 1))
-
-                if let selected {
-                    RuleMark(x: .value("Month", selected.month, unit: .month))
-                        .foregroundStyle(.quaternary)
-                        .lineStyle(StrokeStyle(lineWidth: 1))
-                        .annotation(position: .top, spacing: 7,
-                                    overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                            monthlyIncomeCallout(selected)
-                        }
-                }
-
-                if let highlighted {
-                    PointMark(
-                        x: .value("Highlighted month", highlighted.month, unit: .month),
-                        y: .value("Highlighted income", doubleValue(highlighted.total))
-                    )
-                    .foregroundStyle(app.accentColor)
-                    .symbolSize(55)
-                }
-            }
-            .chartYScale(domain: .automatic(includesZero: true))
-            .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
-                    AxisGridLine().foregroundStyle(Theme.hairline)
-                    AxisValueLabel {
-                        if let amount = value.as(Double.self) {
-                            Text(compactAmount(amount))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .month, count: max(data.count / 6, 1))) { _ in
-                    AxisValueLabel(format: .dateTime.month(.abbreviated))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .chartXSelection(value: $chartSelection)
-            .frame(height: trendChartHeight)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 18)
-            .overlay {
-                if !hasData {
-                    Text("No earned income in this period")
-                        .appFont(11)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-        .accessibilityIdentifier("insights.monthlyIncomeChart")
-    }
-
-    private func monthlyIncomeCallout(_ point: InsightsDashboardSnapshot.MonthPoint) -> some View {
-        let change = point.change
-        let up = change >= 0
-        return VStack(spacing: 2) {
-            Text(app.primaryString(point.total))
-                .appFont(12, .semibold, design: .rounded)
-                .monospacedDigit()
-                .foregroundStyle(Theme.label)
-            Text(DateFormat.monthAndYear(point.month))
-                .appFont(9)
-                .foregroundStyle(.secondary)
-            Text("\(up ? "+" : "−")\(app.primaryString(abs(change))) \(String(localized: "vs previous month"))")
-                .appFont(9, .medium, design: .rounded)
-                .monospacedDigit()
-                .foregroundStyle(up ? Theme.green : Theme.statusCanceled)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(Theme.surface, in: .rect(cornerRadius: 9))
-        .shadow(color: Theme.label(0.10), radius: 5, y: 2)
     }
 
     // MARK: Stats — three headline figures in one card
@@ -454,21 +301,5 @@ struct InsightsView: View {
     /// "37%" — clamped so a wild outlier can't blow the layout apart.
     private func percentString(_ fraction: Double) -> String {
         "\(Int((min(fraction, 9.99) * 100).rounded()))%"
-    }
-
-    private func doubleValue(_ value: Decimal) -> Double {
-        NSDecimalNumber(decimal: value).doubleValue
-    }
-
-    /// Compact currency-aware chart label, e.g. "1k" or "2M".
-    private func compactAmount(_ value: Double) -> String {
-        let magnitude = abs(value)
-        if magnitude >= 1_000_000 {
-            return "\(CurrencyFormatter.grouped(Decimal(magnitude / 1_000_000), code: app.baseCurrencyCode))M"
-        }
-        if magnitude >= 1000 {
-            return "\(CurrencyFormatter.grouped(Decimal(magnitude / 1000), code: app.baseCurrencyCode))k"
-        }
-        return CurrencyFormatter.grouped(Decimal(magnitude), code: app.baseCurrencyCode)
     }
 }

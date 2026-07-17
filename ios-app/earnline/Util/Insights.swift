@@ -45,14 +45,16 @@ struct InsightsDashboardInput: Sendable {
         }
     }
 
-    /// One pass produces every figure the sheet needs. The leading month before
-    /// the visible window is retained only as the first bar's comparison base.
+    /// One pass produces every figure the sheet needs. The chart series and
+    /// the heatmap always span the last 12 months — the card's range control
+    /// merely slices the series, so toggling 3M/6M/1Y never re-aggregates.
+    /// The leading month before the chart window is retained only as the
+    /// first point's comparison base.
     nonisolated func dashboardSnapshot(
-        windowMonths: Int,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> InsightsDashboardSnapshot {
-        let count = max(windowMonths, 1)
+        let count = InsightsDashboardSnapshot.chartMonthCount
         let thisMonth = monthStart(now, calendar: calendar)
         let visibleMonths = (0..<count).reversed().compactMap {
             calendar.date(byAdding: .month, value: -$0, to: thisMonth)
@@ -60,7 +62,8 @@ struct InsightsDashboardInput: Sendable {
         let previousMonth = calendar.date(byAdding: .month, value: -count, to: thisMonth)
         let visibleKeys = Set(visibleMonths.map { monthKey($0, calendar: calendar) })
         let comparisonKeys = visibleKeys.union(previousMonth.map { [monthKey($0, calendar: calendar)] } ?? [])
-        let windowStart = visibleMonths.first ?? thisMonth
+        let heatmapMonths = Array(visibleMonths.suffix(InsightsDashboardSnapshot.heatmapMonthCount))
+        let windowStart = heatmapMonths.first ?? thisMonth
         let windowEnd = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: thisMonth) ?? thisMonth
         let currentYear = calendar.component(.year, from: now)
 
@@ -124,8 +127,7 @@ struct InsightsDashboardInput: Sendable {
         let windowTotal = monthlyIncome.reduce(Decimal.zero) { $0 + $1.total }
         let activeMonthCount = monthlyIncome.count { $0.total > 0 }
         return InsightsDashboardSnapshot(
-            windowMonths: count,
-            months: visibleMonths,
+            months: heatmapMonths,
             monthlyIncome: monthlyIncome,
             dailyEarnings: dailyEarnings,
             clientTotals: clientTotals,
@@ -149,6 +151,13 @@ struct InsightsDashboardInput: Sendable {
 /// Complete presentation state for one Insights period. Views read this value
 /// directly, so selecting a day or chart bar never re-aggregates the ledger.
 struct InsightsDashboardSnapshot: Sendable {
+    /// The chart series always carries a year of months; the card's local
+    /// range control shows the trailing 3, 6, or all 12.
+    static let chartMonthCount = 12
+    /// The daily heatmap covers the same trailing year as the chart; the
+    /// fixed-cell grid simply scrolls horizontally for the older months.
+    static let heatmapMonthCount = 12
+
     struct MonthPoint: Identifiable, Sendable {
         let month: Date
         let total: Decimal
@@ -164,8 +173,9 @@ struct InsightsDashboardSnapshot: Sendable {
         let total: Decimal
     }
 
-    let windowMonths: Int
+    /// The heatmap's months (trailing `heatmapMonthCount`), oldest first.
     let months: [Date]
+    /// The chart's months (trailing `chartMonthCount`), oldest first.
     let monthlyIncome: [MonthPoint]
     let dailyEarnings: [Date: Decimal]
     let clientTotals: [ClientTotal]

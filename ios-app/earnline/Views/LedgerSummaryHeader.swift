@@ -9,7 +9,7 @@ struct LedgerSummaryHeader: View {
     var isSearching = false
     var searchHitCount = 0
     var searchEarnedTotal: Decimal = 0
-    var hasSearchQuery = false
+    var hasSearchFilter = false
     let onOpenStats: () -> Void
 
     private var displayedTotal: Decimal {
@@ -56,7 +56,7 @@ struct LedgerSummaryHeader: View {
                     .contentTransition(.numericText())
             }
             Spacer(minLength: 8)
-            if hasSearchQuery {
+            if hasSearchFilter {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("^[\(searchHitCount) result](inflect: true)")
                         .appFont(13, .medium)
