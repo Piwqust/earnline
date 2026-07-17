@@ -33,6 +33,9 @@ struct EarningsChartCard: View {
     /// charts every point with no control.
     var window: Binding<Int>?
     var emptyText: LocalizedStringKey = "No earned income in this period"
+    /// A preview-only reveal mask for the account tour. Nil preserves the
+    /// production chart's existing, fully rendered behaviour.
+    var drawProgress: CGFloat? = nil
 
     @State private var selection: Date?
 
@@ -138,6 +141,7 @@ struct EarningsChartCard: View {
 
     // MARK: Chart
 
+    @ViewBuilder
     private var chart: some View {
         let visible = visiblePoints
         let selected = selectedPoint
@@ -151,7 +155,7 @@ struct EarningsChartCard: View {
         // flat run still shows a band instead of a bare line.
         let band = max(maxValue - minValue, maxValue * 0.25) * 0.6
 
-        return Chart {
+        let chart = Chart {
             ForEach(visible) { point in
                 if band > 0 {
                     AreaMark(
@@ -259,6 +263,17 @@ struct EarningsChartCard: View {
                     .appFont(11)
                     .foregroundStyle(.tertiary)
             }
+        }
+
+        if let drawProgress {
+            chart
+                .mask(alignment: .leading) {
+                    Rectangle()
+                        .scaleEffect(x: min(max(drawProgress, 0), 1), anchor: .leading)
+                }
+                .animation(.smooth(duration: 0.72, extraBounce: 0), value: drawProgress)
+        } else {
+            chart
         }
     }
 

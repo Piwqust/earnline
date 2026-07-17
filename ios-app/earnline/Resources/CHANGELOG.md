@@ -9,8 +9,8 @@
 - Web sync batches concurrent reads and checks for remote updates less aggressively while still syncing local edits immediately, reducing free-plan function usage.
 
 ### Onboarding
-- The account screen now keeps every sign-in, pairing, and recovery action at the same compact, accessible height, so more of the actual ledger remains visible from the start.
-- A brief live preview now shows an income line being added and paid, the Insights chart, and a client profile using the same native surfaces as the ledger itself.
+- The account screen now uses one native 44-point control language: Apple remains system-owned, while Google, GitHub, local, pairing, recovery, and sign-out actions now share the same labelled full-width rhythm.
+- A new **Earnline in Motion** backdrop directs the real ledger, composer, editor, Insights chart, and client profile through a brief in-memory camera tour, with a calm static ledger whenever motion should not play.
 - After you enter an empty ledger, one optional spotlight points to the first income action and disappears automatically after you save it.
 
 ## July 15, 2026

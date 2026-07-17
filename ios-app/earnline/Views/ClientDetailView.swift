@@ -12,6 +12,10 @@ struct ClientDetailView: View {
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
     let client: Client
+    /// Internal-only gate for the noninteractive account tour. It delays the
+    /// presentation of an already loaded real snapshot by a beat; production
+    /// callers leave it nil and keep the current loading behaviour.
+    var previewHistoryIsLoaded: Bool? = nil
 
     @State private var showEditSheet = false
     @State private var snapshot: ClientDetailSnapshot?
@@ -50,7 +54,7 @@ struct ClientDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 profileSummary(snapshot)
-                if let snapshot {
+                if let snapshot, previewHistoryIsLoaded != false {
                     if app.clientBadgesEnabled {
                         section("Achievements") { achievementsCard(snapshot.achievements) }
                     }

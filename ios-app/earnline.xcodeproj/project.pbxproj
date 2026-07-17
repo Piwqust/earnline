@@ -19,6 +19,7 @@
 		15672E2D6D82F54A5DE9FDC3 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D89D605AA34D35B69B95F6E /* Validation.swift */; };
 		16E945A017BF9B958A60A724 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AB22977B8238F3A7032AB83 /* SettingsView.swift */; };
 		1A23EBC763DE040227797697 /* NewClientSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E03F716060DC11DCBBAD0F /* NewClientSheet.swift */; };
+		1EECC73CCB51C8771A8C8C46 /* AuthTourDirectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CD678F4D418485805681BD4 /* AuthTourDirectorTests.swift */; };
 		1F860C2332E3DB560A5EE793 /* Heading.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE84DC11EBAD5E2764A746A4 /* Heading.swift */; };
 		1FCF405D88E2ED008E7266F2 /* EntrySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D7BB1BA5D43A868804F33C /* EntrySearch.swift */; };
 		205CC0BDABC6A78F169C3D8A /* SyncModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4B5D260A8BB987EDE42871 /* SyncModelTests.swift */; };
@@ -197,6 +198,7 @@
 
 /* Begin PBXFileReference section */
 		02E03F716060DC11DCBBAD0F /* NewClientSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewClientSheet.swift; sourceTree = "<group>"; };
+		0CD678F4D418485805681BD4 /* AuthTourDirectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthTourDirectorTests.swift; sourceTree = "<group>"; };
 		0E2E0CB44F303F2ABAF4C46A /* ClientDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDetailView.swift; sourceTree = "<group>"; };
 		14066EAF21F6D5EE593AC78E /* earnline.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = earnline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1422EDE680AC1B4CF5356BAA /* RemoteRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRecords.swift; sourceTree = "<group>"; };
@@ -494,6 +496,7 @@
 			isa = PBXGroup;
 			children = (
 				AC905165F7A59F47E5ACFBF4 /* AppLockTests.swift */,
+				0CD678F4D418485805681BD4 /* AuthTourDirectorTests.swift */,
 				1C55C1FB9A6F488A9C91F266 /* ClientAchievementsTests.swift */,
 				8DAE846D098CCB57568B0469 /* ConflictPolicyTests.swift */,
 				986EDFD9495BF098B6F919B6 /* CurrencyConversionTests.swift */,
@@ -692,6 +695,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AC6F02E59E12E4375E4DFC7E /* AppLockTests.swift in Sources */,
+				1EECC73CCB51C8771A8C8C46 /* AuthTourDirectorTests.swift in Sources */,
 				14F33EF179D7730277D45D33 /* ClientAchievementsTests.swift in Sources */,
 				3969F6A11AD56C067EA87858 /* ConflictPolicyTests.swift in Sources */,
 				7D6E6FF1968919A6AECA37E4 /* CurrencyConversionTests.swift in Sources */,

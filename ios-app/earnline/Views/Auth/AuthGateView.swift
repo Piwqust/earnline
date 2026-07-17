@@ -9,7 +9,7 @@ import SwiftUI
 /// The anatomy follows the Figma "MainPage" gate (node 389-3889): a live,
 /// scripted preview of the actual ledger fills the screen, and a black
 /// bottom panel carries the brand line plus every way in — Apple as the
-/// solid primary, Google/GitHub as icon-only glass pills, and the two
+/// solid primary, labelled provider controls, and the two
 /// local-only routes beneath their own divider.
 struct AuthGateView: View {
     @Environment(AppModel.self) private var app
@@ -18,10 +18,11 @@ struct AuthGateView: View {
     @State private var showingPairDevice = false
     @State private var readyFeedback = false
     @State private var selectedProviderName: String?
+    @State private var dockHeight: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            AuthBackdropPreview(isActive: previewIsActive)
+            AuthBackdropPreview(isActive: previewIsActive, dockHeight: dockHeight)
 
             AuthGatePanel(
                 state: app.accountState,
@@ -34,6 +35,7 @@ struct AuthGateView: View {
                 signOut: { Task { await app.signOutAccount() } }
             )
         }
+        .onPreferenceChange(AuthDockHeightKey.self) { dockHeight = $0 }
         .sheet(isPresented: $showingPairDevice) {
             PairDeviceRedeemSheet()
                 .presentationDetents([.large])
@@ -76,6 +78,16 @@ struct AuthGateView: View {
     }
 }
 
+/// The scene uses the actual dock height so the establishing shot remains
+/// legible above it when localized or accessibility text makes the dock grow.
+private struct AuthDockHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Bottom panel
 
 /// The black bottom card from the Figma: 50 pt top corners, a deep upward
@@ -103,6 +115,11 @@ private struct AuthGatePanel: View {
                     .fill(Color(hex: "#000003"))
                     .shadow(color: .black.opacity(0.25), radius: 44, y: -24)
                     .ignoresSafeArea(edges: .bottom)
+            }
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: AuthDockHeightKey.self, value: proxy.size.height)
+                }
             }
             .environment(\.colorScheme, .dark)
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
@@ -165,7 +182,7 @@ private struct AuthGatePanel: View {
 
     private var entryContent: some View {
         VStack(spacing: 0) {
-            Text(verbatim: "TRACK КАЖДЫЙ INCOME")
+            Text("Track every income")
                 .appFont(22, .semibold)
                 .tracking(-0.24)
                 .foregroundStyle(.white.opacity(0.96))
@@ -193,24 +210,22 @@ private struct AuthGatePanel: View {
                             onComplete: signInApple
                         )
 
-                        HStack(spacing: 10) {
-                            AuthIconProviderButton(
-                                title: "Continue with Google",
-                                assetName: "GoogleG",
-                                isAuthenticating: authenticatingProvider == "Google",
-                                isDisabled: authenticatingProvider != nil
-                            ) {
-                                signIn(.google)
-                            }
+                        AuthProviderButton(
+                            title: "Continue with Google",
+                            assetName: "GoogleG",
+                            isAuthenticating: authenticatingProvider == "Google",
+                            isDisabled: authenticatingProvider != nil
+                        ) {
+                            signIn(.google)
+                        }
 
-                            AuthIconProviderButton(
-                                title: "Continue with GitHub",
-                                assetName: "GitHubMark",
-                                isAuthenticating: authenticatingProvider == "GitHub",
-                                isDisabled: authenticatingProvider != nil
-                            ) {
-                                signIn(.github)
-                            }
+                        AuthProviderButton(
+                            title: "Continue with GitHub",
+                            assetName: "GitHubMark",
+                            isAuthenticating: authenticatingProvider == "GitHub",
+                            isDisabled: authenticatingProvider != nil
+                        ) {
+                            signIn(.github)
                         }
                     }
                 }
@@ -222,14 +237,14 @@ private struct AuthGatePanel: View {
 
             GlassEffectContainer(spacing: 10) {
                 VStack(spacing: 10) {
-                    AuthTertiaryButton(
+                    AuthGateButton(
                         title: "Continue without an account",
                         hint: "Keeps your ledger only on this device",
                         isDisabled: authenticatingProvider != nil,
                         action: guest
                     )
 
-                    AuthTertiaryButton(
+                    AuthGateButton(
                         title: "Pair a device",
                         hint: "Use a one-time QR code to connect this device",
                         isDisabled: authenticatingProvider != nil,
@@ -281,21 +296,16 @@ private struct AuthGatePanel: View {
 
             GlassEffectContainer(spacing: 10) {
                 VStack(spacing: 10) {
-                    Button(action: retry) {
-                        Text("Check again")
-                            .appFont(17, .semibold)
-                            .foregroundStyle(Color(hex: "#1A1A1A"))
-                            .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(
-                        .regular.tint(.white).interactive(),
-                        in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+                    AuthGateButton(
+                        title: "Check again",
+                        hint: "Checks whether your workspace is ready",
+                        isDisabled: false,
+                        emphasis: .light,
+                        action: retry
                     )
-                    .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
 
                     if isPairedDevice {
-                        AuthTertiaryButton(
+                        AuthGateButton(
                             title: "Pair this device",
                             hint: "Use a one-time QR code to connect this device",
                             isDisabled: false,
@@ -305,12 +315,13 @@ private struct AuthGatePanel: View {
                 }
             }
 
-            Button(role: .cancel, action: signOut) {
-                Text("Sign out")
-                    .appFont(15, .medium)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(minHeight: AuthControlMetrics.height)
-            }
+            AuthGateButton(
+                title: "Sign out",
+                hint: "Signs out of this device",
+                isDisabled: false,
+                emphasis: .quiet,
+                action: signOut
+            )
         }
         .padding(.bottom, 14)
         .accessibilityElement(children: .contain)
@@ -324,10 +335,10 @@ private enum AuthControlMetrics {
 
 // MARK: - Buttons
 
-/// An icon-only provider pill: the official brand mark centered in a glass
-/// capsule, swapped for a spinner while that provider's flow is in flight.
-/// The full "Continue with …" phrase lives in the accessibility label.
-private struct AuthIconProviderButton: View {
+/// A full-width provider action. The mark stays a fixed optical asset while
+/// the label shares the same 17-point rhythm and 44-point frame as Apple's
+/// system-owned control.
+private struct AuthProviderButton: View {
     let title: LocalizedStringKey
     let assetName: String
     let isAuthenticating: Bool
@@ -336,21 +347,33 @@ private struct AuthIconProviderButton: View {
 
     var body: some View {
         Button(action: action) {
-            Group {
-                if isAuthenticating {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(assetName)
-                        .resizable()
-                        .scaledToFit()
-                        // Fixed size on purpose: a brand mark, not text — it
-                        // must not grow with Dynamic Type.
-                        .frame(width: 22, height: 22)
-                        .foregroundStyle(.white)
+            HStack(spacing: 10) {
+                Group {
+                    if isAuthenticating {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(assetName)
+                            .resizable()
+                            .scaledToFit()
+                            // A brand mark, not text: it stays stable when the
+                            // user selects a larger Dynamic Type size.
+                            .frame(width: 18, height: 18)
+                    }
                 }
+                .frame(width: 22, height: 22)
+                .accessibilityHidden(true)
+
+                Text(title)
+                    .appFont(17, .medium)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                // Balance the leading mark so the text has the same optical
+                // centre as "Continue with Apple".
+                Color.clear.frame(width: 22, height: 22)
             }
-            .accessibilityHidden(true)
             .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
         }
         .buttonStyle(.plain)
@@ -368,31 +391,69 @@ private struct AuthIconProviderButton: View {
     }
 }
 
-/// A full-width quiet glass pill for the local-only routes.
-private struct AuthTertiaryButton: View {
+/// The shared geometry for every non-Apple account action. The explicit frame
+/// comes before native Liquid Glass, preventing intrinsic glass sizing from
+/// drifting away from the Apple control's 44-point height.
+private struct AuthGateButton: View {
+    enum Emphasis {
+        case regular
+        case light
+        case quiet
+    }
+
     let title: LocalizedStringKey
     let hint: LocalizedStringKey
     let isDisabled: Bool
+    var emphasis: Emphasis = .regular
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
                 .appFont(17, .medium)
-                .foregroundStyle(.white.opacity(0.92))
+                .foregroundStyle(labelColor)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
         }
         .buttonStyle(.plain)
-        .glassEffect(
-            .regular.interactive(),
-            in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
-        )
+        .modifier(AuthGateGlass(emphasis: emphasis))
         .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
         .disabled(isDisabled)
         .accessibilityHint(hint)
+    }
+
+    private var labelColor: Color {
+        switch emphasis {
+        case .regular: .white.opacity(0.92)
+        case .light: Color(hex: "#1A1A1A")
+        case .quiet: .white.opacity(0.66)
+        }
+    }
+}
+
+private struct AuthGateGlass: ViewModifier {
+    let emphasis: AuthGateButton.Emphasis
+
+    func body(content: Content) -> some View {
+        switch emphasis {
+        case .regular:
+            content.glassEffect(
+                .regular.interactive(),
+                in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+            )
+        case .light:
+            content.glassEffect(
+                .regular.tint(.white).interactive(),
+                in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+            )
+        case .quiet:
+            content.glassEffect(
+                .regular.tint(.white.opacity(0.08)).interactive(),
+                in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+            )
+        }
     }
 }
 

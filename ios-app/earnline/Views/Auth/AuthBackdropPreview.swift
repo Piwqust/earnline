@@ -1,25 +1,24 @@
 import SwiftData
 import SwiftUI
 
-/// The live app story behind the account panel. It renders the production
-/// ledger, composer, editor, Insights, and client-profile components against a
-/// short-lived in-memory store — never a screenshot or a second UI system.
-///
-/// The surface is decorative: it cannot receive input or VoiceOver focus. It
-/// stops on a calm, completed ledger when motion should not autoplay.
+/// The live app story behind the account dock. It uses a transient in-memory
+/// store and production SwiftUI surfaces — never a video, screenshot, or
+/// duplicate card system. The surface is decorative and cannot receive input
+/// or VoiceOver focus.
 struct AuthBackdropPreview: View {
     @Environment(\.accessibilityPlayAnimatedImages) private var playAnimatedImages
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
     let isActive: Bool
+    let dockHeight: CGFloat
 
-    @State private var scene: AuthPreviewScene?
+    @State private var director: AuthTourDirector?
     @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
 
     private struct PlaybackKey: Hashable {
         let isActive: Bool
-        let isBackgrounded: Bool
+        let scenePhase: ScenePhase
         let reduceMotion: Bool
         let playAnimatedImages: Bool
         let lowPowerMode: Bool
@@ -30,19 +29,22 @@ struct AuthBackdropPreview: View {
             Theme.background
                 .ignoresSafeArea()
 
-            if let scene {
-                AuthPreviewScreen(scene: scene)
-                    .modelContainer(scene.container)
-                    .id(scene.screen)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            if let director {
+                AuthTourStage(
+                    scene: director.scene,
+                    shouldAnimate: director.playbackPolicy == .autoplay,
+                    staticCamera: director.beat.camera,
+                    dockHeight: dockHeight
+                )
+                .modelContainer(director.scene.container)
             }
 
-            // The panel needs a little separation, but the app should remain
-            // recognisable well behind it instead of dissolving halfway down.
+            // The dock needs contrast, but it should not erase the establishing
+            // shot. The modest lower falloff lets the ledger stay readable.
             LinearGradient(
-                colors: [Theme.background.opacity(0), Theme.background.opacity(0.35)],
-                startPoint: .init(x: 0.5, y: 0.52),
-                endPoint: .init(x: 0.5, y: 0.9)
+                colors: [Theme.background.opacity(0), Theme.background.opacity(0.28)],
+                startPoint: .init(x: 0.5, y: 0.56),
+                endPoint: .init(x: 0.5, y: 0.92)
             )
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -51,66 +53,221 @@ struct AuthBackdropPreview: View {
         .accessibilityHidden(true)
         .task(id: PlaybackKey(
             isActive: isActive,
-            isBackgrounded: scenePhase == .background,
+            scenePhase: scenePhase,
             reduceMotion: reduceMotion,
             playAnimatedImages: playAnimatedImages,
             lowPowerMode: lowPowerMode
         )) {
-            guard let scene = scene ?? (try? AuthPreviewScene()) else { return }
-            if self.scene == nil { self.scene = scene }
+            let director = director ?? (try? AuthTourDirector())
+            guard let director else { return }
+            if self.director == nil { self.director = director }
 
-            if let requestedScreen {
-                scene.prepareForPreview(requestedScreen)
-                return
-            }
-
-            guard scenePhase != .background, isActive else { return }
-            guard !reduceMotion,
-                  playAnimatedImages,
-                  !lowPowerMode else {
-                scene.settle()
-                return
-            }
-            await runLoop(scene)
+            director.configure(
+                options: AuthTourPreviewOptions.launchOptions,
+                policy: AuthTourPlaybackPolicy.resolve(
+                    isAccountDockActive: isActive,
+                    scenePhase: scenePhase,
+                    reduceMotion: reduceMotion,
+                    playAnimatedImages: playAnimatedImages,
+                    lowPowerMode: lowPowerMode
+                )
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
             lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
         }
     }
+}
 
-    private var requestedScreen: AuthPreviewScene.Screen? {
-        guard AppModel.isRunningUIAutomation else { return nil }
+// MARK: - Tour direction
+
+/// Semantic states of the story. The director owns these states and its seeded
+/// data; the camera animator only reads transform values and never mutates a
+/// SwiftData model inside a per-frame closure.
+enum AuthTourBeat: String, CaseIterable, Hashable {
+    case ledger
+    case addIncome
+    case edit
+    case insights
+    case client
+
+    var camera: AuthTourCamera {
+        switch self {
+        case .ledger: .wide
+        case .addIncome: .composer
+        case .edit: .editor
+        case .insights: .insights
+        case .client: .client
+        }
+    }
+}
+
+/// Test-only launch controls. Production never supplies these values; they
+/// exist so UI screenshots and director tests can land on a repeatable beat.
+struct AuthTourPreviewOptions: Hashable {
+    var forcedBeat: AuthTourBeat?
+    var prefersStaticPlayback = false
+
+    static var launchOptions: Self {
+        guard AppModel.isRunningUIAutomation else { return .init() }
         let arguments = ProcessInfo.processInfo.arguments
-        guard let index = arguments.firstIndex(of: "-authPreviewScreen"),
-              arguments.indices.contains(index + 1) else { return nil }
-        return AuthPreviewScene.Screen(rawValue: arguments[index + 1])
+        let requestedBeat = argumentValue("-authTourBeat", in: arguments)
+            .flatMap(AuthTourBeat.init(rawValue:))
+            ?? legacyScreenBeat(argumentValue("-authPreviewScreen", in: arguments))
+        return .init(
+            forcedBeat: requestedBeat,
+            prefersStaticPlayback: arguments.contains("-authTourStatic")
+        )
     }
 
-    private func runLoop(_ scene: AuthPreviewScene) async {
-        while !Task.isCancelled {
-            withAnimation(.smooth(duration: 0.45)) { scene.reset() }
-            guard await wait(1.2) else { return }
+    private static func argumentValue(_ name: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        return arguments[index + 1]
+    }
 
-            withAnimation(.smooth(duration: 0.5)) { scene.addIncomeLine() }
-            guard await wait(1.5) else { return }
+    private static func legacyScreenBeat(_ value: String?) -> AuthTourBeat? {
+        switch value {
+        case "ledger": .ledger
+        case "editor": .edit
+        case "insights": .insights
+        case "client": .client
+        default: nil
+        }
+    }
+}
 
-            withAnimation(.smooth(duration: 0.45)) { scene.openEditor() }
-            guard await wait(1.4) else { return }
+enum AuthTourPlaybackPolicy: Hashable {
+    case autoplay
+    case settled
 
-            withAnimation(.snappy(duration: 0.35)) { scene.markIncomePaid() }
-            guard await wait(1.0) else { return }
+    static func resolve(
+        isAccountDockActive: Bool,
+        scenePhase: ScenePhase,
+        reduceMotion: Bool,
+        playAnimatedImages: Bool,
+        lowPowerMode: Bool
+    ) -> Self {
+        guard isAccountDockActive,
+              scenePhase == .active,
+              !reduceMotion,
+              playAnimatedImages,
+              !lowPowerMode else {
+            return .settled
+        }
+        return .autoplay
+    }
+}
 
-            withAnimation(.smooth(duration: 0.55)) { scene.openInsights() }
-            guard await wait(2.4) else { return }
+/// The director's only clock dependency. The production sleeper waits in real
+/// time; tests inject a recording or immediate sleeper to assert ordering,
+/// reset, pause, and resume without sleeping for a ten-second loop.
+protocol AuthTourSleeping: Sendable {
+    func sleep(for duration: Duration) async throws
+}
 
-            withAnimation(.smooth(duration: 0.55)) { scene.openClientProfile() }
-            guard await wait(2.4) else { return }
+struct SystemAuthTourSleeper: AuthTourSleeping {
+    func sleep(for duration: Duration) async throws {
+        try await Task.sleep(for: duration)
+    }
+}
+
+@MainActor @Observable
+final class AuthTourDirector {
+    let scene: AuthTourScene
+    private let sleeper: any AuthTourSleeping
+
+    private(set) var beat: AuthTourBeat = .ledger
+    private(set) var playbackPolicy: AuthTourPlaybackPolicy = .settled
+    private(set) var beatHistory: [AuthTourBeat] = []
+    private var playbackTask: Task<Void, Never>?
+
+    init(scene: AuthTourScene? = nil, sleeper: any AuthTourSleeping = SystemAuthTourSleeper()) throws {
+        self.scene = try scene ?? AuthTourScene()
+        self.sleeper = sleeper
+    }
+
+    func configure(options: AuthTourPreviewOptions, policy: AuthTourPlaybackPolicy) {
+        playbackTask?.cancel()
+        playbackPolicy = options.prefersStaticPlayback ? .settled : policy
+
+        if let forcedBeat = options.forcedBeat {
+            playbackPolicy = .settled
+            move(to: forcedBeat)
+            scene.completeStaticPreview(for: forcedBeat)
+            return
+        }
+
+        guard playbackPolicy == .autoplay else {
+            settle()
+            return
+        }
+
+        playbackTask = Task { [weak self] in
+            await self?.playLoop()
         }
     }
 
-    private func wait(_ seconds: Double) async -> Bool {
+    func pause() {
+        playbackTask?.cancel()
+        playbackTask = nil
+        playbackPolicy = .settled
+        settle()
+    }
+
+    func move(to beat: AuthTourBeat) {
+        self.beat = beat
+        beatHistory.append(beat)
+        scene.prepare(for: beat)
+    }
+
+    private func settle() {
+        beat = .ledger
+        scene.settle()
+    }
+
+    private func playLoop() async {
+        while !Task.isCancelled {
+            guard await playOneCycle() else { return }
+        }
+    }
+
+    /// Kept internal for deterministic unit tests with an injected sleeper.
+    /// Production only enters this through the looping task above.
+    func playOneCycleForTesting() async -> Bool {
+        await playOneCycle()
+    }
+
+    private func playOneCycle() async -> Bool {
+        move(to: .ledger)
+        guard await pause(for: 1.2) else { return false }
+
+        move(to: .addIncome)
+        guard await pause(for: 1.9) else { return false }
+
+        move(to: .edit)
+        guard await pause(for: 0.65) else { return false }
+        scene.markIncomePaid()
+        guard await pause(for: 1.15) else { return false }
+
+        move(to: .insights)
+        guard await pause(for: 0.15) else { return false }
+        scene.revealInsightsChart()
+        guard await pause(for: 2.25) else { return false }
+
+        move(to: .client)
+        guard await pause(for: 0.15) else { return false }
+        scene.revealClientHistory()
+        guard await pause(for: 2.15) else { return false }
+
+        move(to: .ledger)
+        return await pause(for: 0.9)
+    }
+
+    private func pause(for seconds: Double) async -> Bool {
         do {
-            try await Task.sleep(for: .seconds(seconds))
+            try await sleeper.sleep(for: .seconds(seconds))
         } catch {
             return false
         }
@@ -118,10 +275,151 @@ struct AuthBackdropPreview: View {
     }
 }
 
+// MARK: - Camera
+
+/// A camera transform contains visual values only. It is intentionally plain
+/// data so `KeyframeAnimator` can interpolate it without any model queries.
+struct AuthTourCamera {
+    var scale: CGFloat
+    var x: CGFloat
+    var y: CGFloat
+    var yaw: Double
+    var opacity: Double
+
+    static let wide = Self(scale: 0.82, x: 0, y: 0, yaw: 0, opacity: 1)
+    static let composer = Self(scale: 0.99, x: 0, y: -128, yaw: 0, opacity: 1)
+    static let editor = Self(scale: 0.96, x: 10, y: -96, yaw: 1.5, opacity: 1)
+    static let insights = Self(scale: 0.88, x: 0, y: -72, yaw: 0, opacity: 1)
+    static let client = Self(scale: 0.90, x: -42, y: -82, yaw: -0.9, opacity: 1)
+}
+
+private struct AuthTourStage: View {
+    let scene: AuthTourScene
+    let shouldAnimate: Bool
+    let staticCamera: AuthTourCamera
+    let dockHeight: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            // Make the amount of visible app intentional rather than assuming
+            // a fixed panel height. The extra headroom keeps a full ledger
+            // readable above a taller localized dock.
+            let readableHeight = max(280, proxy.size.height - dockHeight + 24)
+
+            if shouldAnimate {
+                AuthTourAnimatedScreen(
+                    scene: scene,
+                    size: proxy.size,
+                    readableHeight: readableHeight
+                )
+            } else {
+                AuthPreviewScreen(scene: scene)
+                    .frame(width: proxy.size.width, height: readableHeight + 112, alignment: .top)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                    .authTourCamera(staticCamera)
+            }
+        }
+        .clipped()
+    }
+}
+
+/// One repeating 10.5-second transform timeline. The content closure applies
+/// only scale, offset, perspective, and opacity; semantic beat changes happen
+/// in `AuthTourDirector`, outside this per-frame work.
+private struct AuthTourAnimatedScreen: View {
+    let scene: AuthTourScene
+    let size: CGSize
+    let readableHeight: CGFloat
+
+    var body: some View {
+        AuthPreviewScreen(scene: scene)
+            .frame(width: size.width, height: readableHeight + 112, alignment: .top)
+            .frame(width: size.width, height: size.height, alignment: .top)
+            .keyframeAnimator(
+            initialValue: AuthTourCamera.wide,
+            repeating: true
+        ) { content, camera in
+            content.authTourCamera(camera)
+        } keyframes: { _ in
+            KeyframeTrack(\.scale) {
+                LinearKeyframe(0.82, duration: 1.2)
+                CubicKeyframe(0.99, duration: 0.45)
+                LinearKeyframe(0.99, duration: 1.45)
+                CubicKeyframe(0.96, duration: 0.35)
+                LinearKeyframe(0.96, duration: 1.45)
+                CubicKeyframe(0.88, duration: 0.45)
+                LinearKeyframe(0.88, duration: 1.95)
+                CubicKeyframe(0.90, duration: 0.4)
+                LinearKeyframe(0.90, duration: 1.9)
+                CubicKeyframe(0.82, duration: 0.3)
+                LinearKeyframe(0.82, duration: 0.6)
+            }
+            KeyframeTrack(\.x) {
+                LinearKeyframe(0, duration: 1.2)
+                CubicKeyframe(0, duration: 0.45)
+                LinearKeyframe(0, duration: 1.45)
+                CubicKeyframe(10, duration: 0.35)
+                LinearKeyframe(10, duration: 1.45)
+                CubicKeyframe(0, duration: 0.45)
+                LinearKeyframe(0, duration: 1.95)
+                CubicKeyframe(-42, duration: 0.4)
+                LinearKeyframe(-42, duration: 1.9)
+                CubicKeyframe(0, duration: 0.3)
+                LinearKeyframe(0, duration: 0.6)
+            }
+            KeyframeTrack(\.y) {
+                LinearKeyframe(0, duration: 1.2)
+                CubicKeyframe(-128, duration: 0.45)
+                LinearKeyframe(-128, duration: 1.45)
+                CubicKeyframe(-96, duration: 0.35)
+                LinearKeyframe(-96, duration: 1.45)
+                CubicKeyframe(-72, duration: 0.45)
+                LinearKeyframe(-72, duration: 1.95)
+                CubicKeyframe(-82, duration: 0.4)
+                LinearKeyframe(-82, duration: 1.9)
+                CubicKeyframe(0, duration: 0.3)
+                LinearKeyframe(0, duration: 0.6)
+            }
+            KeyframeTrack(\.yaw) {
+                LinearKeyframe(0, duration: 1.2)
+                LinearKeyframe(0, duration: 1.9)
+                CubicKeyframe(1.5, duration: 0.35)
+                LinearKeyframe(1.5, duration: 1.45)
+                CubicKeyframe(0, duration: 0.45)
+                LinearKeyframe(0, duration: 1.95)
+                CubicKeyframe(-0.9, duration: 0.4)
+                LinearKeyframe(-0.9, duration: 1.9)
+                CubicKeyframe(0, duration: 0.3)
+                LinearKeyframe(0, duration: 0.6)
+            }
+            KeyframeTrack(\.opacity) {
+                LinearKeyframe(1, duration: 9.6)
+                CubicKeyframe(0.92, duration: 0.25)
+                CubicKeyframe(1, duration: 0.65)
+            }
+        }
+    }
+}
+
+private extension View {
+    nonisolated func authTourCamera(_ camera: AuthTourCamera) -> some View {
+        scaleEffect(camera.scale, anchor: .top)
+            .rotation3DEffect(
+                .degrees(camera.yaw),
+                axis: (x: 0, y: 1, z: 0),
+                anchor: .center,
+                perspective: 0.72
+            )
+            .offset(x: camera.x, y: camera.y)
+            .opacity(camera.opacity)
+    }
+}
+
 // MARK: - Real app screens
 
 private struct AuthPreviewScreen: View {
-    let scene: AuthPreviewScene
+    let scene: AuthTourScene
+    @Namespace private var incomeTransition
 
     var body: some View {
         Group {
@@ -131,13 +429,21 @@ private struct AuthPreviewScreen: View {
             case .editor:
                 editor
             case .insights:
-                NavigationStack { InsightsView() }
+                NavigationStack {
+                    InsightsView(previewChartDrawProgress: scene.insightsChartProgress)
+                }
             case .client:
-                NavigationStack { ClientDetailView(client: scene.acme) }
+                NavigationStack {
+                    ClientDetailView(
+                        client: scene.acme,
+                        previewHistoryIsLoaded: scene.clientHistoryLoaded
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.background)
+        .animation(.smooth(duration: 0.36), value: scene.screen)
     }
 
     private var ledger: some View {
@@ -162,12 +468,18 @@ private struct AuthPreviewScreen: View {
                     initialText: "$240 Launch Kit: Two homepage screens",
                     automaticallyFocus: false
                 )
+                .matchedGeometryEffect(id: "tour.income", in: incomeTransition, isSource: true)
                 .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             ForEach(scene.rows, id: \.id) { entry in
                 EntryRow(entry: entry)
+                    .matchedGeometryEffect(
+                        id: entry.id == scene.scriptedLine?.id ? "tour.income" : entry.id.uuidString,
+                        in: incomeTransition,
+                        isSource: entry.id == scene.scriptedLine?.id
+                    )
                     .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .transition(.asymmetric(
                         insertion: .move(edge: .top).combined(with: .opacity),
@@ -202,11 +514,11 @@ private struct AuthPreviewScreen: View {
     }
 }
 
-// MARK: - In-memory story
+// MARK: - In-memory story data
 
 @MainActor @Observable
-final class AuthPreviewScene {
-    enum Screen: String, Hashable {
+final class AuthTourScene {
+    enum Screen: Hashable {
         case ledger
         case editor
         case insights
@@ -220,6 +532,8 @@ final class AuthPreviewScene {
     private(set) var showsComposer = true
     private(set) var scriptedLine: Entry?
     private(set) var editorStatus: EntryStatus = .inProgress
+    private(set) var insightsChartProgress: CGFloat = 1
+    private(set) var clientHistoryLoaded = true
 
     private let context: ModelContext
     private var allEntries: [Entry]
@@ -274,6 +588,34 @@ final class AuthPreviewScene {
         monthlyTotals[Insights.monthKey(of: .now)] ?? .zero
     }
 
+    func prepare(for beat: AuthTourBeat) {
+        switch beat {
+        case .ledger:
+            reset()
+        case .addIncome:
+            addIncomeLine()
+        case .edit:
+            openEditor()
+        case .insights:
+            openInsights()
+        case .client:
+            openClientProfile()
+        }
+    }
+
+    /// UI-test captures represent the readable end of each beat, not the
+    /// first frame of its reveal animation.
+    func completeStaticPreview(for beat: AuthTourBeat) {
+        switch beat {
+        case .insights:
+            revealInsightsChart()
+        case .client:
+            revealClientHistory()
+        case .ledger, .addIncome, .edit:
+            break
+        }
+    }
+
     func reset() {
         if let entry = scriptedLine {
             rows.removeAll { $0.id == entry.id }
@@ -284,10 +626,15 @@ final class AuthPreviewScene {
         screen = .ledger
         showsComposer = true
         editorStatus = .inProgress
+        insightsChartProgress = 1
+        clientHistoryLoaded = true
     }
 
     func addIncomeLine() {
-        guard scriptedLine == nil else { return }
+        guard scriptedLine == nil else {
+            screen = .ledger
+            return
+        }
         let entry = Entry(amount: 240, project: "Launch Kit", task: "Two homepage screens",
                           date: .now, status: .inProgress, sortIndex: -1)
         entry.client = acme
@@ -302,6 +649,10 @@ final class AuthPreviewScene {
 
     func openEditor() {
         addIncomeLine()
+        // A forced test beat can enter the editor after the settled ledger,
+        // whose row is paid. Restore the editor's scripted starting state.
+        editorStatus = .inProgress
+        scriptedLine?.status = .inProgress
         screen = .editor
     }
 
@@ -313,32 +664,29 @@ final class AuthPreviewScene {
     func openInsights() {
         markIncomePaid()
         screen = .insights
+        insightsChartProgress = 0
+    }
+
+    func revealInsightsChart() {
+        insightsChartProgress = 1
     }
 
     func openClientProfile() {
         markIncomePaid()
         screen = .client
+        clientHistoryLoaded = false
+    }
+
+    func revealClientHistory() {
+        clientHistoryLoaded = true
     }
 
     func settle() {
+        if scriptedLine == nil { addIncomeLine() }
+        markIncomePaid()
         screen = .ledger
         showsComposer = false
-        editorStatus = .paid
-    }
-
-    func prepareForPreview(_ requestedScreen: Screen) {
-        reset()
-        switch requestedScreen {
-        case .ledger:
-            break
-        case .editor:
-            openEditor()
-        case .insights:
-            addIncomeLine()
-            openInsights()
-        case .client:
-            addIncomeLine()
-            openClientProfile()
-        }
+        insightsChartProgress = 1
+        clientHistoryLoaded = true
     }
 }

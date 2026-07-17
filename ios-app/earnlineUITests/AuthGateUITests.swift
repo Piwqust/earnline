@@ -17,7 +17,7 @@ final class AuthGateUITests: XCTestCase {
 
     func testGateShowsTheBrandHeadlineOverTheLivePreview() {
         let app = launchAuthGate()
-        XCTAssertTrue(app.staticTexts["TRACK КАЖДЫЙ INCOME"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Track every income"].waitForExistence(timeout: 3))
     }
 
     func testEntryOffersProvidersAndAnAccessiblePairingRoute() {
@@ -38,6 +38,8 @@ final class AuthGateUITests: XCTestCase {
         XCTAssertEqual(github.frame.height, 44, accuracy: 0.5)
         XCTAssertEqual(guest.frame.height, 44, accuracy: 0.5)
         XCTAssertEqual(pair.frame.height, 44, accuracy: 0.5)
+        XCTAssertEqual(google.frame.minX, apple.frame.minX, accuracy: 0.5)
+        XCTAssertEqual(github.frame.maxX, apple.frame.maxX, accuracy: 0.5)
 
         pair.tap()
         let code = app.textFields["Pairing code"]
@@ -67,8 +69,11 @@ final class AuthGateUITests: XCTestCase {
         let workspacePending = launchAuthGate(state: "workspacePending")
         XCTAssertTrue(workspacePending.staticTexts["Finish setting up your workspace"].waitForExistence(timeout: 3))
         let checkAgain = workspacePending.buttons["Check again"]
+        let signOut = workspacePending.buttons["Sign out"]
         XCTAssertTrue(checkAgain.exists)
+        XCTAssertTrue(signOut.exists)
         XCTAssertEqual(checkAgain.frame.height, 44, accuracy: 0.5)
+        XCTAssertEqual(signOut.frame.height, 44, accuracy: 0.5)
         workspacePending.terminate()
 
         let pairedWorkspacePending = launchAuthGate(state: "pairedWorkspacePending")

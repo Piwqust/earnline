@@ -16,6 +16,9 @@ struct InsightsView: View {
     @State private var chartWindow = 6
     @State private var selectedDay: Date?
     @State private var dashboard: InsightsDashboardSnapshot?
+    /// Internal-only input used by the noninteractive account tour. Production
+    /// callers leave it nil and the chart remains fully drawn on first render.
+    var previewChartDrawProgress: CGFloat? = nil
 
     private var calendar: Calendar { .current }
 
@@ -103,7 +106,8 @@ struct InsightsView: View {
                 .init(month: $0.month, total: $0.total, previousTotal: $0.previousTotal)
             },
             tint: app.accentColor,
-            window: $chartWindow
+            window: $chartWindow,
+            drawProgress: previewChartDrawProgress
         )
         .accessibilityIdentifier("insights.monthlyIncomeChart")
 

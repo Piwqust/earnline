@@ -3119,6 +3119,16 @@
         }
       }
     },
+    "Track every income" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отслеживайте каждый доход"
+          }
+        }
+      }
+    },
     "Transactions matching this group will appear here." : {
       "localizations" : {
         "ru" : {
