@@ -41,7 +41,10 @@ interface SyncBroadcast {
   error?: string;
 }
 
-const POLL_INTERVAL_MS = 30_000;
+// Local edits still queue immediately. This slower remote-change poll, paired
+// with request batching, keeps the personal app responsive without burning
+// the free Edge Function quota while an idle tab remains visible.
+const POLL_INTERVAL_MS = 120_000;
 const MAX_RETRY_MS = 60_000;
 const LEASE_MS = 45_000;
 
@@ -56,12 +59,12 @@ function errorMessage(error: unknown): string {
 
 function configKey(settings: Settings): string {
   return settings.syncMode === "proxy"
-    ? `proxy|${settings.syncEndpoint}|${settings.connectionScope}|${settings.syncCapability}`
+    ? `proxy|${settings.syncEndpoint}|${settings.connectionScope}`
     : `direct|${settings.directSupabaseUrl}|${settings.directWorkspaceId}|${settings.connectionScope}|${settings.directSupabaseKey}`;
 }
 
 async function remoteFromDraft(draft: ConnectionDraft): Promise<SyncRemote> {
-  if (draft.mode === "proxy") return new ProxyRemote(draft.endpoint, draft.capability);
+  if (draft.mode === "proxy") return new ProxyRemote(draft.endpoint);
   if (!import.meta.env.DEV) throw new Error("Direct Supabase mode is available only during local development.");
   const { DirectSupabaseRemote } = await import("../sync/directSupabaseRemote");
   return new DirectSupabaseRemote(draft.directUrl, draft.directKey, draft.directWorkspaceId);
@@ -185,7 +188,7 @@ class SyncController {
       const saved = setSettings({
         syncMode: draft.mode,
         syncEndpoint: draft.endpoint,
-        syncCapability: draft.capability,
+        syncCapability: "",
         directSupabaseUrl: draft.directUrl,
         directSupabaseKey: draft.directKey,
         directWorkspaceId: draft.directWorkspaceId,
@@ -197,6 +200,44 @@ class SyncController {
       this.applyingConnection = false;
     }
     await this.reconfigure(true);
+  }
+
+  /**
+   * Resolves a fresh, server-derived scope after Supabase authentication. The
+   * first authenticated account may migrate the old unscoped IndexedDB cache;
+   * a different account always receives a separate database.
+   */
+  async activateAuthenticatedSession(): Promise<void> {
+    const settings = getSettings();
+    if (!settings.syncEndpoint) {
+      this.set({ message: "Sync setup is incomplete", connection: "error", error: "This deployment is missing its sync endpoint." });
+      return;
+    }
+    this.set({ connection: "connecting", message: "Opening private workspace…", error: null });
+    this.applyingConnection = true;
+    try {
+      const remote = new ProxyRemote(settings.syncEndpoint);
+      const validation = await remote.validate();
+      const previousScope = getSettings().connectionScope;
+      const database = await activateDatabase(validation.scope, { migrateLegacy: previousScope === "" });
+      if (database.scope !== validation.scope) throw new DOMException("Connection changed", "AbortError");
+      const saved = setSettings({
+        syncMode: "proxy",
+        syncEndpoint: settings.syncEndpoint,
+        syncCapability: "",
+        connectionScope: validation.scope,
+        profileNeedsSync: false,
+      });
+      if (!saved) throw new Error("The workspace was verified but could not be saved in this browser.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      this.set({ connection: "error", message: "Workspace unavailable", error: errorMessage(error) });
+      return;
+    } finally {
+      this.applyingConnection = false;
+    }
+    if (!this.started) this.start();
+    else await this.reconfigure(true);
   }
 
   private async performSync(conflictResolution: ConflictResolution = "requireUserChoice"): Promise<void> {
@@ -364,7 +405,7 @@ class SyncController {
     this.broadcast = undefined;
     clearTimeout(this.queueTimer);
     clearTimeout(this.retryTimer);
-    this.set({ isSyncing: false, retryAt: null });
+    this.set({ isSyncing: false, retryAt: null, message: "Offline", connection: "disconnected" });
   }
 
   private onWake = (): void => {

@@ -13,7 +13,10 @@ import Network
 extension AppModel {
     // MARK: Supabase
 
-    var isSupabaseConfigured: Bool {
+    /// Connection settings may exist before production has a signed-in account.
+    /// Keep this separate from `isSupabaseConfigured`: callers that create an
+    /// auth session need a client before sync itself is allowed to run.
+    var hasSupabaseConfiguration: Bool {
         let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: urlText),
               url.scheme?.lowercased() == "https",
@@ -22,14 +25,27 @@ extension AppModel {
             && !workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Test is intentionally local-only. Production requires a resolved
+    /// Supabase identity and workspace before a ledger row may leave the device.
+    /// A local guest session is ready but must never sync.
+    var isSupabaseConfigured: Bool {
+        guard workspaceEnvironment == .production else { return false }
+        guard accountSession?.isLocalOnly != true else { return false }
+        return hasSupabaseConfiguration && isAccountReady
+    }
+
     func refreshSupabaseSession() async {
-        guard isSupabaseConfigured else {
+        guard hasSupabaseConfiguration else {
             syncMessage = String(localized: "Offline")
             return
         }
         do {
             _ = try supabase()
-            syncMessage = String(localized: "Ready")
+            if workspaceEnvironment == .production {
+                await bootstrapAuthentication()
+            } else {
+                syncMessage = String(localized: "Offline")
+            }
             syncError = nil
         } catch {
             syncMessage = String(localized: "Needs setup")
@@ -101,6 +117,7 @@ extension AppModel {
             lastSyncAt = Date()
             syncMessage = String(localized: "Synced")
             try context.save()
+            completeAccountStoreMigrationAfterSuccessfulSync()
             refreshPendingReminders(context: context)
             retryAttempt = 0
             lastSyncFailed = false
@@ -299,7 +316,7 @@ extension AppModel {
         queueSync(context: context)
     }
 
-    private func supabase() throws -> SupabaseClient {
+    func supabase() throws -> SupabaseClient {
         if let supabaseClient { return supabaseClient }
         let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -386,8 +403,23 @@ extension AppModel {
     /// `workspaceEnvironment.didSet` in the main file.
     func loadWorkspaceSupabaseConfig() {
         let config = workspaceEnvironment.defaultSupabaseConfig
-        supabaseURLString = defaults.string(forKey: workspaceDefaultKey("supabaseURLString")) ?? config.url
-        supabaseKey = defaults.string(forKey: workspaceDefaultKey("supabaseKey")) ?? config.publishableKey
+        supabaseURLString = Self.configuredSupabaseValue(
+            defaults.string(forKey: workspaceDefaultKey("supabaseURLString")),
+            fallback: config.url
+        )
+        supabaseKey = Self.configuredSupabaseValue(
+            defaults.string(forKey: workspaceDefaultKey("supabaseKey")),
+            fallback: config.publishableKey
+        )
+    }
+
+    /// A previous missing-configuration build may have persisted an empty
+    /// developer override. Empty values should never shadow a later valid
+    /// build-time configuration, while nonempty overrides remain available to
+    /// the local developer surface.
+    static func configuredSupabaseValue(_ saved: String?, fallback: String) -> String {
+        guard let saved else { return fallback }
+        return saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : saved
     }
 
     /// The Settings fields fire their didSets on every keystroke — debounce

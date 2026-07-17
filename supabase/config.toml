@@ -1,4 +1,9 @@
 [functions.earnline-sync]
-# This endpoint uses its own high-entropy per-device capability. Supabase JWT
-# verification is intentionally disabled so no login/account is introduced.
+# Browser sessions send a Supabase bearer token. The function validates it
+# again before resolving the caller's membership with its service client.
+verify_jwt = true
+
+[functions.earnline-pair-device]
+# A valid, short-lived, one-use pairing token is the authorization. The
+# function creates a device-scoped Auth identity only after validating it.
 verify_jwt = false

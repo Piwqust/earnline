@@ -14,10 +14,19 @@ import {
   type RowTable,
   type SyncRemote,
 } from "./remoteClient";
+import { configuredSupabase } from "./supabaseClient";
 
 interface ProxyResponse {
   data?: unknown;
   error?: string;
+}
+
+interface QueuedRequest {
+  action: string;
+  payload: Record<string, unknown>;
+  signal?: AbortSignal;
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
 }
 
 function normalizeEndpoint(value: string): string {
@@ -43,41 +52,107 @@ export class ProxyRemote implements SyncRemote {
   readonly transport = "proxy" as const;
   readonly rowWorkspace = "proxy";
   private readonly endpoint: string;
-  private readonly capability: string;
+  private queue: QueuedRequest[] = [];
+  private flushScheduled = false;
 
-  constructor(endpoint: string, capability: string) {
+  constructor(endpoint: string) {
     this.endpoint = normalizeEndpoint(endpoint);
-    this.capability = capability.trim();
-    if (this.capability.length < 24) throw new Error("The connection code is incomplete.");
   }
 
-  private async request(action: string, payload: Record<string, unknown> = {}, signal?: AbortSignal): Promise<unknown> {
+  private request(action: string, payload: Record<string, unknown> = {}, signal?: AbortSignal): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ action, payload, signal, resolve, reject });
+      if (!this.flushScheduled) {
+        this.flushScheduled = true;
+        queueMicrotask(() => void this.flush());
+      }
+    });
+  }
+
+  private async flush(): Promise<void> {
+    this.flushScheduled = false;
+    const pending = this.queue;
+    this.queue = [];
+    const groups = new Map<AbortSignal | undefined, QueuedRequest[]>();
+    for (const item of pending) {
+      if (item.signal?.aborted) {
+        item.reject(new DOMException("The operation was aborted", "AbortError"));
+        continue;
+      }
+      groups.set(item.signal, [...(groups.get(item.signal) ?? []), item]);
+    }
+    await Promise.all([...groups.entries()].flatMap(([signal, requests]) => {
+      const tasks: Promise<void>[] = [];
+      for (let index = 0; index < requests.length; index += 12) {
+        tasks.push(this.send(requests.slice(index, index + 12), signal));
+      }
+      return tasks;
+    }));
+  }
+
+  private async send(requests: QueuedRequest[], signal?: AbortSignal): Promise<void> {
+    const supabase = configuredSupabase();
+    if (!supabase) {
+      const error = new RemoteRequestError("Supabase browser configuration is missing.");
+      requests.forEach((item) => item.reject(error));
+      return;
+    }
+    let session;
+    try {
+      ({ data: { session } } = await supabase.auth.getSession());
+    } catch {
+      const error = new RemoteRequestError("Could not read the browser session.", 401);
+      requests.forEach((item) => item.reject(error));
+      return;
+    }
+    if (!session?.access_token) {
+      const error = new RemoteRequestError("Sign in is required to sync.", 401);
+      requests.forEach((item) => item.reject(error));
+      return;
+    }
     let response: Response;
     try {
+      const body = requests.length === 1
+        ? { action: requests[0].action, ...requests[0].payload }
+        : { action: "batch", requests: requests.map((item) => ({ action: item.action, ...item.payload })) };
       response = await fetch(this.endpoint, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-earnline-capability": this.capability,
+          authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ action, ...payload }),
+        body: JSON.stringify(body),
         cache: "no-store",
         credentials: "omit",
         referrerPolicy: "no-referrer",
         signal,
       });
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") throw error;
-      throw new RemoteRequestError("Could not reach the Earnline sync service.");
+      const safeError = error instanceof DOMException && error.name === "AbortError"
+        ? error
+        : new RemoteRequestError("Could not reach the Earnline sync service.");
+      requests.forEach((item) => item.reject(safeError));
+      return;
     }
     const json = (await response.json().catch(() => ({}))) as ProxyResponse;
     if (!response.ok) {
       const safeMessage = response.status === 401 || response.status === 403
-        ? "The connection code was rejected."
+        ? "This browser is not authorized to sync that workspace."
         : json.error || `Sync service returned ${response.status}.`;
-      throw new RemoteRequestError(safeMessage, response.status);
+      const error = new RemoteRequestError(safeMessage, response.status);
+      requests.forEach((item) => item.reject(error));
+      return;
     }
-    return json.data;
+    if (requests.length === 1) {
+      requests[0].resolve(json.data);
+      return;
+    }
+    if (!Array.isArray(json.data) || json.data.length !== requests.length) {
+      const error = new RemoteRequestError("The sync service returned an invalid batch response.");
+      requests.forEach((item) => item.reject(error));
+      return;
+    }
+    requests.forEach((item, index) => item.resolve((json.data as unknown[])[index]));
   }
 
   async validate(signal?: AbortSignal): Promise<RemoteValidation> {

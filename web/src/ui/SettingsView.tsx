@@ -7,20 +7,19 @@ import { dottedInstant } from "../domain/dateFormat";
 import { exportDatabase, getDatabase, importDatabase, useDatabaseGeneration } from "../data/db";
 import { useClients, useEntries, useHeadings } from "../state/data";
 import {
-  connectionDraft,
   currencySettings,
   isSyncConfigured,
   setSettings,
   useSettings,
   useSettingsPersistenceError,
-  type ConnectionDraft,
 } from "../state/settings";
 import { queueSync, syncController, useSyncStatus } from "../state/store";
 import { importBundledLedger } from "../data/sampleLedger";
 import { Card } from "./components/Card";
-import { Field, Select } from "./components/Field";
+import { Select } from "./components/Field";
 import { Button } from "./components/Button";
 import { SyncIcon } from "./icons";
+import { AccountDevicesPanel } from "../auth/AuthGate";
 
 function downloadBackup(value: unknown): void {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
@@ -43,18 +42,12 @@ export function SettingsView() {
   const databaseGeneration = useDatabaseGeneration();
   const tombstoneCount = useLiveQuery(() => getDatabase().tombstones.count(), [databaseGeneration], 0);
   const [importing, setImporting] = useState(false);
-  const [connection, setConnection] = useState<ConnectionDraft>(() => connectionDraft(settings));
-  const [connectionBusy, setConnectionBusy] = useState(false);
   const [rateDraft, setRateDraft] = useState(String(settings.rate));
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const restoreInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => setRateDraft(String(settings.rate)), [settings.rate]);
-  useEffect(() => setConnection(connectionDraft(settings)), [
-    settings.syncMode, settings.syncEndpoint, settings.syncCapability,
-    settings.directSupabaseUrl, settings.directSupabaseKey, settings.directWorkspaceId,
-  ]);
 
   const pending = clients.filter(needsSync).length + entries.filter(needsSync).length +
     headings.filter(needsSync).length + tombstoneCount;
@@ -87,19 +80,6 @@ export function SettingsView() {
     setLocalError(null);
   }
 
-  async function connect(): Promise<void> {
-    setConnectionBusy(true);
-    setLocalError(null);
-    try {
-      await syncController.validateAndApplyConnection(connection);
-      setLocalMessage("Sync connection verified and saved.");
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "Connection failed.");
-    } finally {
-      setConnectionBusy(false);
-    }
-  }
-
   async function restore(file: File | undefined): Promise<void> {
     if (!file) return;
     setLocalError(null);
@@ -125,6 +105,8 @@ export function SettingsView() {
           <p className="settings-note settings-note--error" role="alert">{persistenceError || localError}</p>
         )}
         {localMessage && <p className="settings-note" role="status">{localMessage}</p>}
+
+        <AccountDevicesPanel />
 
         <section className="settings-group" aria-labelledby="appearance-heading">
           <h2 className="settings-group__title" id="appearance-heading">Appearance</h2>
@@ -215,41 +197,6 @@ export function SettingsView() {
               {status.isSyncing ? "Syncing…" : "Sync now"}
             </Button>
           </div>
-        </section>
-
-        <section className="settings-group" aria-labelledby="advanced-sync-heading">
-          <details>
-            <summary className="settings-group__title" id="advanced-sync-heading">Advanced sync setup</summary>
-            <Card className="settings-card settings-card--stack">
-              {import.meta.env.DEV && (
-                <Field label="Transport">
-                  <Select aria-label="Sync transport" value={connection.mode}
-                    onChange={(event) => setConnection({ ...connection, mode: event.target.value as ConnectionDraft["mode"] })}>
-                    <option value="proxy">Secure proxy</option><option value="direct">Direct Supabase (local development only)</option>
-                  </Select>
-                </Field>
-              )}
-              {connection.mode === "proxy" ? <>
-                <Field label="Sync service URL"><input className="input" aria-label="Sync service URL"
-                  placeholder="https://…/functions/v1/earnline-sync" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                  value={connection.endpoint} onChange={(event) => setConnection({ ...connection, endpoint: event.target.value })} /></Field>
-                <Field label="Device connection code"><input className="input" aria-label="Device connection code" type="password"
-                  autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                  value={connection.capability} onChange={(event) => setConnection({ ...connection, capability: event.target.value })} /></Field>
-              </> : <>
-                <Field label="Project URL"><input className="input" aria-label="Development Supabase project URL"
-                  value={connection.directUrl} onChange={(event) => setConnection({ ...connection, directUrl: event.target.value })} /></Field>
-                <Field label="Publishable key"><input className="input" aria-label="Development Supabase publishable key" type="password"
-                  value={connection.directKey} onChange={(event) => setConnection({ ...connection, directKey: event.target.value })} /></Field>
-                <Field label="Workspace ID"><input className="input" aria-label="Development workspace ID"
-                  value={connection.directWorkspaceId} onChange={(event) => setConnection({ ...connection, directWorkspaceId: event.target.value })} /></Field>
-              </>}
-              <Button variant="secondary" disabled={connectionBusy} onClick={() => void connect()}>
-                {connectionBusy ? "Checking…" : "Validate and connect"}
-              </Button>
-            </Card>
-            <p className="settings-note">The device code is provisioned once. There is no account, login, or password, and the private database credential never enters this browser.</p>
-          </details>
         </section>
 
         <section className="settings-group" aria-labelledby="data-heading">

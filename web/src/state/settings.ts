@@ -72,7 +72,9 @@ function normalize(settings: Settings): Settings {
     profileNeedsSync: settings.profileNeedsSync === true,
     syncMode: settings.syncMode === "direct" && import.meta.env.DEV ? "direct" : "proxy",
     syncEndpoint: settings.syncEndpoint.trim(),
-    syncCapability: settings.syncCapability.trim(),
+    // Retire old per-browser capabilities on first read. Browser sessions now
+    // carry a Supabase JWT and the Edge Function resolves membership itself.
+    syncCapability: "",
     // Never retain legacy direct database credentials in a production browser.
     directSupabaseUrl: import.meta.env.DEV ? settings.directSupabaseUrl.trim() : "",
     directSupabaseKey: import.meta.env.DEV ? settings.directSupabaseKey.trim() : "",
@@ -211,7 +213,7 @@ function validHttpsUrl(value: string): boolean {
 export function isSyncConfigured(settings: Settings = current): boolean {
   if (!/^[a-f0-9]{32}$/.test(settings.connectionScope)) return false;
   if (settings.syncMode === "proxy") {
-    return validHttpsUrl(settings.syncEndpoint) && settings.syncCapability.length >= 24;
+    return validHttpsUrl(settings.syncEndpoint);
   }
   return import.meta.env.DEV && validHttpsUrl(settings.directSupabaseUrl) &&
     settings.directSupabaseKey !== "" && settings.directWorkspaceId !== "";

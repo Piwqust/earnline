@@ -1,8 +1,7 @@
 // Connection-scoped local-first storage. Every validated remote workspace gets
-// its own IndexedDB database, so changing a proxy/capability can never merge
+// its own IndexedDB database, so changing account membership can never merge
 // one ledger with another. The legacy `earnline` database remains the initial
-// scope and is copied once when an existing install is paired for the first
-// time.
+// scope and is copied only into the first successfully resolved account scope.
 
 import Dexie, { type Table } from "dexie";
 import { useSyncExternalStore } from "react";

@@ -35,18 +35,17 @@ describe("settings — workspace profile dirty tracking", () => {
     });
   });
 
-  it("keeps connection edits as a draft until explicit apply", async () => {
+  it("keeps connection edits as a draft until an authenticated workspace resolves", async () => {
     const { connectionDraft, getSettings, isSyncConfigured } = await import("./settings");
     const draft = connectionDraft();
     draft.endpoint = "https://sync.example.test";
-    draft.capability = "a".repeat(48);
     expect(getSettings().syncEndpoint).toBe("");
     expect(isSyncConfigured()).toBe(false);
   });
 
   it("requires a validated opaque scope before enabling sync", async () => {
     const { getSettings, isSyncConfigured, setSettings } = await import("./settings");
-    setSettings({ syncMode: "proxy", syncEndpoint: "https://sync.example.test", syncCapability: "a".repeat(48) });
+    setSettings({ syncMode: "proxy", syncEndpoint: "https://sync.example.test" });
     expect(isSyncConfigured()).toBe(false);
     setSettings({ connectionScope: "a".repeat(32) });
     expect(isSyncConfigured(getSettings())).toBe(true);
@@ -57,7 +56,6 @@ describe("settings — workspace profile dirty tracking", () => {
     setSettings({
       syncMode: "proxy",
       syncEndpoint: "https://sync.example.test",
-      syncCapability: "a".repeat(48),
       connectionScope: "b".repeat(32),
     });
     expect(isSyncConfigured()).toBe(true);
@@ -71,7 +69,6 @@ describe("settings — workspace profile dirty tracking", () => {
     setSettings({
       syncMode: "proxy",
       syncEndpoint: "https://user:secret@sync.example.test",
-      syncCapability: "a".repeat(48),
       connectionScope: "b".repeat(32),
     });
     expect(isSyncConfigured(getSettings())).toBe(false);
