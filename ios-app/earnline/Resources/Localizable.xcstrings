@@ -1,153 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%lld of %lld earned" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Получено %1$lld из %2$lld" } } }
-    },
-    "%lld%% complete" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Готово на %lld%%" } } }
-    },
-    "Locked, %@" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Заблокировано, %@" } } }
-    },
-    "Achievements" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Достижения" } } }
-    },
-    "Client badges" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Бейджи клиентов" } } }
-    },
-    "Developer Mode" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Режим разработчика" } } }
-    },
-    "Experimental" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Экспериментальные функции" } } }
-    },
-    "Experimental features may change or be removed in a future version." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Экспериментальные функции могут измениться или исчезнуть в будущей версии." } } }
-    },
-    "First payment" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Первая оплата" } } }
-    },
-    "Regular partner" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Постоянный партнёр" } } }
-    },
-    "Project explorer" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Исследователь проектов" } } }
-    },
-    "Three-month run" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Три месяца подряд" } } }
-    },
-    "One year together" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Год вместе" } } }
-    },
-    "Core client" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Ключевой клиент" } } }
-    },
-    "Receive the first paid income line from this client." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Получите первую оплаченную строку дохода от этого клиента." } } }
-    },
-    "Complete five paid income lines together." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Завершите вместе пять оплаченных строк дохода." } } }
-    },
-    "Complete paid work across three different projects." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выполните оплаченную работу в трёх разных проектах." } } }
-    },
-    "Receive paid income in three consecutive calendar months." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Получайте оплаченный доход три календарных месяца подряд." } } }
-    },
-    "Keep working together for one full year between paid income lines." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Работайте вместе целый год между оплаченными строками дохода." } } }
-    },
-    "Reach 25 paid income lines across at least six active months." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Достигните 25 оплаченных строк дохода минимум за шесть активных месяцев." } } }
-    },
-    "Paid income lines" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Оплаченные строки дохода" } } }
-    },
-    "Different projects" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Разные проекты" } } }
-    },
-    "Consecutive months" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Месяцы подряд" } } }
-    },
-    "Days together" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Дней вместе" } } }
-    },
-    "Active months" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Активные месяцы" } } }
-    },
-    "Project icons" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Иконки проектов" } } }
-    },
-    "Loading projects…" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Загрузка проектов…" } } }
-    },
-    "No projects yet" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проектов пока нет" } } }
-    },
-    "Could not load projects" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не удалось загрузить проекты" } } }
-    },
-    "Could not save project icon" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не удалось сохранить иконку проекта" } } }
-    },
-    "Folder" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Папка" } } }
-    },
-    "Work" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Работа" } } }
-    },
-    "Digital" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Цифровой" } } }
-    },
-    "Design" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Дизайн" } } }
-    },
-    "Photo" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Фото" } } }
-    },
-    "Video" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Видео" } } }
-    },
-    "Music" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Музыка" } } }
-    },
-    "Document" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Документ" } } }
-    },
-    "Campaign" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Кампания" } } }
-    },
-    "Commerce" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Торговля" } } }
-    },
-    "Web" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Веб" } } }
-    },
-    "Tools" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Инструменты" } } }
-    },
-    "Product" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Продукт" } } }
-    },
-    "Creative" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Творчество" } } }
-    },
-    "Growth" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Рост" } } }
-    },
-    "Business" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Бизнес" } } }
-    },
-    "Locked" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Заблокировано" } } }
-    },
-    "Drag to rotate" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проведите, чтобы повернуть" } } }
-    },
-    "Open 3D award" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Открыть 3D-награду" } } }
-    },
     "" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -155,52 +8,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : ""
-          }
-        }
-      }
-    },
-    "—" : {
-      "comment" : "A placeholder value for a missing value.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "—"
-          }
-        }
-      }
-    },
-    "·" : {
-      "comment" : "A period.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "·"
-          }
-        }
-      }
-    },
-    "· hold until %@" : {
-      "comment" : "A label that appears in the bottom-right corner of the entry context preview, indicating that the entry is on hold.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· удержание до %@"
-          }
-        }
-      }
-    },
-    "·?" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "·?"
           }
         }
       }
@@ -213,37 +20,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@"
-          }
-        }
-      }
-    },
-    "%@ · %@" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · %2$@"
-          }
-        }
-      }
-    },
-    "%@ · %@ is due — mark it paid?" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ · %2$@ — срок наступил. Отметить оплаченным?"
-          }
-        }
-      }
-    },
-    "%@ / %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ / %2$@"
           }
         }
       }
@@ -266,6 +42,16 @@
         }
       }
     },
+    "%@ / %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ / %2$@"
+          }
+        }
+      }
+    },
     "%@ of %@ earned" : {
       "localizations" : {
         "en" : {
@@ -276,13 +62,23 @@
         }
       }
     },
-    "%@, approximate" : {
+    "%@ · %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · %@ is due — mark it paid?" : {
       "extractionState" : "stale",
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, приблизительно"
+            "value" : "%1$@ · %2$@ — срок наступил. Отметить оплаченным?"
           }
         }
       }
@@ -324,6 +120,17 @@
         }
       }
     },
+    "%@, approximate" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, приблизительно"
+          }
+        }
+      }
+    },
     "%lld line(s) in an unsupported currency — counted at par (1:1)." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -335,25 +142,22 @@
         }
       }
     },
-    "^[%@ result](inflect: true)" : {
-      "comment" : "A label that shows the number of search results and the total amount earned from them.",
-      "isCommentAutoGenerated" : true,
+    "%lld of %lld earned" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Найдено: %@"
+            "value" : "Получено %1$lld из %2$lld"
           }
         }
       }
     },
-    "≈ %@" : {
-      "extractionState" : "stale",
+    "%lld%% complete" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "≈ %@"
+            "value" : "Готово на %lld%%"
           }
         }
       }
@@ -365,6 +169,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 %@"
+          }
+        }
+      }
+    },
+    "12-mo total" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Итого за 12 мес."
           }
         }
       }
@@ -415,17 +230,6 @@
         }
       }
     },
-    "12-mo total" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Итого за 12 мес."
-          }
-        }
-      }
-    },
     "A client with this name already exists." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -433,6 +237,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Клиент с таким именем уже существует."
+          }
+        }
+      }
+    },
+    "A paired device must scan a new code before it can sync again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключенному устройству нужно отсканировать новый код, прежде чем оно снова сможет синхронизироваться."
           }
         }
       }
@@ -455,6 +269,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Цвет акцента"
+          }
+        }
+      }
+    },
+    "Account" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аккаунт"
+          }
+        }
+      }
+    },
+    "Account & devices" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аккаунт и устройства"
+          }
+        }
+      }
+    },
+    "Achievements" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Достижения"
+          }
+        }
+      }
+    },
+    "Active months" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активные месяцы"
           }
         }
       }
@@ -525,6 +379,16 @@
         }
       }
     },
+    "All Transactions" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Все операции"
+          }
+        }
+      }
+    },
     "All time" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -532,16 +396,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "За всё время"
-          }
-        }
-      }
-    },
-    "All Transactions" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Все операции"
           }
         }
       }
@@ -589,13 +443,12 @@
         }
       }
     },
-    "avg" : {
-      "extractionState" : "stale",
+    "Apple did not return a valid identity token. Please try again." : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "сред."
+            "value" : "Не удалось получить действительный токен от Apple. Попробуйте ещё раз."
           }
         }
       }
@@ -612,7 +465,14 @@
       }
     },
     "Awarded automatically from paid income lines for %@." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Начисляется автоматически по оплаченным строкам дохода клиента %@." } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Начисляется автоматически по оплаченным строкам дохода клиента %@."
+          }
+        }
+      }
     },
     "Best month" : {
       "extractionState" : "stale",
@@ -621,6 +481,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Лучший месяц"
+          }
+        }
+      }
+    },
+    "Business" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бизнес"
           }
         }
       }
@@ -647,6 +517,36 @@
         }
       }
     },
+    "Camera access was not granted. You can enter the code manually." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доступ к камере не предоставлен. Введите код вручную."
+          }
+        }
+      }
+    },
+    "Camera scanning is unavailable. Enter the code below." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сканирование камерой недоступно. Введите код ниже."
+          }
+        }
+      }
+    },
+    "Campaign" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кампания"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -669,8 +569,45 @@
         }
       }
     },
+    "Check again" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверить снова"
+          }
+        }
+      }
+    },
+    "Checking your workspace…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверяем рабочее пространство…"
+          }
+        }
+      }
+    },
     "Choose a familiar SF Symbol for every project already used in the ledger." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выберите понятный SF Symbol для каждого проекта, который уже есть в доходах." } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите понятный SF Symbol для каждого проекта, который уже есть в доходах."
+          }
+        }
+      }
+    },
+    "Choose the account that opens your workspace." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выберите аккаунт, который открывает ваше рабочее пространство."
+          }
+        }
+      }
     },
     "Clear" : {
       "extractionState" : "stale",
@@ -723,6 +660,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Профиль клиента"
+          }
+        }
+      }
+    },
+    "Client badges" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бейджи клиентов"
           }
         }
       }
@@ -780,6 +727,36 @@
         }
       }
     },
+    "Commerce" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Торговля"
+          }
+        }
+      }
+    },
+    "Complete five paid income lines together." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Завершите вместе пять оплаченных строк дохода."
+          }
+        }
+      }
+    },
+    "Complete paid work across three different projects." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выполните оплаченную работу в трёх разных проектах."
+          }
+        }
+      }
+    },
     "Confirm to change the app lock" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -791,6 +768,86 @@
         }
       }
     },
+    "Connect another device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить другое устройство"
+          }
+        }
+      }
+    },
+    "Connect this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить это устройство"
+          }
+        }
+      }
+    },
+    "Consecutive months" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Месяцы подряд"
+          }
+        }
+      }
+    },
+    "Continue with GitHub" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Продолжить с GitHub"
+          }
+        }
+      }
+    },
+    "Continue with Google" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Продолжить с Google"
+          }
+        }
+      }
+    },
+    "Continue without an account" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Продолжить без аккаунта"
+          }
+        }
+      }
+    },
+    "Core client" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключевой клиент"
+          }
+        }
+      }
+    },
+    "Could not complete account setup. Please try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось завершить настройку аккаунта. Попробуйте ещё раз."
+          }
+        }
+      }
+    },
     "Could not import lines" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -798,6 +855,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Не удалось импортировать строки"
+          }
+        }
+      }
+    },
+    "Could not load projects" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось загрузить проекты"
           }
         }
       }
@@ -835,6 +902,56 @@
         }
       }
     },
+    "Could not save project icon" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось сохранить иконку проекта"
+          }
+        }
+      }
+    },
+    "Couldn’t connect this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось подключить это устройство"
+          }
+        }
+      }
+    },
+    "Couldn’t create a code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось создать код"
+          }
+        }
+      }
+    },
+    "Creating a secure code…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Создаём защищённый код…"
+          }
+        }
+      }
+    },
+    "Creative" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Творчество"
+          }
+        }
+      }
+    },
     "Currency" : {
       "localizations" : {
         "ru" : {
@@ -862,6 +979,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Дата"
+          }
+        }
+      }
+    },
+    "Days together" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дней вместе"
           }
         }
       }
@@ -919,6 +1046,16 @@
         }
       }
     },
+    "Design" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дизайн"
+          }
+        }
+      }
+    },
     "Details" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -930,12 +1067,52 @@
         }
       }
     },
+    "Developer Mode" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Режим разработчика"
+          }
+        }
+      }
+    },
+    "Different projects" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разные проекты"
+          }
+        }
+      }
+    },
+    "Digital" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цифровой"
+          }
+        }
+      }
+    },
     "Display conversion rate" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Курс для отображения"
+          }
+        }
+      }
+    },
+    "Document" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Документ"
           }
         }
       }
@@ -951,8 +1128,25 @@
         }
       }
     },
+    "Drag to rotate" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проведите, чтобы повернуть"
+          }
+        }
+      }
+    },
     "Drag to rotate the 3D award" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проведите, чтобы повернуть 3D-награду" } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проведите, чтобы повернуть 3D-награду"
+          }
+        }
+      }
     },
     "Due %@" : {
       "extractionState" : "stale",
@@ -966,7 +1160,14 @@
       }
     },
     "Earned" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Получено" } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Получено"
+          }
+        }
+      }
     },
     "Earned in %@" : {
       "extractionState" : "stale",
@@ -975,16 +1176,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Заработано за %@"
-          }
-        }
-      }
-    },
-    "earnline is locked" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "earnline заблокирован"
           }
         }
       }
@@ -1033,6 +1224,16 @@
         }
       }
     },
+    "Enter a valid pairing code." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введите действительный код подключения."
+          }
+        }
+      }
+    },
     "Enter an amount" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1040,6 +1241,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Введите сумму"
+          }
+        }
+      }
+    },
+    "Every line has a status" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "У каждой строки есть статус"
+          }
+        }
+      }
+    },
+    "Everything you earn this month adds up here. Tap Stats for charts and insights." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Всё, что вы зарабатываете за месяц, складывается здесь. Нажмите «Статистика» — там графики и аналитика."
           }
         }
       }
@@ -1104,6 +1325,36 @@
         }
       }
     },
+    "Experimental" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Экспериментальные функции"
+          }
+        }
+      }
+    },
+    "Experimental features may change or be removed in a future version." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Экспериментальные функции могут измениться или исчезнуть в будущей версии."
+          }
+        }
+      }
+    },
+    "Expires %@ and can be used once." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Действует ещё %@ и используется только один раз."
+          }
+        }
+      }
+    },
     "Fetch current rate" : {
       "localizations" : {
         "ru" : {
@@ -1136,6 +1387,66 @@
         }
       }
     },
+    "Finish pairing this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Завершите подключение этого устройства"
+          }
+        }
+      }
+    },
+    "Finish setting up your workspace" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Завершите настройку рабочего пространства"
+          }
+        }
+      }
+    },
+    "First payment" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Первая оплата"
+          }
+        }
+      }
+    },
+    "Folder" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Папка"
+          }
+        }
+      }
+    },
+    "Generate a new code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Создать новый код"
+          }
+        }
+      }
+    },
+    "Growth" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Рост"
+          }
+        }
+      }
+    },
     "Heading" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1158,17 +1469,6 @@
         }
       }
     },
-    "hold date" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "дата холда"
-          }
-        }
-      }
-    },
     "Hold date" : {
       "localizations" : {
         "ru" : {
@@ -1185,16 +1485,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Удерживать до"
-          }
-        }
-      }
-    },
-    "hold until %@" : {
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "холд до %@"
           }
         }
       }
@@ -1295,6 +1585,36 @@
         }
       }
     },
+    "Keep Earnline open while we connect your account." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не закрывайте Earnline, пока мы подключаем ваш аккаунт."
+          }
+        }
+      }
+    },
+    "Keep working together for one full year between paid income lines." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Работайте вместе целый год между оплаченными строками дохода."
+          }
+        }
+      }
+    },
+    "Keeps your ledger only on this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Журнал останется только на этом устройстве"
+          }
+        }
+      }
+    },
     "Last 12 months" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1325,17 +1645,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Меньше"
-          }
-        }
-      }
-    },
-    "line" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "строка"
           }
         }
       }
@@ -1395,12 +1704,52 @@
         }
       }
     },
-    "Locks the ledger when the app goes to the background. Unlock with biometrics or your passcode." : {
+    "Loading projects…" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Блокирует журнал при переходе приложения в фон. Разблокировка — по биометрии или код-паролю."
+            "value" : "Загрузка проектов…"
+          }
+        }
+      }
+    },
+    "Local" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Локально"
+          }
+        }
+      }
+    },
+    "Local-only options" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Локальные варианты"
+          }
+        }
+      }
+    },
+    "Locked" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заблокировано"
+          }
+        }
+      }
+    },
+    "Locked, %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заблокировано, %@"
           }
         }
       }
@@ -1412,6 +1761,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Блокирует записи, когда приложение уходит в фон. Разблокировка — Face ID или код-пароль."
+          }
+        }
+      }
+    },
+    "Locks the ledger when the app goes to the background. Unlock with biometrics or your passcode." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Блокирует журнал при переходе приложения в фон. Разблокировка — по биометрии или код-паролю."
           }
         }
       }
@@ -1483,6 +1842,16 @@
         }
       }
     },
+    "Music" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Музыка"
+          }
+        }
+      }
+    },
     "Name" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1534,6 +1903,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Новая строка"
+          }
+        }
+      }
+    },
+    "Next" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Далее"
           }
         }
       }
@@ -1606,6 +1985,16 @@
         }
       }
     },
+    "No projects yet" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проектов пока нет"
+          }
+        }
+      }
+    },
     "No rate available for %@." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1650,17 +2039,6 @@
         }
       }
     },
-    "Offline" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Не в сети"
-          }
-        }
-      }
-    },
     "OK" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1668,6 +2046,27 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
+          }
+        }
+      }
+    },
+    "OR" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ИЛИ"
+          }
+        }
+      }
+    },
+    "Offline" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не в сети"
           }
         }
       }
@@ -1683,6 +2082,16 @@
         }
       }
     },
+    "On this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На этом устройстве"
+          }
+        }
+      }
+    },
     "One income line per row — e.g. “+$240 Project: task”. A heading like “— Income for April” dates the lines under it to that month. Rows without an amount are skipped." : {
       "localizations" : {
         "ru" : {
@@ -1693,8 +2102,85 @@
         }
       }
     },
+    "One workspace step remains. When it is ready, come back here and we’ll open your ledger." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остался один шаг. Когда пространство будет готово, вернитесь сюда — и мы откроем журнал."
+          }
+        }
+      }
+    },
+    "One year together" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Год вместе"
+          }
+        }
+      }
+    },
+    "One-time device pairing QR code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Одноразовый QR-код для подключения устройства"
+          }
+        }
+      }
+    },
+    "Only the workspace owner can pair a device." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Только владелец рабочего пространства может подключать устройства."
+          }
+        }
+      }
+    },
+    "Open 3D award" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть 3D-награду"
+          }
+        }
+      }
+    },
     "Open to inspect the 3D award" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Откройте, чтобы рассмотреть 3D-награду" } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Откройте, чтобы рассмотреть 3D-награду"
+          }
+        }
+      }
+    },
+    "Open your private ledger on this device." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Откройте личный журнал на этом устройстве."
+          }
+        }
+      }
+    },
+    "Opening your workspace…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открываем рабочее пространство…"
+          }
+        }
+      }
     },
     "Opens insights" : {
       "comment" : "A hint for a button that opens a new sheet.",
@@ -1704,6 +2190,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Открывает аналитику"
+          }
+        }
+      }
+    },
+    "Opens secure sign in" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открывает безопасный вход"
+          }
+        }
+      }
+    },
+    "Or enter a code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Или введите код"
           }
         }
       }
@@ -1719,6 +2225,16 @@
         }
       }
     },
+    "Owner" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Владелец"
+          }
+        }
+      }
+    },
     "Paid" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1726,6 +2242,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Оплачено"
+          }
+        }
+      }
+    },
+    "Paid income lines" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оплаченные строки дохода"
+          }
+        }
+      }
+    },
+    "Pair a device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить устройство"
+          }
+        }
+      }
+    },
+    "Pair another device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить другое устройство"
+          }
+        }
+      }
+    },
+    "Pair this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить это устройство"
+          }
+        }
+      }
+    },
+    "Paired" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключено"
+          }
+        }
+      }
+    },
+    "Paired device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключенное устройство"
+          }
+        }
+      }
+    },
+    "Pairing code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код подключения"
+          }
+        }
+      }
+    },
+    "Pairing code camera scanner" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Камера для сканирования кода подключения"
           }
         }
       }
@@ -1774,6 +2370,16 @@
         }
       }
     },
+    "Photo" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фото"
+          }
+        }
+      }
+    },
     "Preparing insights" : {
       "localizations" : {
         "ru" : {
@@ -1816,8 +2422,25 @@
         }
       }
     },
+    "Product" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Продукт"
+          }
+        }
+      }
+    },
     "Progress" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Прогресс" } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прогресс"
+          }
+        }
+      }
     },
     "Project" : {
       "extractionState" : "stale",
@@ -1841,11 +2464,45 @@
         }
       }
     },
+    "Project explorer" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Исследователь проектов"
+          }
+        }
+      }
+    },
+    "Project icons" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Иконки проектов"
+          }
+        }
+      }
+    },
     "Projects" : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проекты" } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проекты"
+          }
+        }
+      }
     },
     "Projects appear here after you add them to an income line." : {
-      "localizations" : { "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проекты появятся здесь после добавления в строку дохода." } } }
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проекты появятся здесь после добавления в строку дохода."
+          }
+        }
+      }
     },
     "Publishable key" : {
       "extractionState" : "stale",
@@ -1880,6 +2537,16 @@
         }
       }
     },
+    "Reach 25 paid income lines across at least six active months." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Достигните 25 оплаченных строк дохода минимум за шесть активных месяцев."
+          }
+        }
+      }
+    },
     "Ready" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1887,6 +2554,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Готово"
+          }
+        }
+      }
+    },
+    "Receive paid income in three consecutive calendar months." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Получайте оплаченный доход три календарных месяца подряд."
+          }
+        }
+      }
+    },
+    "Receive the first paid income line from this client." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Получите первую оплаченную строку дохода от этого клиента."
+          }
+        }
+      }
+    },
+    "Regular partner" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Постоянный партнёр"
           }
         }
       }
@@ -1913,12 +2610,62 @@
         }
       }
     },
+    "Returns to the sign-in screen" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Возвращает к экрану входа"
+          }
+        }
+      }
+    },
     "Save" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сохранить"
+          }
+        }
+      }
+    },
+    "Scan a one-time code from your owner device. The code connects this device only." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отсканируйте одноразовый код на устройстве владельца. Он подключает только это устройство."
+          }
+        }
+      }
+    },
+    "Scan code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сканировать код"
+          }
+        }
+      }
+    },
+    "Scan the one-time QR code shown on your owner device. It expires in 10 minutes and can only be used once." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отсканируйте одноразовый QR-код с устройства владельца. Он действует 10 минут и используется только один раз."
+          }
+        }
+      }
+    },
+    "Scan this code on the device you want to pair." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отсканируйте этот код на устройстве, которое хотите подключить."
           }
         }
       }
@@ -1988,6 +2735,86 @@
         }
       }
     },
+    "Shows a one-time QR code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показывает одноразовый QR-код"
+          }
+        }
+      }
+    },
+    "Sign in was cancelled. Choose a provider when you’re ready." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход отменён. Выберите провайдера, когда будете готовы."
+          }
+        }
+      }
+    },
+    "Sign in…" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Войти…"
+          }
+        }
+      }
+    },
+    "Sign out" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выйти"
+          }
+        }
+      }
+    },
+    "Sign out of this device?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выйти на этом устройстве?"
+          }
+        }
+      }
+    },
+    "Sign-in issue" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проблема со входом"
+          }
+        }
+      }
+    },
+    "Signed-in account" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аккаунт с выполненным входом"
+          }
+        }
+      }
+    },
+    "Skip" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пропустить"
+          }
+        }
+      }
+    },
     "Slice of %@ · held until %@" : {
       "comment" : "A footnote that shows the amount of the held slice and the date it will be released.",
       "isCommentAutoGenerated" : true,
@@ -2002,6 +2829,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Часть %1$@ · удержание до %2$@"
+          }
+        }
+      }
+    },
+    "Start here — add who pays you, then write your first income line." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Начните здесь — добавьте, кто вам платит, и запишите первую строку дохода."
           }
         }
       }
@@ -2123,6 +2960,26 @@
         }
       }
     },
+    "The dot on the right marks a line paid, in progress, or canceled — or holds it until a date." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Точка справа отмечает строку: оплачено, в работе, отменено — или удерживает её до даты."
+          }
+        }
+      }
+    },
+    "The pairing service returned an invalid response." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис подключения вернул недействительный ответ."
+          }
+        }
+      }
+    },
     "The rate service sent an unexpected response." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2153,6 +3010,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Будет удалено строк дохода: %lld — на всех синхронизированных устройствах."
+          }
+        }
+      }
+    },
+    "This device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это устройство"
           }
         }
       }
@@ -2190,6 +3057,16 @@
         }
       }
     },
+    "Three-month run" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Три месяца подряд"
+          }
+        }
+      }
+    },
     "Title" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2197,6 +3074,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Название"
+          }
+        }
+      }
+    },
+    "Tools" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Инструменты"
           }
         }
       }
@@ -2232,6 +3119,16 @@
         }
       }
     },
+    "Try again" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попробовать снова"
+          }
+        }
+      }
+    },
     "Try again." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2239,6 +3136,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Попробуйте ещё раз."
+          }
+        }
+      }
+    },
+    "Type the amount, then the project and task — and submit it." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введите сумму, затем проект и задачу — и отправьте."
           }
         }
       }
@@ -2296,6 +3203,26 @@
         }
       }
     },
+    "Use a code from another device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Используйте код с другого устройства"
+          }
+        }
+      }
+    },
+    "Use a one-time QR code to connect this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Используйте одноразовый QR-код, чтобы подключить это устройство"
+          }
+        }
+      }
+    },
     "Version" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2303,6 +3230,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Версия"
+          }
+        }
+      }
+    },
+    "Video" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Видео"
           }
         }
       }
@@ -2329,13 +3266,12 @@
         }
       }
     },
-    "vs previous month" : {
-      "extractionState" : "stale",
+    "Web" : {
       "localizations" : {
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "к предыдущему месяцу"
+            "value" : "Веб"
           }
         }
       }
@@ -2349,6 +3285,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Неделя"
+          }
+        }
+      }
+    },
+    "Work" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Работа"
           }
         }
       }
@@ -2405,6 +3351,169 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Год"
+          }
+        }
+      }
+    },
+    "Your month at a glance" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Месяц как на ладони"
+          }
+        }
+      }
+    },
+    "Your private workspace is being checked before anything syncs." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мы проверяем личное рабочее пространство до начала синхронизации."
+          }
+        }
+      }
+    },
+    "Your work, in one place" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вся работа — в одном месте"
+          }
+        }
+      }
+    },
+    "^[%@ result](inflect: true)" : {
+      "comment" : "A label that shows the number of search results and the total amount earned from them.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найдено: %@"
+          }
+        }
+      }
+    },
+    "avg" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "сред."
+          }
+        }
+      }
+    },
+    "earnline is locked" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "earnline заблокирован"
+          }
+        }
+      }
+    },
+    "hold date" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "дата холда"
+          }
+        }
+      }
+    },
+    "hold until %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "холд до %@"
+          }
+        }
+      }
+    },
+    "line" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "строка"
+          }
+        }
+      }
+    },
+    "vs previous month" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "к предыдущему месяцу"
+          }
+        }
+      }
+    },
+    "·" : {
+      "comment" : "A period.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "·"
+          }
+        }
+      }
+    },
+    "· hold until %@" : {
+      "comment" : "A label that appears in the bottom-right corner of the entry context preview, indicating that the entry is on hold.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· удержание до %@"
+          }
+        }
+      }
+    },
+    "·?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "·?"
+          }
+        }
+      }
+    },
+    "—" : {
+      "comment" : "A placeholder value for a missing value.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "—"
+          }
+        }
+      }
+    },
+    "≈ %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≈ %@"
           }
         }
       }

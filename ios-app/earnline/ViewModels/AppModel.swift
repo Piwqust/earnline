@@ -18,8 +18,10 @@ final class AppModel {
     nonisolated static let defaultBaseCurrencyCode = "USD"
     nonisolated static let defaultSecondaryCurrencyCode = "RUB"
     nonisolated static let defaultExchangeRate = 83.0
-    nonisolated static let productionWorkspaceID = "earnline-personal"
-    nonisolated static let testWorkspaceID = "earnline-dev"
+    /// Local sentinels only. A real production workspace is resolved from the
+    /// authenticated membership RPC and is never committed to source.
+    nonisolated static let productionWorkspaceID = "legacy-production-cache"
+    nonisolated static let testWorkspaceID = "local-test-cache"
     nonisolated static let workspaceCurrencyProfileStorageVersion = 1
     nonisolated static let uiAutomationDefaultsSuite = "com.earnline.app.ui-tests"
 
@@ -53,6 +55,15 @@ final class AppModel {
         }
 
         var storeName: String { "earnline-\(rawValue)" }
+    }
+
+    enum AccountStoreMode: String, Hashable {
+        /// The old, unscoped SwiftData container. It is preserved through the
+        /// first authenticated push and is never deleted by this migration.
+        case legacy
+        /// A workspace-specific container populated from the first successful
+        /// authenticated pull.
+        case account
     }
 
     var baseCurrencyCode: String {
@@ -112,8 +123,11 @@ final class AppModel {
         didSet {
             guard workspaceEnvironment != oldValue else { return }
             defaults.set(workspaceEnvironment.rawValue, forKey: "workspaceEnvironment")
-            workspaceID = workspaceEnvironment.workspaceID
+            workspaceID = defaults.string(forKey: "workspaceID.\(workspaceEnvironment.rawValue)")
+                ?? workspaceEnvironment.workspaceID
             defaults.set(workspaceID, forKey: "workspaceID")
+            accountStoreMode = defaults.bool(forKey: "accountStoreMigrated.\(workspaceID)") ? .account : .legacy
+            workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):\(workspaceID):\(accountStoreMode.rawValue)"
             // Each environment points at its own Supabase project — swap the
             // URL/key over to the new one before rebuilding the client.
             loadWorkspaceSupabaseConfig()
@@ -124,7 +138,12 @@ final class AppModel {
             resetSupabaseClient()
         }
     }
-    private(set) var workspaceID: String
+    var workspaceID: String
+    /// Changes whenever a resolved account must use a different local SwiftData
+    /// container. The host observes this instead of letting a newly-signed-in
+    /// account render a previous account's cache.
+    var workspaceStoreIdentity: String
+    var accountStoreMode: AccountStoreMode
 
     /// System / Light / Dark — the standard three-way appearance choice Apple
     /// apps offer. `system` follows the device scheme (`.unspecified`).
@@ -177,10 +196,30 @@ final class AppModel {
     var requireAppLock: Bool {
         didSet { defaults.set(requireAppLock, forKey: "requireAppLock") }
     }
+    /// The guided first-entry tour runs once per install — for guests and
+    /// signed-in accounts alike — then never again. Skipping counts as
+    /// completing.
+    var hasCompletedFirstRunTour: Bool {
+        didSet { defaults.set(hasCompletedFirstRunTour, forKey: "hasCompletedFirstRunTour") }
+    }
+    /// Debug-menu escape hatch: lets the tour replay on a ledger that already
+    /// has rows. Transient — never persisted.
+    var debugForceFirstRunTour = false
+    /// UI automation launches with an empty store, which would otherwise start
+    /// the tour under every ledger test — so under automation the tour is
+    /// opt-in via the `-firstRunTour` launch argument.
+    var shouldOfferFirstRunTour: Bool {
+        guard !hasCompletedFirstRunTour else { return false }
+        if Self.isRunningUIAutomation {
+            return ProcessInfo.processInfo.arguments.contains("-firstRunTour")
+        }
+        return true
+    }
     private(set) var isLocked = false
     var isSyncing = false
     var syncMessage = String(localized: "Offline")
     var syncError: String?
+    var accountState: AccountState = .checking
     /// Number of remote edits/deletes that changed after this device's last
     /// observed server version. These require an explicit user choice rather
     /// than a silent last-device-wins overwrite. Written by the sync pass in
@@ -270,12 +309,27 @@ final class AppModel {
         // per-workspace value, falling back to the project preloaded for that
         // environment so the app syncs out of the box with nothing to paste.
         let config = resolvedEnvironment.defaultSupabaseConfig
-        supabaseURLString = defaults.string(forKey: "supabaseURLString.\(resolvedEnvironment.rawValue)") ?? config.url
-        supabaseKey = defaults.string(forKey: "supabaseKey.\(resolvedEnvironment.rawValue)") ?? config.publishableKey
+        supabaseURLString = Self.configuredSupabaseValue(
+            defaults.string(forKey: "supabaseURLString.\(resolvedEnvironment.rawValue)"),
+            fallback: config.url
+        )
+        supabaseKey = Self.configuredSupabaseValue(
+            defaults.string(forKey: "supabaseKey.\(resolvedEnvironment.rawValue)"),
+            fallback: config.publishableKey
+        )
+        let resolvedWorkspaceID = defaults.string(forKey: "workspaceID.\(resolvedEnvironment.rawValue)")
+            ?? defaults.string(forKey: "workspaceID")
+            ?? resolvedEnvironment.workspaceID
+        let resolvedStoreMode: AccountStoreMode = defaults.bool(forKey: "accountStoreMigrated.\(resolvedWorkspaceID)")
+            ? .account
+            : .legacy
         workspaceEnvironment = resolvedEnvironment
-        workspaceID = resolvedEnvironment.workspaceID
+        workspaceID = resolvedWorkspaceID
+        accountStoreMode = resolvedStoreMode
+        workspaceStoreIdentity = "\(resolvedEnvironment.rawValue):\(resolvedWorkspaceID):\(resolvedStoreMode.rawValue)"
         defaults.set(resolvedEnvironment.rawValue, forKey: "workspaceEnvironment")
-        defaults.set(resolvedEnvironment.workspaceID, forKey: "workspaceID")
+        defaults.set(resolvedWorkspaceID, forKey: "workspaceID")
+        defaults.set(resolvedWorkspaceID, forKey: "workspaceID.\(resolvedEnvironment.rawValue)")
         profileNeedsSync = defaults.bool(forKey: "profileNeedsSync.\(resolvedEnvironment.rawValue)")
         let workspaceKeySuffix = resolvedEnvironment.rawValue
         let savedLastSyncAt = defaults.object(forKey: "lastSyncAt.\(workspaceKeySuffix)") as? Date
@@ -311,7 +365,14 @@ final class AppModel {
             defaults.set(false, forKey: "clientBadgesEnabled")
         }
         clientBadgesEnabled = defaults.bool(forKey: "clientBadgesEnabled")
+        if Self.isRunningUIAutomation && launchArguments.contains("-demoClientProfile") {
+            clientBadgesEnabled = true
+        }
         requireAppLock = defaults.bool(forKey: "requireAppLock")
+        if launchArguments.contains("-resetFirstRunTour") {
+            defaults.set(false, forKey: "hasCompletedFirstRunTour")
+        }
+        hasCompletedFirstRunTour = defaults.bool(forKey: "hasCompletedFirstRunTour")
         syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
     }
 

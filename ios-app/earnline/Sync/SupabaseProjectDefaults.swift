@@ -1,14 +1,8 @@
 import Foundation
 
-/// Preloaded Supabase connection details shipped with the app, one project per
-/// environment. Production and Test each have their own Supabase database so a
-/// test write can never land in the production project. These seed the editable
-/// fields in Settings on first launch (per environment); whatever the user
-/// types afterwards wins and is stored per environment in `UserDefaults`.
-///
-/// Publishable keys are safe to embed in the client — they only grant the
-/// row-level access the workspace RLS policies allow. Never ship a service_role
-/// key here.
+/// Connection values are injected by the signed build's Info.plist settings,
+/// not committed as source. The client only ever needs a publishable key; a
+/// service-role key must never appear in an app target.
 enum SupabaseProjectDefaults {
     struct ProjectConfig {
         let url: String
@@ -16,12 +10,21 @@ enum SupabaseProjectDefaults {
     }
 
     static let production = ProjectConfig(
-        url: "https://qpjfaapipwjultzvuxrm.supabase.co",
-        publishableKey: "sb_publishable_c7mz4q_q12pX2RksZqd2zg_Bh7soeV0"
+        url: value(for: "EarnlineSupabaseProductionURL"),
+        publishableKey: value(for: "EarnlineSupabaseProductionPublishableKey")
     )
 
+    /// Test stays local-only; these keys are optional and are never used for
+    /// sync. Keeping the slots supports local development without shipping a
+    /// project identifier.
     static let test = ProjectConfig(
-        url: "https://djbddfxdmorslzsnkpxd.supabase.co",
-        publishableKey: "sb_publishable_oMUEtoV8lkomkOHwGn33WA_Upo3YTFX"
+        url: value(for: "EarnlineSupabaseTestURL"),
+        publishableKey: value(for: "EarnlineSupabaseTestPublishableKey")
     )
+
+    private static func value(for key: String) -> String {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              !raw.hasPrefix("$(") else { return "" }
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

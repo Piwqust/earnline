@@ -34,11 +34,19 @@ struct SettingsView: View {
     @State private var pendingSyncRecoveryAction: SyncRecoveryAction?
     @State private var isResettingLocalData = false
     @State private var stressSeedNote: String?
+    @State private var showingPairingCode = false
+    #if DEBUGMENU
+    @State private var showingDebugMenu = false
+    #endif
     private let currencies = AppModel.supportedCurrencyCodes
 
     var body: some View {
         @Bindable var app = appModel
         Form {
+            if app.workspaceEnvironment == .production, app.isAccountReady {
+                AccountDevicesSection(showingPairingCode: $showingPairingCode)
+            }
+
             Section("Appearance") {
                 Picker(selection: $app.appearanceMode) {
                     ForEach(AppModel.AppearanceMode.allCases) { mode in
@@ -143,6 +151,19 @@ struct SettingsView: View {
                 }
             }
 
+            #if DEBUGMENU
+            Section {
+                Button {
+                    showingDebugMenu = true
+                } label: {
+                    SettingsRowLabel("Debug menu", glyph: "ladybug")
+                }
+                .accessibilityIdentifier("settings.debugMenu")
+            } footer: {
+                Text(verbatim: "Dev build only — this section does not exist in the App Store version.")
+            }
+            #endif
+
             Section {
                 Toggle(isOn: $app.developerModeEnabled) {
                     SettingsRowLabel("Developer Mode", glyph: "wrench.and.screwdriver")
@@ -202,6 +223,16 @@ struct SettingsView: View {
         .sheetHeader("Settings", onClose: { dismiss() })
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.background)
+        .sheet(isPresented: $showingPairingCode) {
+            PairingCodeDisplaySheet()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        #if DEBUGMENU
+        .sheet(isPresented: $showingDebugMenu) {
+            DebugMenuView()
+        }
+        #endif
         .task { refreshCounts() }
         // The sheet outlives a workspace switch (it's presented by the host),
         // so re-read the counts from whatever store is now underneath.

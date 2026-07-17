@@ -27,22 +27,57 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "26.0"
+    configFiles:
+      Debug: Config/Local.xcconfig
     sources:
       - path: earnline
+    entitlements:
+      path: earnline/Resources/earnline.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
     dependencies:
       - package: Supabase
         product: Supabase
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app
-        GENERATE_INFOPLIST_FILE: "YES"
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: earnline/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_ASSET_PATHS: ""
+  # A separate, side-by-side installable build for testing: same sources, its
+  # own bundle ID and home-screen name, and the full in-app debug menu
+  # compiled in via the DEBUGMENU condition. The App Store target never
+  # contains any DEBUGMENU code.
+  earnline-dev:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    configFiles:
+      Debug: Config/Local.xcconfig
+    sources:
+      - path: earnline
+    entitlements:
+      path: earnline/Resources/earnline.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+    dependencies:
+      - package: Supabase
+        product: Supabase
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app.dev
+        PRODUCT_NAME: earnline-dev
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: earnline/Resources/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: earnline Dev
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_ASSET_PATHS: ""
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUGMENU"
   earnlineTests:
     type: bundle.unit-test
     platform: iOS
@@ -80,3 +115,9 @@ schemes:
       targets:
         - earnlineTests
         - earnlineUITests
+  earnline-dev:
+    build:
+      targets:
+        earnline-dev: all
+    run:
+      config: Debug
