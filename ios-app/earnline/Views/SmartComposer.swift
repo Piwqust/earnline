@@ -14,6 +14,9 @@ struct SmartComposer: View {
     /// section the user tapped "+ Line" in — not in today's month.
     var month: Date = .now
     var initialText: String = ""
+    /// Decorative previews reuse the real composer but must never summon the
+    /// keyboard or move VoiceOver focus away from the actual account screen.
+    var automaticallyFocus = true
 
     @Query(sort: \Entry.createdAt, order: .reverse) private var allEntries: [Entry]
 
@@ -320,7 +323,7 @@ struct SmartComposer: View {
             status = parsed.status ?? .paid
             currencyCode = parsed.currencyCode
         }
-        focus = .amount
+        if automaticallyFocus { focus = .amount }
     }
 
     private func commit() {

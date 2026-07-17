@@ -21,7 +21,7 @@ struct AuthGateView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            AuthBackdropPreview()
+            AuthBackdropPreview(isActive: previewIsActive)
 
             AuthGatePanel(
                 state: app.accountState,
@@ -69,6 +69,11 @@ struct AuthGateView: View {
             }
         }
     }
+
+    private var previewIsActive: Bool {
+        if case .signedOut = app.accountState { return true }
+        return false
+    }
 }
 
 // MARK: - Bottom panel
@@ -91,10 +96,10 @@ private struct AuthGatePanel: View {
             .frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
-            .padding(.top, 30)
-            .padding(.bottom, 16)
+            .padding(.top, 22)
+            .padding(.bottom, 12)
             .background {
-                UnevenRoundedRectangle(topLeadingRadius: 50, topTrailingRadius: 50, style: .continuous)
+                UnevenRoundedRectangle(topLeadingRadius: 32, topTrailingRadius: 32, style: .continuous)
                     .fill(Color(hex: "#000003"))
                     .shadow(color: .black.opacity(0.25), radius: 44, y: -24)
                     .ignoresSafeArea(edges: .bottom)
@@ -161,13 +166,13 @@ private struct AuthGatePanel: View {
     private var entryContent: some View {
         VStack(spacing: 0) {
             Text(verbatim: "TRACK КАЖДЫЙ INCOME")
-                .appFont(24, .semibold)
+                .appFont(22, .semibold)
                 .tracking(-0.24)
                 .foregroundStyle(.white.opacity(0.96))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 if let errorMessage {
                     AuthInlineNotice(label: "Sign-in issue", message: errorMessage)
                         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
@@ -181,14 +186,14 @@ private struct AuthGatePanel: View {
                         .transition(.opacity)
                 }
 
-                GlassEffectContainer(spacing: 14) {
-                    VStack(spacing: 16) {
+                GlassEffectContainer(spacing: 10) {
+                    VStack(spacing: 10) {
                         AuthAppleButton(
                             isDisabled: authenticatingProvider != nil,
                             onComplete: signInApple
                         )
 
-                        HStack(spacing: 16) {
+                        HStack(spacing: 10) {
                             AuthIconProviderButton(
                                 title: "Continue with Google",
                                 assetName: "GoogleG",
@@ -210,13 +215,13 @@ private struct AuthGatePanel: View {
                     }
                 }
             }
-            .padding(.top, 30)
+            .padding(.top, 20)
 
             localOnlyDivider
-                .padding(.top, 30)
+                .padding(.top, 20)
 
-            GlassEffectContainer(spacing: 14) {
-                VStack(spacing: 16) {
+            GlassEffectContainer(spacing: 10) {
+                VStack(spacing: 10) {
                     AuthTertiaryButton(
                         title: "Continue without an account",
                         hint: "Keeps your ledger only on this device",
@@ -232,7 +237,7 @@ private struct AuthGatePanel: View {
                     )
                 }
             }
-            .padding(.top, 20)
+            .padding(.top, 12)
         }
         .padding(.bottom, 14)
         .accessibilityElement(children: .contain)
@@ -259,7 +264,7 @@ private struct AuthGatePanel: View {
     // MARK: Awaiting workspace
 
     private func workspacePendingContent(isPairedDevice: Bool) -> some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 18) {
             VStack(spacing: 9) {
                 Text(isPairedDevice ? "Finish pairing this device" : "Finish setting up your workspace")
                     .appFont(22, .bold)
@@ -274,17 +279,20 @@ private struct AuthGatePanel: View {
             }
             .multilineTextAlignment(.center)
 
-            GlassEffectContainer(spacing: 14) {
-                VStack(spacing: 16) {
+            GlassEffectContainer(spacing: 10) {
+                VStack(spacing: 10) {
                     Button(action: retry) {
                         Text("Check again")
                             .appFont(17, .semibold)
                             .foregroundStyle(Color(hex: "#1A1A1A"))
-                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
                     }
-                    .buttonStyle(.glassProminent)
-                    .buttonBorderShape(.capsule)
-                    .tint(.white)
+                    .buttonStyle(.plain)
+                    .glassEffect(
+                        .regular.tint(.white).interactive(),
+                        in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+                    )
+                    .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
 
                     if isPairedDevice {
                         AuthTertiaryButton(
@@ -301,12 +309,17 @@ private struct AuthGatePanel: View {
                 Text("Sign out")
                     .appFont(15, .medium)
                     .foregroundStyle(.white.opacity(0.6))
-                    .frame(minHeight: 44)
+                    .frame(minHeight: AuthControlMetrics.height)
             }
         }
         .padding(.bottom, 14)
         .accessibilityElement(children: .contain)
     }
+}
+
+private enum AuthControlMetrics {
+    static let height: CGFloat = 44
+    static let cornerRadius: CGFloat = 12
 }
 
 // MARK: - Buttons
@@ -338,10 +351,14 @@ private struct AuthIconProviderButton: View {
                 }
             }
             .accessibilityHidden(true)
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.capsule)
+        .buttonStyle(.plain)
+        .glassEffect(
+            .regular.interactive(),
+            in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+        )
+        .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
         // The in-flight provider keeps its look (only hit-testing is
         // dropped); the other options get the real disabled wash.
         .disabled(isDisabled && !isAuthenticating)
@@ -363,10 +380,17 @@ private struct AuthTertiaryButton: View {
             Text(title)
                 .appFont(17, .medium)
                 .foregroundStyle(.white.opacity(0.92))
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.capsule)
+        .buttonStyle(.plain)
+        .glassEffect(
+            .regular.interactive(),
+            in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+        )
+        .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
         .disabled(isDisabled)
         .accessibilityHint(hint)
     }
@@ -393,8 +417,8 @@ private struct AuthAppleButton: View {
         }
         .signInWithAppleButtonStyle(.white)
         .frame(maxWidth: .infinity)
-        .frame(height: 52)
-        .clipShape(Capsule())
+        .frame(height: AuthControlMetrics.height)
+        .clipShape(RoundedRectangle(cornerRadius: AuthControlMetrics.cornerRadius, style: .continuous))
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.55 : 1)
         .accessibilityIdentifier("auth.apple")

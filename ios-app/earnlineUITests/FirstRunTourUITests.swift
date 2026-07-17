@@ -17,14 +17,14 @@ final class FirstRunTourUITests: XCTestCase {
         return app
     }
 
-    func testTourGuidesThroughTheFirstEntry() {
+    func testTourCompletesAfterTheFirstEntry() {
         let app = launchWithTour()
 
         let overlay = app.otherElements["tour.overlay"]
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
-        // Step 1: the spotlighted empty-state CTA opens the client sheet;
-        // the overlay hides beneath the sheet while it's up.
+        // The spotlighted empty-state CTA opens the client sheet; the overlay
+        // stays out of the way while the sheet is up.
         app.buttons["New line"].tap()
         let nameField = app.textFields["Client name"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 3))
@@ -32,8 +32,8 @@ final class FirstRunTourUITests: XCTestCase {
         nameField.typeText("Acme")
         app.buttons["Add client"].tap()
 
-        // The composer opens through the spotlight's hole; writing the first
-        // real line advances the tour by itself.
+        // The composer opens through the spotlight's hole; saving the first
+        // real line completes onboarding immediately.
         let amount = app.textFields["Amount"]
         XCTAssertTrue(amount.waitForExistence(timeout: 3))
         amount.tap()
@@ -43,15 +43,6 @@ final class FirstRunTourUITests: XCTestCase {
         task.typeText("2 screens")
         app.buttons["composer.submit"].tap()
 
-        // Step 2: the new row's status control is spotlighted.
-        XCTAssertTrue(app.buttons["tour.next"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["entry.status"].firstMatch.exists)
-        app.buttons["tour.next"].tap()
-
-        // Step 3: summary cards, then done — permanently.
-        let done = app.buttons["tour.done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 3))
-        done.tap()
         XCTAssertFalse(overlay.waitForExistence(timeout: 2))
 
         // The tour never returns within the session either.

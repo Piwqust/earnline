@@ -295,15 +295,14 @@ struct LedgerView: View {
             scrollContent
         }
         .undoToastHost()
-        // The spotlight tour rides above the whole ledger surface (list +
-        // safe-area bars). Sheets present above it, which also serves as the
-        // "pause while NewClientSheet is up" behavior for the compose step.
+        // The single first-action spotlight rides above the whole ledger
+        // surface. Sheets naturally cover it while a person adds a client.
         .overlayPreferenceValue(TourAnchorKey.self) { anchors in
-            if tour.step != nil, sheetRoute == nil, !isSearching {
+            if tour.isPresented, sheetRoute == nil, !isSearching {
                 FirstRunTourOverlay(tour: tour, anchors: anchors)
             }
         }
-        .animation(.smooth(duration: 0.3), value: tour.step)
+        .animation(.smooth(duration: 0.3), value: tour.isPresented)
     }
 
     // MARK: Header
@@ -381,7 +380,6 @@ struct LedgerView: View {
         .safeAreaBar(edge: .top) {
             if let snapshot = ledgerSnapshot {
                 header(monthlyTotals: snapshot.earnedTotalByMonth)
-                    .tourAnchor(.summaryCards)
             }
         }
         // Minimal filter chips ride directly above the search field for the
@@ -412,7 +410,7 @@ struct LedgerView: View {
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
             refreshLedgerSnapshot()
             if let snapshot = ledgerSnapshot {
-                tour.entrySaved(hasAnyEntries: snapshot.hasEntries)
+                tour.entrySaved(app: app, hasAnyEntries: snapshot.hasEntries)
             }
         }
     }
@@ -472,7 +470,6 @@ struct LedgerView: View {
             isSearching: isSearching,
             activeComposerClientID: activeComposerClient?.id,
             composerMonth: composerRoute?.month,
-            tourSpotlightEntryID: tour.step == .status ? firstEntryID(in: rows) : nil,
             onOpenClient: { navigationPath.append(.client($0)) },
             onToggleComposer: { toggleComposer($0, month: $1) },
             onSetStatus: setStatus,
@@ -538,15 +535,6 @@ struct LedgerView: View {
 
     private func client(withID id: UUID) -> Client? {
         clients.first { !$0.isInvalidated && $0.id == id }
-    }
-
-    /// After the tour's compose step there is exactly one entry, so the first
-    /// entry row IS the just-created line the status step spotlights.
-    private func firstEntryID(in rows: [LedgerRow]) -> UUID? {
-        for row in rows {
-            if case .entry(let entry) = row, !entry.isInvalidated { return entry.id }
-        }
-        return nil
     }
 
     private func entry(withID id: UUID) -> Entry? {

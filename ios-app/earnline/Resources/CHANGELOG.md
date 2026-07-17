@@ -8,6 +8,11 @@
 - Workspace owners can now review paired devices in Settings and remove a lost or retired device; removal invalidates that device’s cloud access.
 - Web sync batches concurrent reads and checks for remote updates less aggressively while still syncing local edits immediately, reducing free-plan function usage.
 
+### Onboarding
+- The account screen now keeps every sign-in, pairing, and recovery action at the same compact, accessible height, so more of the actual ledger remains visible from the start.
+- A brief live preview now shows an income line being added and paid, the Insights chart, and a client profile using the same native surfaces as the ledger itself.
+- After you enter an empty ledger, one optional spotlight points to the first income action and disappears automatically after you save it.
+
 ## July 15, 2026
 
 ### Onboarding

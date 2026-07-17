@@ -6,12 +6,27 @@ import SwiftData
 /// it, a segmented status control, then icon-led grouped cards for the
 /// project, task, client, and schedule.
 struct EditEntrySheet: View {
+    /// Fixed values for the noninteractive, in-memory account-preview story.
+    /// Production call sites leave this as `nil`, so the editor continues to
+    /// load and save the live SwiftData model exactly as before.
+    struct PreviewValues {
+        let amount: Decimal
+        let currencyCode: String
+        let project: String
+        let task: String
+        let status: EntryStatus
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
     @Bindable var entry: Entry
     let clients: [Client]
+    /// The decorative account-preview story can animate this picker while the
+    /// production editor keeps its existing data and interaction behavior.
+    var previewStatus: EntryStatus? = nil
+    var previewValues: PreviewValues? = nil
 
     @State private var amountText: String = ""
     @State private var project: String = ""
@@ -67,6 +82,9 @@ struct EditEntrySheet: View {
                            onCancel: { dismiss() },
                            onSave: save)
         .onAppear(perform: load)
+        .onChange(of: previewStatus) { _, newStatus in
+            if let newStatus { status = newStatus }
+        }
         .onChange(of: date) { _, newValue in
             if holdDate < newValue { holdDate = newValue }
         }
@@ -244,6 +262,15 @@ struct EditEntrySheet: View {
     // MARK: Data
 
     private func load() {
+        if let previewValues {
+            amountText = NSDecimalNumber(decimal: previewValues.amount).stringValue
+            currencyCode = previewValues.currencyCode
+            project = previewValues.project
+            task = previewValues.task
+            status = previewStatus ?? previewValues.status
+            selectedClient = clients.first
+            return
+        }
         guard !entry.isInvalidated else { return }
         amountText = NSDecimalNumber(decimal: entry.amount).stringValue
         currencyCode = entry.currencyCode

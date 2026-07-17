@@ -1,61 +1,36 @@
 import SwiftUI
 
-/// The guided first-entry tour: after the auth gate hands off to an empty
-/// ledger, three spotlight steps walk the user through actually writing
-/// their first line — compose it, set its status, read the summary cards.
-/// Runs once per install (guests and accounts alike), skippable at every
-/// step, and never shows again after completion or skip.
-///
-/// Anatomy: targets in the ledger publish their bounds through
-/// `tourAnchor(_:)`; `FirstRunTourOverlay` dims everything around the active
-/// target with four opaque strips — a real hole, so the spotlighted control
-/// stays fully interactive — and floats a callout card with the step copy.
-
-// MARK: - State machine
-
+/// One just-in-time nudge after a person reaches their empty ledger. The
+/// account screen has already shown the wider product tour, so the ledger only
+/// needs to help with the first real action and then disappear for good.
 @Observable @MainActor
 final class FirstRunTourState {
-    enum Step: Int, Equatable {
-        case compose, status, summary
-    }
-
-    private(set) var step: Step?
+    private(set) var isPresented = false
     private var evaluated = false
 
-    /// Called once the first ledger snapshot lands. Starts the tour only on
-    /// a genuinely empty ledger; an already-populated ledger (an existing
-    /// user updating the app) completes the tour silently so it never fires
-    /// on a later empty month.
+    /// Called once the first ledger snapshot lands. Existing people never see
+    /// the nudge after an update, even if they later visit an empty month.
     func evaluateStart(app: AppModel, hasAnyEntries: Bool) {
         if app.debugForceFirstRunTour {
             app.debugForceFirstRunTour = false
             evaluated = true
-            step = .compose
+            isPresented = true
             return
         }
-        guard !evaluated, step == nil, app.shouldOfferFirstRunTour else { return }
+        guard !evaluated, !isPresented, app.shouldOfferFirstRunTour else { return }
         evaluated = true
         if hasAnyEntries {
             app.hasCompletedFirstRunTour = true
         } else {
-            step = .compose
+            isPresented = true
         }
     }
 
-    /// The compose step completes itself when the first entry actually lands
-    /// in the store — robust against every insertion path (composer, paste).
-    func entrySaved(hasAnyEntries: Bool) {
-        guard step == .compose, hasAnyEntries else { return }
-        step = .status
-    }
-
-    func advance(app: AppModel) {
-        switch step {
-        case .compose: step = .status
-        case .status: step = .summary
-        case .summary: complete(app: app)
-        case nil: break
-        }
+    /// Saving through the composer, paste flow, or any future insertion path
+    /// completes the only remaining onboarding task automatically.
+    func entrySaved(app: AppModel, hasAnyEntries: Bool) {
+        guard isPresented, hasAnyEntries else { return }
+        complete(app: app)
     }
 
     func skip(app: AppModel) {
@@ -63,7 +38,7 @@ final class FirstRunTourState {
     }
 
     private func complete(app: AppModel) {
-        step = nil
+        isPresented = false
         app.hasCompletedFirstRunTour = true
     }
 }
@@ -71,7 +46,8 @@ final class FirstRunTourState {
 // MARK: - Anchors
 
 enum FirstRunTourTarget: Hashable {
-    case emptyStateCTA, composer, entryStatus, summaryCards
+    case emptyStateCTA
+    case composer
 }
 
 struct TourAnchorKey: PreferenceKey {
@@ -84,8 +60,8 @@ struct TourAnchorKey: PreferenceKey {
 }
 
 extension View {
-    /// Publishes this view's bounds as a tour spotlight target. Passing nil
-    /// leaves the view untouched, so call sites can anchor conditionally.
+    /// Publishes this view's bounds as a spotlight target. Passing nil leaves
+    /// the live view completely untouched.
     @ViewBuilder
     func tourAnchor(_ target: FirstRunTourTarget?) -> some View {
         if let target {
@@ -106,9 +82,9 @@ struct FirstRunTourOverlay: View {
     let anchors: [FirstRunTourTarget: Anchor<CGRect>]
 
     var body: some View {
-        if let step = tour.step {
+        if tour.isPresented {
             GeometryReader { proxy in
-                let cutout = cutoutRect(for: step, in: proxy)
+                let cutout = cutoutRect(in: proxy)
                 ZStack(alignment: .topLeading) {
                     if let cutout {
                         dimStrips(around: cutout, in: proxy.size)
@@ -120,36 +96,26 @@ struct FirstRunTourOverlay: View {
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
-                    callout(for: step, cutout: cutout, in: proxy.size)
+                    callout(cutout: cutout, in: proxy.size)
                 }
                 .animation(.smooth(duration: 0.3), value: cutout)
             }
             .ignoresSafeArea(.keyboard)
             .transition(.opacity)
             .onAppear { calloutFocused = true }
-            .onChange(of: step) { _, _ in calloutFocused = true }
+            .onChange(of: tour.isPresented) { _, presented in
+                if presented { calloutFocused = true }
+            }
         }
     }
 
-    // MARK: Geometry
-
-    /// The compose step prefers the live composer row and falls back to the
-    /// empty-state CTA that opens it. A missing anchor (scrolled away, or a
-    /// debug replay on a populated ledger) drops the dim entirely and keeps
-    /// just the floating callout, so nothing gets blocked.
-    private func cutoutRect(for step: FirstRunTourState.Step,
-                            in proxy: GeometryProxy) -> CGRect? {
-        let anchor: Anchor<CGRect>? = switch step {
-        case .compose: anchors[.composer] ?? anchors[.emptyStateCTA]
-        case .status: anchors[.entryStatus]
-        case .summary: anchors[.summaryCards]
-        }
-        guard let anchor else { return nil }
+    private func cutoutRect(in proxy: GeometryProxy) -> CGRect? {
+        guard let anchor = anchors[.composer] ?? anchors[.emptyStateCTA] else { return nil }
         return proxy[anchor].insetBy(dx: -6, dy: -6)
     }
 
-    /// Four opaque strips around the cutout: they absorb every touch while
-    /// the hole between them stays genuinely empty and interactive.
+    /// Four opaque strips absorb input while the highlighted control remains
+    /// genuinely tappable through the centre hole.
     @ViewBuilder
     private func dimStrips(around cutout: CGRect, in size: CGSize) -> some View {
         let dim = Color.black.opacity(0.45)
@@ -166,13 +132,7 @@ struct FirstRunTourOverlay: View {
         .accessibilityHidden(true)
     }
 
-    // MARK: Callout
-
-    private func callout(for step: FirstRunTourState.Step,
-                         cutout: CGRect?,
-                         in size: CGSize) -> some View {
-        // Below the target when it sits in the upper half, above it otherwise;
-        // near the bottom when there is no target.
+    private func callout(cutout: CGRect?, in size: CGSize) -> some View {
         let placesBelow = (cutout?.midY ?? size.height) < size.height / 2
         let topInset: CGFloat = placesBelow ? (cutout.map { $0.maxY + 12 } ?? 0) : 0
         let bottomInset: CGFloat
@@ -184,39 +144,25 @@ struct FirstRunTourOverlay: View {
             bottomInset = size.height / 3
         }
 
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(title(for: step))
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Add your first income")
                 .appFont(17, .semibold)
                 .foregroundStyle(.white)
-            Text(message(for: step))
+            Text(anchors[.composer] != nil
+                 ? "Type the amount, then the project and task — and submit it."
+                 : "Start here — add who pays you, then write your first income line.")
                 .appFont(15)
                 .foregroundStyle(.white.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack {
+                Spacer()
                 Button("Skip") { tour.skip(app: app) }
                     .appFont(15, .medium)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("tour.skip")
-
-                Spacer(minLength: 24)
-
-                switch step {
-                case .compose:
-                    EmptyView()
-                case .status:
-                    Button("Next") { tour.advance(app: app) }
-                        .appFont(15, .semibold)
-                        .foregroundStyle(.white)
-                        .accessibilityIdentifier("tour.next")
-                case .summary:
-                    Button("Done") { tour.advance(app: app) }
-                        .appFont(15, .semibold)
-                        .foregroundStyle(.white)
-                        .accessibilityIdentifier("tour.done")
-                }
             }
-            .padding(.top, 8)
         }
         .padding(16)
         .frame(maxWidth: 360)
@@ -238,26 +184,5 @@ struct FirstRunTourOverlay: View {
         .accessibilityIdentifier("tour.overlay")
         .accessibilityFocused($calloutFocused)
         .accessibilitySortPriority(1)
-    }
-
-    private func title(for step: FirstRunTourState.Step) -> LocalizedStringKey {
-        switch step {
-        case .compose: "Write your first line"
-        case .status: "Every line has a status"
-        case .summary: "Your month at a glance"
-        }
-    }
-
-    private func message(for step: FirstRunTourState.Step) -> LocalizedStringKey {
-        switch step {
-        case .compose:
-            anchors[.composer] != nil
-                ? "Type the amount, then the project and task — and submit it."
-                : "Start here — add who pays you, then write your first income line."
-        case .status:
-            "The dot on the right marks a line paid, in progress, or canceled — or holds it until a date."
-        case .summary:
-            "Everything you earn this month adds up here. Tap Stats for charts and insights."
-        }
     }
 }

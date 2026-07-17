@@ -357,6 +357,16 @@
         }
       }
     },
+    "Add your first income" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавьте первый доход"
+          }
+        }
+      }
+    },
     "Add to" : {
       "extractionState" : "stale",
       "localizations" : {

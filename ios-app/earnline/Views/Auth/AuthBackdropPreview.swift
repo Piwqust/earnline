@@ -1,21 +1,29 @@
 import SwiftData
 import SwiftUI
 
-/// The live app preview behind the auth panel — the real ledger interface
-/// (summary header, month divider, client chip, entry rows), not a mockup:
-/// the actual components render real models from a private in-memory store,
-/// and a short scripted loop makes the app demonstrate itself — a new line
-/// lands in the ledger, its status flips to paid, the totals count up and
-/// the sparkline morphs, then the scene resets and repeats.
+/// The live app story behind the account panel. It renders the production
+/// ledger, composer, editor, Insights, and client-profile components against a
+/// short-lived in-memory store — never a screenshot or a second UI system.
 ///
-/// Purely decorative: never hit-testable, hidden from accessibility, settled
-/// to its final state under Reduce Motion or Low Power Mode, and the driving
-/// task cancels automatically when the gate leaves the hierarchy.
+/// The surface is decorative: it cannot receive input or VoiceOver focus. It
+/// stops on a calm, completed ledger when motion should not autoplay.
 struct AuthBackdropPreview: View {
+    @Environment(\.accessibilityPlayAnimatedImages) private var playAnimatedImages
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var scene: BackdropScene?
+    let isActive: Bool
+
+    @State private var scene: AuthPreviewScene?
+    @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+    private struct PlaybackKey: Hashable {
+        let isActive: Bool
+        let isBackgrounded: Bool
+        let reduceMotion: Bool
+        let playAnimatedImages: Bool
+        let lowPowerMode: Bool
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -23,63 +31,116 @@ struct AuthBackdropPreview: View {
                 .ignoresSafeArea()
 
             if let scene {
-                BackdropSceneView(scene: scene)
+                AuthPreviewScreen(scene: scene)
                     .modelContainer(scene.container)
+                    .id(scene.screen)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
 
-            // Dissolve the scene into the panel so half-covered rows never
-            // read as broken content.
+            // The panel needs a little separation, but the app should remain
+            // recognisable well behind it instead of dissolving halfway down.
             LinearGradient(
-                colors: [Theme.background.opacity(0), Theme.background.opacity(0.85)],
-                startPoint: .init(x: 0.5, y: 0.35),
-                endPoint: .init(x: 0.5, y: 0.72)
+                colors: [Theme.background.opacity(0), Theme.background.opacity(0.35)],
+                startPoint: .init(x: 0.5, y: 0.52),
+                endPoint: .init(x: 0.5, y: 0.9)
             )
             .ignoresSafeArea()
+            .allowsHitTesting(false)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .task(id: scenePhase == .background) {
-            guard scenePhase != .background else { return }
-            guard let scene = scene ?? (try? BackdropScene()) else { return }
+        .task(id: PlaybackKey(
+            isActive: isActive,
+            isBackgrounded: scenePhase == .background,
+            reduceMotion: reduceMotion,
+            playAnimatedImages: playAnimatedImages,
+            lowPowerMode: lowPowerMode
+        )) {
+            guard let scene = scene ?? (try? AuthPreviewScene()) else { return }
             if self.scene == nil { self.scene = scene }
-            if reduceMotion || ProcessInfo.processInfo.isLowPowerModeEnabled {
+
+            if let requestedScreen {
+                scene.prepareForPreview(requestedScreen)
+                return
+            }
+
+            guard scenePhase != .background, isActive else { return }
+            guard !reduceMotion,
+                  playAnimatedImages,
+                  !lowPowerMode else {
                 scene.settle()
                 return
             }
             await runLoop(scene)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+            lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        }
     }
 
-    // MARK: Script
+    private var requestedScreen: AuthPreviewScene.Screen? {
+        guard AppModel.isRunningUIAutomation else { return nil }
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-authPreviewScreen"),
+              arguments.indices.contains(index + 1) else { return nil }
+        return AuthPreviewScene.Screen(rawValue: arguments[index + 1])
+    }
 
-    private func runLoop(_ scene: BackdropScene) async {
+    private func runLoop(_ scene: AuthPreviewScene) async {
         while !Task.isCancelled {
-            withAnimation(.smooth(duration: 0.5)) { scene.resetScript() }
-            try? await Task.sleep(for: .seconds(2.0))
-            if Task.isCancelled { return }
+            withAnimation(.smooth(duration: 0.45)) { scene.reset() }
+            guard await wait(1.2) else { return }
 
-            withAnimation(.smooth(duration: 0.5)) { scene.landScriptedLine() }
-            try? await Task.sleep(for: .seconds(1.8))
-            if Task.isCancelled { return }
+            withAnimation(.smooth(duration: 0.5)) { scene.addIncomeLine() }
+            guard await wait(1.5) else { return }
 
-            withAnimation(.snappy(duration: 0.4)) { scene.markScriptedLinePaid() }
-            try? await Task.sleep(for: .seconds(3.4))
-            if Task.isCancelled { return }
+            withAnimation(.smooth(duration: 0.45)) { scene.openEditor() }
+            guard await wait(1.4) else { return }
+
+            withAnimation(.snappy(duration: 0.35)) { scene.markIncomePaid() }
+            guard await wait(1.0) else { return }
+
+            withAnimation(.smooth(duration: 0.55)) { scene.openInsights() }
+            guard await wait(2.4) else { return }
+
+            withAnimation(.smooth(duration: 0.55)) { scene.openClientProfile() }
+            guard await wait(2.4) else { return }
         }
+    }
+
+    private func wait(_ seconds: Double) async -> Bool {
+        do {
+            try await Task.sleep(for: .seconds(seconds))
+        } catch {
+            return false
+        }
+        return !Task.isCancelled
     }
 }
 
-// MARK: - Scene view (real ledger components)
+// MARK: - Real app screens
 
-/// The exact stack the ledger renders, minus List chrome: the real
-/// `LedgerSummaryHeader`, `MonthDivider`, `ClientChip`, and `EntryRow` fed by
-/// the scene's models — using the ledger's own row insets. No composer here:
-/// its height would push the animating rows behind the panel (and the real
-/// `SmartComposer` steals keyboard focus on appear).
-private struct BackdropSceneView: View {
-    let scene: BackdropScene
+private struct AuthPreviewScreen: View {
+    let scene: AuthPreviewScene
 
     var body: some View {
+        Group {
+            switch scene.screen {
+            case .ledger:
+                ledger
+            case .editor:
+                editor
+            case .insights:
+                NavigationStack { InsightsView() }
+            case .client:
+                NavigationStack { ClientDetailView(client: scene.acme) }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.background)
+    }
+
+    private var ledger: some View {
         VStack(spacing: 0) {
             LedgerSummaryHeader(monthlyTotals: scene.monthlyTotals, onOpenStats: {})
                 .padding(.top, 4)
@@ -95,6 +156,16 @@ private struct BackdropSceneView: View {
             )
             .padding(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
 
+            if scene.showsComposer {
+                SmartComposer(
+                    client: scene.acme,
+                    initialText: "$240 Launch Kit: Two homepage screens",
+                    automaticallyFocus: false
+                )
+                .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             ForEach(scene.rows, id: \.id) { entry in
                 EntryRow(entry: entry)
                     .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -107,27 +178,51 @@ private struct BackdropSceneView: View {
             Spacer(minLength: 0)
         }
     }
+
+    @ViewBuilder
+    private var editor: some View {
+        if let entry = scene.scriptedLine {
+            NavigationStack {
+                EditEntrySheet(
+                    entry: entry,
+                    clients: [scene.acme],
+                    previewStatus: scene.editorStatus,
+                    previewValues: .init(
+                        amount: 240,
+                        currencyCode: "USD",
+                        project: "Launch Kit",
+                        task: "Two homepage screens",
+                        status: .inProgress
+                    )
+                )
+            }
+        } else {
+            ledger
+        }
+    }
 }
 
-// MARK: - Scene model
+// MARK: - In-memory story
 
-/// A private in-memory SwiftData store holding one client's small notebook —
-/// enough current-month rows to fill the visible strip and five prior months
-/// of totals to draw the sparkline — plus the one scripted line the loop
-/// lands, pays, and removes. Models must live in a real context: the row
-/// views gate on `isInvalidated`, which reads false only for managed models.
 @MainActor @Observable
-final class BackdropScene {
+final class AuthPreviewScene {
+    enum Screen: String, Hashable {
+        case ledger
+        case editor
+        case insights
+        case client
+    }
+
     let container: ModelContainer
     let acme: Client
-    /// Rendered current-month rows, newest first.
     private(set) var rows: [Entry]
+    private(set) var screen: Screen = .ledger
+    private(set) var showsComposer = true
+    private(set) var scriptedLine: Entry?
+    private(set) var editorStatus: EntryStatus = .inProgress
 
     private let context: ModelContext
-    /// Every entry that feeds the totals — rendered rows plus the prior-month
-    /// seeds that exist only for the sparkline's trend.
     private var allEntries: [Entry]
-    private var scriptedLine: Entry?
 
     init() throws {
         let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
@@ -167,8 +262,6 @@ final class BackdropScene {
         allEntries = baseRows + trendSeeds
     }
 
-    // MARK: Totals (the ledger's earned rule: canceled excluded)
-
     var monthlyTotals: [Int: Decimal] {
         var totals: [Int: Decimal] = [:]
         for entry in allEntries where !entry.isInvalidated && entry.status.isIncludedInEarnedTotals {
@@ -181,38 +274,71 @@ final class BackdropScene {
         monthlyTotals[Insights.monthKey(of: .now)] ?? .zero
     }
 
-    // MARK: Script beats
+    func reset() {
+        if let entry = scriptedLine {
+            rows.removeAll { $0.id == entry.id }
+            allEntries.removeAll { $0.id == entry.id }
+            context.delete(entry)
+        }
+        scriptedLine = nil
+        screen = .ledger
+        showsComposer = true
+        editorStatus = .inProgress
+    }
 
-    /// A new line lands at the top of the ledger; the totals count up and the
-    /// sparkline morphs because the entry immediately joins the earned sums.
-    func landScriptedLine() {
+    func addIncomeLine() {
         guard scriptedLine == nil else { return }
         let entry = Entry(amount: 240, project: "Launch Kit", task: "Two homepage screens",
-                          date: .now, status: .inProgress, sortIndex: 2)
+                          date: .now, status: .inProgress, sortIndex: -1)
         entry.client = acme
         context.insert(entry)
         scriptedLine = entry
         rows.insert(entry, at: 0)
         allEntries.append(entry)
+        screen = .ledger
+        showsComposer = false
+        editorStatus = .inProgress
     }
 
-    /// The landed line's status dot morphs from in-progress to paid.
-    func markScriptedLinePaid() {
+    func openEditor() {
+        addIncomeLine()
+        screen = .editor
+    }
+
+    func markIncomePaid() {
+        editorStatus = .paid
         scriptedLine?.status = .paid
     }
 
-    /// Back to the resting notebook; the totals roll down with it.
-    func resetScript() {
-        guard let entry = scriptedLine else { return }
-        scriptedLine = nil
-        rows.removeAll { $0.id == entry.id }
-        allEntries.removeAll { $0.id == entry.id }
-        context.delete(entry)
+    func openInsights() {
+        markIncomePaid()
+        screen = .insights
     }
 
-    /// Reduce Motion / Low Power: the settled end state, no loop.
+    func openClientProfile() {
+        markIncomePaid()
+        screen = .client
+    }
+
     func settle() {
-        landScriptedLine()
-        markScriptedLinePaid()
+        screen = .ledger
+        showsComposer = false
+        editorStatus = .paid
+    }
+
+    func prepareForPreview(_ requestedScreen: Screen) {
+        reset()
+        switch requestedScreen {
+        case .ledger:
+            break
+        case .editor:
+            openEditor()
+        case .insights:
+            addIncomeLine()
+            openInsights()
+        case .client:
+            addIncomeLine()
+            openClientProfile()
+        }
     }
 }

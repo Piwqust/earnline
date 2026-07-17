@@ -2,7 +2,7 @@ import XCTest
 
 @MainActor
 final class AuthGateUITests: XCTestCase {
-    private func launchAuthGate(state: String = "signedOut") -> XCUIApplication {
+    private func launchAuthGate(state: String = "signedOut", extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-uiTesting",
@@ -10,7 +10,7 @@ final class AuthGateUITests: XCTestCase {
             "-authGateState", state,
             "-resetDeveloperMode",
             "-resetExperimentalFeatures"
-        ]
+        ] + extraArguments
         app.launch()
         return app
     }
@@ -33,11 +33,11 @@ final class AuthGateUITests: XCTestCase {
         XCTAssertTrue(github.exists)
         XCTAssertTrue(guest.exists)
         XCTAssertTrue(pair.exists)
-        XCTAssertGreaterThanOrEqual(apple.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(google.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(github.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(guest.frame.height, 44)
-        XCTAssertGreaterThanOrEqual(pair.frame.height, 44)
+        XCTAssertEqual(apple.frame.height, 44, accuracy: 0.5)
+        XCTAssertEqual(google.frame.height, 44, accuracy: 0.5)
+        XCTAssertEqual(github.frame.height, 44, accuracy: 0.5)
+        XCTAssertEqual(guest.frame.height, 44, accuracy: 0.5)
+        XCTAssertEqual(pair.frame.height, 44, accuracy: 0.5)
 
         pair.tap()
         let code = app.textFields["Pairing code"]
@@ -66,12 +66,25 @@ final class AuthGateUITests: XCTestCase {
 
         let workspacePending = launchAuthGate(state: "workspacePending")
         XCTAssertTrue(workspacePending.staticTexts["Finish setting up your workspace"].waitForExistence(timeout: 3))
-        XCTAssertTrue(workspacePending.buttons["Check again"].exists)
+        let checkAgain = workspacePending.buttons["Check again"]
+        XCTAssertTrue(checkAgain.exists)
+        XCTAssertEqual(checkAgain.frame.height, 44, accuracy: 0.5)
         workspacePending.terminate()
 
         let pairedWorkspacePending = launchAuthGate(state: "pairedWorkspacePending")
         XCTAssertTrue(pairedWorkspacePending.staticTexts["Finish pairing this device"].waitForExistence(timeout: 3))
         XCTAssertTrue(pairedWorkspacePending.buttons["Pair this device"].exists)
+    }
+
+    func testEntryActionsStayReachableAtAccessibilityTextSizes() {
+        let app = launchAuthGate(extraArguments: [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"
+        ])
+
+        let guest = app.buttons["Continue without an account"]
+        XCTAssertTrue(guest.waitForExistence(timeout: 3))
+        XCTAssertGreaterThanOrEqual(guest.frame.height, 44)
+        XCTAssertTrue(app.buttons["Pair a device"].isHittable)
     }
 
     func testManualPairingHandsOffToTheLedgerWithoutNetwork() {
