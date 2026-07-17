@@ -16,9 +16,9 @@ struct ClientDetailView: View {
     /// presentation of an already loaded real snapshot by a beat; production
     /// callers leave it nil and keep the current loading behaviour.
     var previewHistoryIsLoaded: Bool? = nil
-    /// Internal-only timing for the account tour's client-history appearance.
+    /// Internal-only timing for the account tour's client-history replacement.
     /// Production callers leave this nil and keep the existing static render.
-    var previewHistoryFadeDuration: TimeInterval? = nil
+    var previewHistoryTransitionDuration: TimeInterval? = nil
 
     @State private var showEditSheet = false
     @State private var snapshot: ClientDetailSnapshot?
@@ -77,13 +77,13 @@ struct ClientDetailView: View {
                             .accessibilityIdentifier("client.profileLoading")
                     }
                 }
-                .transition(.opacity)
+                .transition(.push(from: .bottom))
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 32)
             .accessibilityIdentifier("client.profile")
             .animation(
-                previewHistoryFadeDuration.map { .easeInOut(duration: $0) },
+                previewHistoryTransitionDuration.map { .smooth(duration: $0, extraBounce: 0) },
                 value: previewHistoryIsLoaded
             )
         }

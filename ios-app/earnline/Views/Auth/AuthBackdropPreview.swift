@@ -80,7 +80,7 @@ struct AuthBackdropPreview: View {
 // MARK: - Tour direction
 
 /// Semantic states of the story. The director owns these states and its seeded
-/// data; rendering owns a single, short opacity handoff between them.
+/// data; rendering owns one directional replacement between them.
 enum AuthTourBeat: String, CaseIterable, Hashable {
     case ledger
     case addIncome
@@ -152,8 +152,8 @@ enum AuthTourPlaybackPolicy: Hashable {
 /// makes the loop read as a calm sequence, rather than unrelated components
 /// competing with their own animation clocks.
 enum AuthTourTiming {
-    static let beatFade: TimeInterval = 0.52
-    static let lineCrossfade: TimeInterval = 0.46
+    static let beatMorph: TimeInterval = 0.52
+    static let lineMorph: TimeInterval = 0.46
     static let editorStatus: TimeInterval = 0.44
     static let chartReveal: TimeInterval = 1.18
     static let clientContentFade: TimeInterval = 0.46
@@ -167,6 +167,19 @@ enum AuthTourTiming {
     static let clientBeforeHistory: TimeInterval = 0.7
     static let clientAfterHistory: TimeInterval = 2.0
     static let resetDwell: TimeInterval = 1.1
+}
+
+/// Every tour replacement shares one stable spatial rule: the outgoing
+/// surface leaves above the stage and the next one enters from below it. This
+/// reads as a contained native sheet-like morph, without camera transforms or
+/// transparent crossfades.
+private enum AuthTourTransition {
+    static var fromBottom: AnyTransition {
+        .asymmetric(
+            insertion: .push(from: .bottom),
+            removal: .push(from: .top)
+        )
+    }
 }
 
 /// The director's only clock dependency. The production sleeper waits in real
@@ -313,29 +326,28 @@ private struct AuthPreviewScreen: View {
     let scene: AuthTourScene
 
     var body: some View {
-        // The ledger remains the anchor. Story beats only crossfade over it;
+        // The ledger remains the anchor. A beat replaces it directionally;
         // no second animation system may move, zoom, or rotate this surface.
         ZStack(alignment: .top) {
             ledger
-                .opacity(scene.screen == .ledger ? 1 : 0.14)
 
             switch scene.screen {
             case .ledger:
                 EmptyView()
             case .editor:
                 editor
-                    .transition(.opacity)
+                    .transition(AuthTourTransition.fromBottom)
             case .insights:
-                insights
-                    .transition(.opacity)
+                focusedSurface { insights }
+                    .transition(AuthTourTransition.fromBottom)
             case .client:
-                client
-                    .transition(.opacity)
+                focusedSurface { client }
+                    .transition(AuthTourTransition.fromBottom)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.background)
-        .animation(.easeInOut(duration: AuthTourTiming.beatFade), value: scene.screen)
+        .animation(.smooth(duration: AuthTourTiming.beatMorph, extraBounce: 0), value: scene.screen)
     }
 
     private var ledger: some View {
@@ -366,31 +378,38 @@ private struct AuthPreviewScreen: View {
         }
     }
 
-    /// Both the draft composer and its saved line occupy the same stable slot.
-    /// Their opacity crossfade makes the add action legible while keeping every
-    /// surrounding ledger row fixed in place.
+    /// The draft composer resolves into its saved row. It is a directional
+    /// replacement, not a crossfade: the composer clears upward and the row
+    /// arrives from below, using one axis and one animation transaction.
     private var storyLine: some View {
-        ZStack(alignment: .topLeading) {
+        Group {
             if scene.showsComposer {
                 SmartComposer(
                     client: scene.acme,
                     initialText: "$240 Launch Kit: Two homepage screens",
                     automaticallyFocus: false
                 )
-                .transition(.opacity)
+                .transition(AuthTourTransition.fromBottom)
             }
 
             if let entry = scene.scriptedLine, !scene.showsComposer {
                 EntryRow(entry: entry)
-                    .transition(.opacity)
+                    .transition(AuthTourTransition.fromBottom)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-        .animation(.easeInOut(duration: AuthTourTiming.lineCrossfade), value: scene.showsComposer)
+        .animation(.smooth(duration: AuthTourTiming.lineMorph, extraBounce: 0), value: scene.showsComposer)
     }
 
     private var rowsBelowStoryLine: [Entry] {
         scene.rows.filter { $0.id != scene.scriptedLine?.id }
+    }
+
+    /// Insights and client detail need a full, opaque canvas while they cross
+    /// the stage. Keeping that canvas in the same transition prevents the
+    /// ledger from ghosting through their arrival.
+    private func focusedSurface<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        Theme.background
+            .overlay(alignment: .top) { content() }
     }
 
     @ViewBuilder
@@ -446,7 +465,7 @@ private struct AuthPreviewScreen: View {
         ClientDetailView(
             client: scene.acme,
             previewHistoryIsLoaded: scene.clientHistoryLoaded,
-            previewHistoryFadeDuration: AuthTourTiming.clientContentFade
+            previewHistoryTransitionDuration: AuthTourTiming.clientContentFade
         )
         .padding(.top, 2)
     }
