@@ -32,8 +32,6 @@ struct AuthBackdropPreview: View {
             if let director {
                 AuthTourStage(
                     scene: director.scene,
-                    shouldAnimate: director.playbackPolicy == .autoplay,
-                    staticCamera: director.beat.camera,
                     dockHeight: dockHeight
                 )
                 .modelContainer(director.scene.container)
@@ -82,8 +80,7 @@ struct AuthBackdropPreview: View {
 // MARK: - Tour direction
 
 /// Semantic states of the story. The director owns these states and its seeded
-/// data; the camera animator only reads transform values and never mutates a
-/// SwiftData model inside a per-frame closure.
+/// data; rendering owns a single, short opacity handoff between them.
 enum AuthTourBeat: String, CaseIterable, Hashable {
     case ledger
     case addIncome
@@ -91,15 +88,6 @@ enum AuthTourBeat: String, CaseIterable, Hashable {
     case insights
     case client
 
-    var camera: AuthTourCamera {
-        switch self {
-        case .ledger: .wide
-        case .addIncome: .composer
-        case .edit: .editor
-        case .insights: .insights
-        case .client: .client
-        }
-    }
 }
 
 /// Test-only launch controls. Production never supplies these values; they
@@ -278,28 +266,8 @@ final class AuthTourDirector {
     }
 }
 
-// MARK: - Camera
-
-/// A camera transform contains visual values only. It is intentionally plain
-/// data so `KeyframeAnimator` can interpolate it without any model queries.
-struct AuthTourCamera {
-    var scale: CGFloat
-    var x: CGFloat
-    var y: CGFloat
-    var yaw: Double
-    var opacity: Double
-
-    static let wide = Self(scale: 0.98, x: 0, y: 0, yaw: 0, opacity: 1)
-    static let composer = Self(scale: 0.99, x: 0, y: -16, yaw: 0, opacity: 1)
-    static let editor = Self(scale: 0.96, x: 8, y: -24, yaw: 0.6, opacity: 1)
-    static let insights = Self(scale: 0.99, x: 0, y: 0, yaw: 0, opacity: 1)
-    static let client = Self(scale: 0.98, x: -8, y: 0, yaw: -0.5, opacity: 1)
-}
-
 private struct AuthTourStage: View {
     let scene: AuthTourScene
-    let shouldAnimate: Bool
-    let staticCamera: AuthTourCamera
     let dockHeight: CGFloat
 
     var body: some View {
@@ -309,107 +277,11 @@ private struct AuthTourStage: View {
             // readable above a taller localized dock.
             let readableHeight = max(280, proxy.size.height - dockHeight + 24)
 
-            if shouldAnimate {
-                AuthTourAnimatedScreen(
-                    scene: scene,
-                    size: proxy.size,
-                    readableHeight: readableHeight
-                )
-            } else {
-                AuthPreviewScreen(scene: scene)
-                    .frame(width: proxy.size.width, height: readableHeight + 112, alignment: .top)
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-                    .authTourCamera(staticCamera)
-            }
+            AuthPreviewScreen(scene: scene)
+                .frame(width: proxy.size.width, height: readableHeight + 112, alignment: .top)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .clipped()
-    }
-}
-
-/// One repeating 7.4-second transform timeline. The content closure applies
-/// only scale, offset, perspective, and opacity; semantic beat changes happen
-/// in `AuthTourDirector`, outside this per-frame work.
-private struct AuthTourAnimatedScreen: View {
-    let scene: AuthTourScene
-    let size: CGSize
-    let readableHeight: CGFloat
-
-    var body: some View {
-        AuthPreviewScreen(scene: scene)
-            .frame(width: size.width, height: readableHeight + 112, alignment: .top)
-            .frame(width: size.width, height: size.height, alignment: .top)
-            .keyframeAnimator(
-            initialValue: AuthTourCamera.wide,
-            repeating: true
-        ) { content, camera in
-            content.authTourCamera(camera)
-        } keyframes: { _ in
-            KeyframeTrack(\.scale) {
-                LinearKeyframe(0.98, duration: 0.8)
-                CubicKeyframe(0.99, duration: 0.4)
-                LinearKeyframe(0.99, duration: 1.1)
-                CubicKeyframe(0.96, duration: 0.25)
-                LinearKeyframe(0.96, duration: 1.05)
-                CubicKeyframe(0.99, duration: 0.3)
-                LinearKeyframe(0.99, duration: 1.5)
-                CubicKeyframe(0.98, duration: 0.25)
-                LinearKeyframe(0.98, duration: 1.15)
-                CubicKeyframe(0.98, duration: 0.25)
-                LinearKeyframe(0.98, duration: 0.35)
-            }
-            KeyframeTrack(\.x) {
-                LinearKeyframe(0, duration: 2.3)
-                CubicKeyframe(8, duration: 0.25)
-                LinearKeyframe(8, duration: 1.05)
-                CubicKeyframe(0, duration: 0.3)
-                LinearKeyframe(0, duration: 1.5)
-                CubicKeyframe(-8, duration: 0.25)
-                LinearKeyframe(-8, duration: 1.15)
-                CubicKeyframe(0, duration: 0.25)
-                LinearKeyframe(0, duration: 0.35)
-            }
-            KeyframeTrack(\.y) {
-                LinearKeyframe(0, duration: 0.8)
-                CubicKeyframe(-16, duration: 0.4)
-                LinearKeyframe(-16, duration: 1.1)
-                CubicKeyframe(-24, duration: 0.25)
-                LinearKeyframe(-24, duration: 1.05)
-                CubicKeyframe(0, duration: 0.3)
-                LinearKeyframe(0, duration: 1.5)
-                LinearKeyframe(0, duration: 1.4)
-                LinearKeyframe(0, duration: 0.6)
-            }
-            KeyframeTrack(\.yaw) {
-                LinearKeyframe(0, duration: 2.3)
-                CubicKeyframe(0.6, duration: 0.25)
-                LinearKeyframe(0.6, duration: 1.05)
-                CubicKeyframe(0, duration: 0.3)
-                LinearKeyframe(0, duration: 1.5)
-                CubicKeyframe(-0.5, duration: 0.25)
-                LinearKeyframe(-0.5, duration: 1.15)
-                CubicKeyframe(0, duration: 0.25)
-                LinearKeyframe(0, duration: 0.35)
-            }
-            KeyframeTrack(\.opacity) {
-                LinearKeyframe(1, duration: 6.8)
-                CubicKeyframe(0.94, duration: 0.2)
-                CubicKeyframe(1, duration: 0.4)
-            }
-        }
-    }
-}
-
-private extension View {
-    nonisolated func authTourCamera(_ camera: AuthTourCamera) -> some View {
-        scaleEffect(camera.scale, anchor: .top)
-            .rotation3DEffect(
-                .degrees(camera.yaw),
-                axis: (x: 0, y: 1, z: 0),
-                anchor: .center,
-                perspective: 0.72
-            )
-            .offset(x: camera.x, y: camera.y)
-            .opacity(camera.opacity)
     }
 }
 
@@ -418,34 +290,31 @@ private extension View {
 private struct AuthPreviewScreen: View {
     @Environment(AppModel.self) private var app
     let scene: AuthTourScene
-    @Namespace private var incomeTransition
 
     var body: some View {
-        // Keep the ledger on stage for the whole story. The focused surfaces
-        // arrive as a consequence of the same line of income instead of
-        // replacing the scene with a disconnected feature slide.
+        // The ledger remains the anchor. Story beats only crossfade over it;
+        // no second animation system may move, zoom, or rotate this surface.
         ZStack(alignment: .top) {
             ledger
                 .opacity(scene.screen == .ledger ? 1 : 0.14)
-                .scaleEffect(scene.screen == .ledger ? 1 : 0.975, anchor: .top)
 
             switch scene.screen {
             case .ledger:
                 EmptyView()
             case .editor:
                 editor
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                    .transition(.opacity)
             case .insights:
                 insights
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                    .transition(.opacity)
             case .client:
                 client
-                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.background)
-        .animation(.smooth(duration: 0.32), value: scene.screen)
+        .animation(.easeInOut(duration: 0.22), value: scene.screen)
     }
 
     private var ledger: some View {
@@ -470,23 +339,12 @@ private struct AuthPreviewScreen: View {
                     initialText: "$240 Launch Kit: Two homepage screens",
                     automaticallyFocus: false
                 )
-                .matchedGeometryEffect(id: "tour.income", in: incomeTransition, isSource: true)
                 .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             ForEach(scene.rows, id: \.id) { entry in
                 EntryRow(entry: entry)
-                    .matchedGeometryEffect(
-                        id: entry.id == scene.scriptedLine?.id ? "tour.income" : entry.id.uuidString,
-                        in: incomeTransition,
-                        isSource: entry.id == scene.scriptedLine?.id
-                    )
                     .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
-                        removal: .opacity
-                    ))
             }
 
             Spacer(minLength: 0)
