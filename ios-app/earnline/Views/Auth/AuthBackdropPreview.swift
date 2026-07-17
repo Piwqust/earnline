@@ -148,6 +148,27 @@ enum AuthTourPlaybackPolicy: Hashable {
     }
 }
 
+/// One timing vocabulary for the tour. Keeping every visual handoff here
+/// makes the loop read as a calm sequence, rather than unrelated components
+/// competing with their own animation clocks.
+enum AuthTourTiming {
+    static let beatFade: TimeInterval = 0.52
+    static let lineCrossfade: TimeInterval = 0.46
+    static let editorStatus: TimeInterval = 0.44
+    static let chartReveal: TimeInterval = 1.18
+    static let clientContentFade: TimeInterval = 0.46
+
+    static let establishingDwell: TimeInterval = 1.6
+    static let composerDwell: TimeInterval = 2.6
+    static let editorBeforePayment: TimeInterval = 0.75
+    static let editorAfterPayment: TimeInterval = 1.75
+    static let chartBeforeReveal: TimeInterval = 0.55
+    static let chartAfterReveal: TimeInterval = 2.2
+    static let clientBeforeHistory: TimeInterval = 0.7
+    static let clientAfterHistory: TimeInterval = 2.0
+    static let resetDwell: TimeInterval = 1.1
+}
+
 /// The director's only clock dependency. The production sleeper waits in real
 /// time; tests inject a recording or immediate sleeper to assert ordering,
 /// reset, pause, and resume without sleeping for a ten-second loop.
@@ -232,28 +253,28 @@ final class AuthTourDirector {
         // long enough to read once, and the same income line is the visual
         // thread from draft to client history.
         move(to: .ledger)
-        guard await pause(for: 0.8) else { return false }
+        guard await pause(for: AuthTourTiming.establishingDwell) else { return false }
 
         move(to: .addIncome)
-        guard await pause(for: 1.5) else { return false }
+        guard await pause(for: AuthTourTiming.composerDwell) else { return false }
 
         move(to: .edit)
-        guard await pause(for: 0.45) else { return false }
+        guard await pause(for: AuthTourTiming.editorBeforePayment) else { return false }
         scene.markIncomePaid()
-        guard await pause(for: 0.85) else { return false }
+        guard await pause(for: AuthTourTiming.editorAfterPayment) else { return false }
 
         move(to: .insights)
-        guard await pause(for: 0.18) else { return false }
+        guard await pause(for: AuthTourTiming.chartBeforeReveal) else { return false }
         scene.revealInsightsChart()
-        guard await pause(for: 1.62) else { return false }
+        guard await pause(for: AuthTourTiming.chartAfterReveal) else { return false }
 
         move(to: .client)
-        guard await pause(for: 0.18) else { return false }
+        guard await pause(for: AuthTourTiming.clientBeforeHistory) else { return false }
         scene.revealClientHistory()
-        guard await pause(for: 1.22) else { return false }
+        guard await pause(for: AuthTourTiming.clientAfterHistory) else { return false }
 
         move(to: .ledger)
-        return await pause(for: 0.6)
+        return await pause(for: AuthTourTiming.resetDwell)
     }
 
     private func pause(for seconds: Double) async -> Bool {
@@ -314,7 +335,7 @@ private struct AuthPreviewScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.background)
-        .animation(.easeInOut(duration: 0.22), value: scene.screen)
+        .animation(.easeInOut(duration: AuthTourTiming.beatFade), value: scene.screen)
     }
 
     private var ledger: some View {
@@ -333,22 +354,43 @@ private struct AuthPreviewScreen: View {
             )
             .padding(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
 
-            if scene.showsComposer {
-                SmartComposer(
-                    client: scene.acme,
-                    initialText: "$240 Launch Kit: Two homepage screens",
-                    automaticallyFocus: false
-                )
+            storyLine
                 .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-            }
 
-            ForEach(scene.rows, id: \.id) { entry in
+            ForEach(rowsBelowStoryLine, id: \.id) { entry in
                 EntryRow(entry: entry)
                     .padding(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
 
             Spacer(minLength: 0)
         }
+    }
+
+    /// Both the draft composer and its saved line occupy the same stable slot.
+    /// Their opacity crossfade makes the add action legible while keeping every
+    /// surrounding ledger row fixed in place.
+    private var storyLine: some View {
+        ZStack(alignment: .topLeading) {
+            if scene.showsComposer {
+                SmartComposer(
+                    client: scene.acme,
+                    initialText: "$240 Launch Kit: Two homepage screens",
+                    automaticallyFocus: false
+                )
+                .transition(.opacity)
+            }
+
+            if let entry = scene.scriptedLine, !scene.showsComposer {
+                EntryRow(entry: entry)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .animation(.easeInOut(duration: AuthTourTiming.lineCrossfade), value: scene.showsComposer)
+    }
+
+    private var rowsBelowStoryLine: [Entry] {
+        scene.rows.filter { $0.id != scene.scriptedLine?.id }
     }
 
     @ViewBuilder
@@ -359,6 +401,7 @@ private struct AuthPreviewScreen: View {
                     entry: entry,
                     clients: [scene.acme],
                     previewStatus: scene.editorStatus,
+                    previewStatusAnimationDuration: AuthTourTiming.editorStatus,
                     previewValues: .init(
                         amount: 240,
                         currencyCode: "USD",
@@ -387,7 +430,8 @@ private struct AuthPreviewScreen: View {
                 points: scene.monthlyTrendPoints,
                 tint: app.accentColor,
                 window: nil,
-                drawProgress: scene.insightsChartProgress
+                drawProgress: scene.insightsChartProgress,
+                previewDrawDuration: AuthTourTiming.chartReveal
             )
             .padding(.horizontal, 16)
         }
@@ -401,7 +445,8 @@ private struct AuthPreviewScreen: View {
     private var client: some View {
         ClientDetailView(
             client: scene.acme,
-            previewHistoryIsLoaded: scene.clientHistoryLoaded
+            previewHistoryIsLoaded: scene.clientHistoryLoaded,
+            previewHistoryFadeDuration: AuthTourTiming.clientContentFade
         )
         .padding(.top, 2)
     }

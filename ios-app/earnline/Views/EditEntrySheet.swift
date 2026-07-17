@@ -26,6 +26,9 @@ struct EditEntrySheet: View {
     /// The decorative account-preview story can animate this picker while the
     /// production editor keeps its existing data and interaction behavior.
     var previewStatus: EntryStatus? = nil
+    /// Internal-only timing for the account tour's status confirmation.
+    /// Production callers leave this nil and retain the native picker motion.
+    var previewStatusAnimationDuration: TimeInterval? = nil
     var previewValues: PreviewValues? = nil
 
     @State private var amountText: String = ""
@@ -59,6 +62,10 @@ struct EditEntrySheet: View {
                     .padding(.bottom, 2)
 
                 statusSegmented
+                    .animation(
+                        previewStatusAnimationDuration.map { .easeInOut(duration: $0) },
+                        value: previewStatus
+                    )
 
                 section("Details") {
                     VStack(spacing: 10) {

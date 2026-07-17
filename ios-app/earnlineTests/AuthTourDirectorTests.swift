@@ -12,6 +12,7 @@ struct AuthTourDirectorTests {
         }
 
         func count() -> Int { recordedDurations.count }
+        func durations() -> [Duration] { recordedDurations }
     }
 
     @Test func directorPlaysTheSemanticBeatsThenQuietlyResets() async throws {
@@ -25,6 +26,17 @@ struct AuthTourDirectorTests {
         #expect(director.scene.scriptedLine == nil)
         #expect(director.scene.showsComposer)
         #expect(await sleeper.count() == 9)
+        #expect(await sleeper.durations() == [
+            .seconds(AuthTourTiming.establishingDwell),
+            .seconds(AuthTourTiming.composerDwell),
+            .seconds(AuthTourTiming.editorBeforePayment),
+            .seconds(AuthTourTiming.editorAfterPayment),
+            .seconds(AuthTourTiming.chartBeforeReveal),
+            .seconds(AuthTourTiming.chartAfterReveal),
+            .seconds(AuthTourTiming.clientBeforeHistory),
+            .seconds(AuthTourTiming.clientAfterHistory),
+            .seconds(AuthTourTiming.resetDwell),
+        ])
     }
 
     @Test func pauseSettlesAndAForcedBeatResumesDeterministically() throws {

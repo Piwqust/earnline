@@ -16,6 +16,9 @@ struct ClientDetailView: View {
     /// presentation of an already loaded real snapshot by a beat; production
     /// callers leave it nil and keep the current loading behaviour.
     var previewHistoryIsLoaded: Bool? = nil
+    /// Internal-only timing for the account tour's client-history appearance.
+    /// Production callers leave this nil and keep the existing static render.
+    var previewHistoryFadeDuration: TimeInterval? = nil
 
     @State private var showEditSheet = false
     @State private var snapshot: ClientDetailSnapshot?
@@ -54,28 +57,35 @@ struct ClientDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 profileSummary(snapshot)
-                if let snapshot, previewHistoryIsLoaded != false {
-                    if app.clientBadgesEnabled {
-                        section("Achievements") { achievementsCard(snapshot.achievements) }
-                    }
-                    trendCard(snapshot.months)
-                    statusCard(snapshot.statusTotals)
+                Group {
+                    if let snapshot, previewHistoryIsLoaded != false {
+                        if app.clientBadgesEnabled {
+                            section("Achievements") { achievementsCard(snapshot.achievements) }
+                        }
+                        trendCard(snapshot.months)
+                        statusCard(snapshot.statusTotals)
 
-                    if !snapshot.projectTotals.isEmpty {
-                        section("By project") { projectsCard(snapshot.projectTotals) }
-                    }
+                        if !snapshot.projectTotals.isEmpty {
+                            section("By project") { projectsCard(snapshot.projectTotals) }
+                        }
 
-                    allTransactionsCard(snapshot.transactionCount)
-                } else if snapshotError == nil {
-                    ProgressView("Loading history…")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 48)
-                        .accessibilityIdentifier("client.profileLoading")
+                        allTransactionsCard(snapshot.transactionCount)
+                    } else if snapshotError == nil {
+                        ProgressView("Loading history…")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 48)
+                            .accessibilityIdentifier("client.profileLoading")
+                    }
                 }
+                .transition(.opacity)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 32)
             .accessibilityIdentifier("client.profile")
+            .animation(
+                previewHistoryFadeDuration.map { .easeInOut(duration: $0) },
+                value: previewHistoryIsLoaded
+            )
         }
         .background(Theme.background)
         .navigationTitle("Client Info")

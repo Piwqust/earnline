@@ -36,6 +36,9 @@ struct EarningsChartCard: View {
     /// A preview-only reveal mask for the account tour. Nil preserves the
     /// production chart's existing, fully rendered behaviour.
     var drawProgress: CGFloat? = nil
+    /// Internal-only timing for the account tour's measured chart reveal.
+    /// Production callers leave this nil and retain the existing timing.
+    var previewDrawDuration: TimeInterval? = nil
 
     @State private var selection: Date?
 
@@ -271,7 +274,10 @@ struct EarningsChartCard: View {
                     Rectangle()
                         .scaleEffect(x: min(max(drawProgress, 0), 1), anchor: .leading)
                 }
-                .animation(.smooth(duration: 0.72, extraBounce: 0), value: drawProgress)
+                .animation(
+                    .easeInOut(duration: previewDrawDuration ?? 0.72),
+                    value: drawProgress
+                )
         } else {
             chart
         }

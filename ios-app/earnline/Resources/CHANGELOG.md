@@ -12,6 +12,7 @@
 - The account screen now uses one native 44-point control language: Apple remains system-owned, while Google, GitHub, local, pairing, recovery, and sign-out actions now share the same labelled full-width rhythm.
 - **Earnline in Motion** now tells one connected income story rather than cycling through feature slides: a real draft line becomes paid, resolves into the monthly chart, and lands in its real client profile. The motion stays quiet and readable, while a calm settled ledger appears whenever motion should not play.
 - The tour now uses one stable visual plane: short fades replace competing camera transforms and matched-geometry movement, so story beats no longer jump, resize, or drift between states.
+- The calmer 13-second tour now gives every moment time to read: the draft line crossfades into its saved row, the editor confirms its paid status, and the chart and client history appear and fade with measured native timing.
 - After you enter an empty ledger, one optional spotlight points to the first income action and disappears automatically after you save it.
 
 ## July 15, 2026
