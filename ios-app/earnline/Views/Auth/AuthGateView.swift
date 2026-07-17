@@ -378,7 +378,11 @@ private struct AuthProviderButton: View {
         }
         .buttonStyle(.plain)
         .glassEffect(
-            .regular.interactive(),
+            // A quiet white tint keeps the native glass boundary legible on
+            // the dock's pure-black surface in Dark Appearance. Untinted
+            // glass effectively disappears there, making real actions look
+            // disabled even though they remain tappable.
+            .regular.tint(.white.opacity(0.12)).interactive(),
             in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
         )
         .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
@@ -440,7 +444,7 @@ private struct AuthGateGlass: ViewModifier {
         switch emphasis {
         case .regular:
             content.glassEffect(
-                .regular.interactive(),
+                .regular.tint(.white.opacity(0.12)).interactive(),
                 in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
             )
         case .light:

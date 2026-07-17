@@ -47,6 +47,25 @@ struct AuthTourDirectorTests {
         #expect(director.scene.editorStatus == .inProgress)
     }
 
+    @Test func oneIncomeLineCarriesTheStoryFromLedgerToInsightAndClient() throws {
+        let scene = try AuthTourScene()
+        let earnedBefore = scene.currentMonthTotal
+
+        scene.addIncomeLine()
+        #expect(scene.scriptedLine?.status == .inProgress)
+        // Earnline's normal monthly total includes work in progress, so the
+        // tour must not invent a different accounting rule just for motion.
+        #expect(scene.currentMonthTotal == earnedBefore + 240)
+
+        scene.markIncomePaid()
+        #expect(scene.currentMonthTotal == earnedBefore + 240)
+        #expect(scene.monthlyTrendPoints.last?.total == earnedBefore + 240)
+
+        scene.openClientProfile()
+        #expect(scene.screen == .client)
+        #expect(scene.scriptedLine?.client?.id == scene.acme.id)
+    }
+
     @Test func staticPlaybackPolicyCoversMotionPowerAndInactiveStates() {
         #expect(AuthTourPlaybackPolicy.resolve(
             isAccountDockActive: true,

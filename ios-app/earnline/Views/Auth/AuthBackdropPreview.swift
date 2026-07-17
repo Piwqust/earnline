@@ -240,29 +240,32 @@ final class AuthTourDirector {
     }
 
     private func playOneCycle() async -> Bool {
+        // One short connected story, not a feature carousel. Each state is
+        // long enough to read once, and the same income line is the visual
+        // thread from draft to client history.
         move(to: .ledger)
-        guard await pause(for: 1.2) else { return false }
+        guard await pause(for: 0.8) else { return false }
 
         move(to: .addIncome)
-        guard await pause(for: 1.9) else { return false }
+        guard await pause(for: 1.5) else { return false }
 
         move(to: .edit)
-        guard await pause(for: 0.65) else { return false }
+        guard await pause(for: 0.45) else { return false }
         scene.markIncomePaid()
-        guard await pause(for: 1.15) else { return false }
+        guard await pause(for: 0.85) else { return false }
 
         move(to: .insights)
-        guard await pause(for: 0.15) else { return false }
+        guard await pause(for: 0.18) else { return false }
         scene.revealInsightsChart()
-        guard await pause(for: 2.25) else { return false }
+        guard await pause(for: 1.62) else { return false }
 
         move(to: .client)
-        guard await pause(for: 0.15) else { return false }
+        guard await pause(for: 0.18) else { return false }
         scene.revealClientHistory()
-        guard await pause(for: 2.15) else { return false }
+        guard await pause(for: 1.22) else { return false }
 
         move(to: .ledger)
-        return await pause(for: 0.9)
+        return await pause(for: 0.6)
     }
 
     private func pause(for seconds: Double) async -> Bool {
@@ -286,11 +289,11 @@ struct AuthTourCamera {
     var yaw: Double
     var opacity: Double
 
-    static let wide = Self(scale: 0.82, x: 0, y: 0, yaw: 0, opacity: 1)
-    static let composer = Self(scale: 0.99, x: 0, y: -128, yaw: 0, opacity: 1)
-    static let editor = Self(scale: 0.96, x: 10, y: -96, yaw: 1.5, opacity: 1)
-    static let insights = Self(scale: 0.88, x: 0, y: -72, yaw: 0, opacity: 1)
-    static let client = Self(scale: 0.90, x: -42, y: -82, yaw: -0.9, opacity: 1)
+    static let wide = Self(scale: 0.98, x: 0, y: 0, yaw: 0, opacity: 1)
+    static let composer = Self(scale: 0.99, x: 0, y: -16, yaw: 0, opacity: 1)
+    static let editor = Self(scale: 0.96, x: 8, y: -24, yaw: 0.6, opacity: 1)
+    static let insights = Self(scale: 0.99, x: 0, y: 0, yaw: 0, opacity: 1)
+    static let client = Self(scale: 0.98, x: -8, y: 0, yaw: -0.5, opacity: 1)
 }
 
 private struct AuthTourStage: View {
@@ -323,7 +326,7 @@ private struct AuthTourStage: View {
     }
 }
 
-/// One repeating 10.5-second transform timeline. The content closure applies
+/// One repeating 7.4-second transform timeline. The content closure applies
 /// only scale, offset, perspective, and opacity; semantic beat changes happen
 /// in `AuthTourDirector`, outside this per-frame work.
 private struct AuthTourAnimatedScreen: View {
@@ -342,60 +345,55 @@ private struct AuthTourAnimatedScreen: View {
             content.authTourCamera(camera)
         } keyframes: { _ in
             KeyframeTrack(\.scale) {
-                LinearKeyframe(0.82, duration: 1.2)
-                CubicKeyframe(0.99, duration: 0.45)
-                LinearKeyframe(0.99, duration: 1.45)
-                CubicKeyframe(0.96, duration: 0.35)
-                LinearKeyframe(0.96, duration: 1.45)
-                CubicKeyframe(0.88, duration: 0.45)
-                LinearKeyframe(0.88, duration: 1.95)
-                CubicKeyframe(0.90, duration: 0.4)
-                LinearKeyframe(0.90, duration: 1.9)
-                CubicKeyframe(0.82, duration: 0.3)
-                LinearKeyframe(0.82, duration: 0.6)
+                LinearKeyframe(0.98, duration: 0.8)
+                CubicKeyframe(0.99, duration: 0.4)
+                LinearKeyframe(0.99, duration: 1.1)
+                CubicKeyframe(0.96, duration: 0.25)
+                LinearKeyframe(0.96, duration: 1.05)
+                CubicKeyframe(0.99, duration: 0.3)
+                LinearKeyframe(0.99, duration: 1.5)
+                CubicKeyframe(0.98, duration: 0.25)
+                LinearKeyframe(0.98, duration: 1.15)
+                CubicKeyframe(0.98, duration: 0.25)
+                LinearKeyframe(0.98, duration: 0.35)
             }
             KeyframeTrack(\.x) {
-                LinearKeyframe(0, duration: 1.2)
-                CubicKeyframe(0, duration: 0.45)
-                LinearKeyframe(0, duration: 1.45)
-                CubicKeyframe(10, duration: 0.35)
-                LinearKeyframe(10, duration: 1.45)
-                CubicKeyframe(0, duration: 0.45)
-                LinearKeyframe(0, duration: 1.95)
-                CubicKeyframe(-42, duration: 0.4)
-                LinearKeyframe(-42, duration: 1.9)
+                LinearKeyframe(0, duration: 2.3)
+                CubicKeyframe(8, duration: 0.25)
+                LinearKeyframe(8, duration: 1.05)
                 CubicKeyframe(0, duration: 0.3)
-                LinearKeyframe(0, duration: 0.6)
+                LinearKeyframe(0, duration: 1.5)
+                CubicKeyframe(-8, duration: 0.25)
+                LinearKeyframe(-8, duration: 1.15)
+                CubicKeyframe(0, duration: 0.25)
+                LinearKeyframe(0, duration: 0.35)
             }
             KeyframeTrack(\.y) {
-                LinearKeyframe(0, duration: 1.2)
-                CubicKeyframe(-128, duration: 0.45)
-                LinearKeyframe(-128, duration: 1.45)
-                CubicKeyframe(-96, duration: 0.35)
-                LinearKeyframe(-96, duration: 1.45)
-                CubicKeyframe(-72, duration: 0.45)
-                LinearKeyframe(-72, duration: 1.95)
-                CubicKeyframe(-82, duration: 0.4)
-                LinearKeyframe(-82, duration: 1.9)
+                LinearKeyframe(0, duration: 0.8)
+                CubicKeyframe(-16, duration: 0.4)
+                LinearKeyframe(-16, duration: 1.1)
+                CubicKeyframe(-24, duration: 0.25)
+                LinearKeyframe(-24, duration: 1.05)
                 CubicKeyframe(0, duration: 0.3)
+                LinearKeyframe(0, duration: 1.5)
+                LinearKeyframe(0, duration: 1.4)
                 LinearKeyframe(0, duration: 0.6)
             }
             KeyframeTrack(\.yaw) {
-                LinearKeyframe(0, duration: 1.2)
-                LinearKeyframe(0, duration: 1.9)
-                CubicKeyframe(1.5, duration: 0.35)
-                LinearKeyframe(1.5, duration: 1.45)
-                CubicKeyframe(0, duration: 0.45)
-                LinearKeyframe(0, duration: 1.95)
-                CubicKeyframe(-0.9, duration: 0.4)
-                LinearKeyframe(-0.9, duration: 1.9)
+                LinearKeyframe(0, duration: 2.3)
+                CubicKeyframe(0.6, duration: 0.25)
+                LinearKeyframe(0.6, duration: 1.05)
                 CubicKeyframe(0, duration: 0.3)
-                LinearKeyframe(0, duration: 0.6)
+                LinearKeyframe(0, duration: 1.5)
+                CubicKeyframe(-0.5, duration: 0.25)
+                LinearKeyframe(-0.5, duration: 1.15)
+                CubicKeyframe(0, duration: 0.25)
+                LinearKeyframe(0, duration: 0.35)
             }
             KeyframeTrack(\.opacity) {
-                LinearKeyframe(1, duration: 9.6)
-                CubicKeyframe(0.92, duration: 0.25)
-                CubicKeyframe(1, duration: 0.65)
+                LinearKeyframe(1, duration: 6.8)
+                CubicKeyframe(0.94, duration: 0.2)
+                CubicKeyframe(1, duration: 0.4)
             }
         }
     }
@@ -418,32 +416,36 @@ private extension View {
 // MARK: - Real app screens
 
 private struct AuthPreviewScreen: View {
+    @Environment(AppModel.self) private var app
     let scene: AuthTourScene
     @Namespace private var incomeTransition
 
     var body: some View {
-        Group {
+        // Keep the ledger on stage for the whole story. The focused surfaces
+        // arrive as a consequence of the same line of income instead of
+        // replacing the scene with a disconnected feature slide.
+        ZStack(alignment: .top) {
+            ledger
+                .opacity(scene.screen == .ledger ? 1 : 0.14)
+                .scaleEffect(scene.screen == .ledger ? 1 : 0.975, anchor: .top)
+
             switch scene.screen {
             case .ledger:
-                ledger
+                EmptyView()
             case .editor:
                 editor
+                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
             case .insights:
-                NavigationStack {
-                    InsightsView(previewChartDrawProgress: scene.insightsChartProgress)
-                }
+                insights
+                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
             case .client:
-                NavigationStack {
-                    ClientDetailView(
-                        client: scene.acme,
-                        previewHistoryIsLoaded: scene.clientHistoryLoaded
-                    )
-                }
+                client
+                    .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.background)
-        .animation(.smooth(duration: 0.36), value: scene.screen)
+        .animation(.smooth(duration: 0.32), value: scene.screen)
     }
 
     private var ledger: some View {
@@ -511,6 +513,39 @@ private struct AuthPreviewScreen: View {
         } else {
             ledger
         }
+    }
+
+    /// This is the production chart card, shown at the moment the newly paid
+    /// line becomes a visible monthly trend. It deliberately has no new
+    /// dashboard shell or mock metric cards around it.
+    private var insights: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Monthly income")
+                .appFont(13, .semibold)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+
+            EarningsChartCard(
+                points: scene.monthlyTrendPoints,
+                tint: app.accentColor,
+                window: nil,
+                drawProgress: scene.insightsChartProgress
+            )
+            .padding(.horizontal, 16)
+        }
+        .padding(.top, 22)
+    }
+
+    /// The actual client profile is retained as the final meaning-making
+    /// moment: the income line belongs to a person and a relationship, not
+    /// merely a total. Without a navigation stack it reads as an in-canvas
+    /// close-up rather than another app launch.
+    private var client: some View {
+        ClientDetailView(
+            client: scene.acme,
+            previewHistoryIsLoaded: scene.clientHistoryLoaded
+        )
+        .padding(.top, 2)
     }
 }
 
@@ -586,6 +621,30 @@ final class AuthTourScene {
 
     var currentMonthTotal: Decimal {
         monthlyTotals[Insights.monthKey(of: .now)] ?? .zero
+    }
+
+    var monthlyTrendPoints: [EarningsChartCard.Point] {
+        let calendar = Calendar.current
+        let months = (0..<6).reversed().compactMap {
+            calendar.date(byAdding: .month, value: -$0, to: .now)
+        }
+        var previousTotal: Decimal?
+
+        return months.map { month in
+            let total = allEntries
+                .filter {
+                    !($0.isInvalidated)
+                        && $0.status.isIncludedInEarnedTotals
+                        && calendar.isDate($0.date, equalTo: month, toGranularity: .month)
+                }
+                .reduce(Decimal.zero) { $0 + $1.amount }
+            defer { previousTotal = total }
+            return EarningsChartCard.Point(
+                month: month,
+                total: total,
+                previousTotal: previousTotal
+            )
+        }
     }
 
     func prepare(for beat: AuthTourBeat) {

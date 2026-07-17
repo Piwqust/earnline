@@ -10,7 +10,7 @@
 
 ### Onboarding
 - The account screen now uses one native 44-point control language: Apple remains system-owned, while Google, GitHub, local, pairing, recovery, and sign-out actions now share the same labelled full-width rhythm.
-- A new **Earnline in Motion** backdrop directs the real ledger, composer, editor, Insights chart, and client profile through a brief in-memory camera tour, with a calm static ledger whenever motion should not play.
+- **Earnline in Motion** now tells one connected income story rather than cycling through feature slides: a real draft line becomes paid, resolves into the monthly chart, and lands in its real client profile. The motion stays quiet and readable, while a calm settled ledger appears whenever motion should not play.
 - After you enter an empty ledger, one optional spotlight points to the first income action and disappears automatically after you save it.
 
 ## July 15, 2026
