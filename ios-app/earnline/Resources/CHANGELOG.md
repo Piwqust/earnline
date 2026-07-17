@@ -10,7 +10,7 @@
 
 ### Onboarding
 - The account screen now uses one native 44-point control language: Apple remains system-owned, while Google, GitHub, local, pairing, recovery, and sign-out actions now share the same labelled full-width rhythm.
-- Every account action now shares the Apple button’s 17-point semibold label rhythm and native capsule geometry; Apple remains the single solid primary action while the alternatives use interactive Liquid Glass.
+- Every account action now shares the Apple button’s visual label rhythm and native capsule geometry; Apple remains the single solid primary action while the alternatives use interactive Liquid Glass.
 - **Earnline in Motion** now tells one connected income story rather than cycling through feature slides: a real draft line becomes paid, resolves into the monthly chart, and lands in its real client profile. The motion stays quiet and readable, while a calm settled ledger appears whenever motion should not play.
 - The tour now uses one stable visual plane: directional native replacements take the place of competing camera transforms and matched-geometry movement, so story beats no longer jump, resize, or drift between states.
 - The calmer 13-second tour now gives every moment time to read: the draft composer resolves into its saved row, the editor confirms its paid status, and the chart and client history enter with measured native motion.

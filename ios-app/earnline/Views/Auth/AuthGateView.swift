@@ -334,9 +334,9 @@ private enum AuthControlMetrics {
 
 // MARK: - Buttons
 
-/// A full-width provider action. The mark stays a fixed optical asset while
-/// the label shares the same 17-point semibold rhythm and 44-point capsule as
-/// Apple's system-owned control.
+/// A full-width provider action. The visible mark-and-label group is centred
+/// as one unit, matching the system Apple button rather than centring the
+/// text independently of its mark.
 private struct AuthProviderButton: View {
     let title: LocalizedStringKey
     let assetName: String
@@ -346,7 +346,7 @@ private struct AuthProviderButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Group {
                     if isAuthenticating {
                         ProgressView()
@@ -364,14 +364,14 @@ private struct AuthProviderButton: View {
                 .accessibilityHidden(true)
 
                 Text(title)
-                    .appFont(17, .semibold)
+                    // SignInWithAppleButton owns its typography. This 16 pt
+                    // medium SF rhythm is its closest visual match at our
+                    // shared 44 pt height, without trying to restyle Apple's
+                    // protected label.
+                    .appFont(16, .medium)
                     .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-
-                // Balance the leading mark so the text has the same optical
-                // centre as "Continue with Apple".
-                Color.clear.frame(width: 22, height: 22)
             }
             .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
         }
@@ -413,7 +413,7 @@ private struct AuthGateButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .appFont(17, .semibold)
+                .appFont(16, .medium)
                 .foregroundStyle(labelColor)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
