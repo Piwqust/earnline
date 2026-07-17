@@ -11,7 +11,7 @@ Supabase backend described in the [repo root README](../README.md).
 - 🔢 **Rolling totals** — the summary total animates with an odometer‑style numeric roll as the displayed month changes under your scroll.
 - 📐 **Responsive client rows** — the running total keeps the main currency full‑size; when space is tight it drops the secondary currency, then collapses **+ Line** to a single **+**.
 - 💱 **Dual currency** — write in a primary currency, see a secondary converted value at an editable rate.
-- ☁️ **No‑login cloud sync** — personal Supabase workspace sync with dirty‑row push, pull, and offline delete tombstones.
+- 🔐 **Private account sync** — Google/GitHub OAuth resolves one private workspace; an owner can pair another device with a ten-minute, one-time QR code.
 
 ## ✦ Tech stack
 
@@ -21,7 +21,7 @@ Supabase backend described in the [repo root README](../README.md).
 | **Persistence** | SwiftData (`Client`, `Entry`, `Heading`) + sync tombstones |
 | **State** | `@Observable` `AppModel` · `UserDefaults` currency settings |
 | **Parsing** | custom, unit‑tested `LineParser` (amounts, currencies, hold dates, status marks) |
-| **Sync** | Supabase Swift · personal no‑login workspace · pinned via XcodeGen |
+| **Sync** | Supabase Swift · OAuth owner / revocable paired-device membership · pinned via XcodeGen |
 | **Project** | generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
 
 ## ✦ Project structure
@@ -60,8 +60,19 @@ Launch arg `-demoComposer` opens the composer pre‑filled for the first client 
 
 ## ✦ Supabase
 
-Settings stores a Supabase project URL, publishable key, and workspace ID locally in
-`UserDefaults`. The tracked source contains placeholders only
-([`Sync/SupabaseProjectDefaults.swift`](earnline/Sync/SupabaseProjectDefaults.swift)).
-Never paste a `service_role` key into the app. The SQL schema lives in the shared
-[`../supabase`](../supabase) directory.
+The production gate uses `ASWebAuthenticationSession` with
+`com.earnline.app://auth/callback`, then resolves a Supabase workspace membership
+before sync begins. Settings contains a compact **Account & devices** surface;
+owners can inspect and revoke paired devices there. Pairing exchanges the
+one-use QR token through a server function, so unrestricted anonymous Auth
+sign-up stays disabled. The app lock remains independent from account
+authentication. Test stays local-only.
+The signed production build supplies `EARNLINE_SUPABASE_PRODUCTION_URL` and
+`EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY` as build settings; the generated
+Info.plist is the only client configuration source.
+For a local Debug build, `Config/Local.xcconfig` optionally includes the ignored
+`Config/Local.private.xcconfig`; populate that file from the local publishable
+web configuration. It is intentionally never committed.
+The tracked source must never contain a service-role key, OAuth client secret,
+workspace ID, QR code, or real user identifier. Follow the staged setup and
+private legacy-handoff instructions in [`../docs/AUTH_ROLLOUT.md`](../docs/AUTH_ROLLOUT.md).

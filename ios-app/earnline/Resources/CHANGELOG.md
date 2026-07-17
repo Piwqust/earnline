@@ -1,10 +1,47 @@
 # What's new
 
+## July 17, 2026
+
+### Private sync security
+- Workspace access is now enforced by authenticated Supabase membership for every ledger operation; the web sync service no longer bypasses row-level security.
+- Pairing creates a device identity only after a valid ten-minute, one-use code is verified, avoiding unrestricted anonymous account creation.
+- Workspace owners can now review paired devices in Settings and remove a lost or retired device; removal invalidates that device’s cloud access.
+- Web sync batches concurrent reads and checks for remote updates less aggressively while still syncing local edits immediately, reducing free-plan function usage.
+
+## July 15, 2026
+
+### Onboarding
+- The private-workspace entry is rebuilt as one calm, direct account screen: its spacious Earnline canvas makes the next step clear while Google, GitHub, and device pairing live together in native Liquid Glass controls.
+- Sign-in, workspace checks, recoverable errors, and the handoff into the ledger now keep a stable hierarchy instead of jumping between welcome screens; finishing access fades directly into your ledger with no separate tour.
+- Device pairing now explains the one-time QR scan in plain language, offers a solid manual-code fallback when the camera is unavailable, and lets the workspace owner generate a matching code from **Account & devices**.
+- The account journey is fully available in English and Russian, with larger accessible controls, Dynamic Type support, and settings that respect Reduce Motion and Reduce Transparency.
+
+## July 14, 2026
+
+### Private account & device pairing
+- Production now opens through a focused Google or GitHub sign-in gate; the existing Face ID/passcode app lock remains a separate privacy control, and Test remains local-only.
+- First-run account setup is now a calm, two-step welcome and sign-in flow: it explains the private workspace before asking for a provider, gives pairing a clear secondary route, and keeps recovery states actionable.
+- Local Debug builds now load their publishable Supabase configuration from an untracked file, so the account gate works without putting project values in source control.
+- Owners can create a one-time, ten-minute QR code in **Account & devices** to pair another device. Pairing supports a camera scanner and an accessible manual-code fallback.
+- Resolved accounts use separate local ledger containers, preventing a different account on the same device from reusing a previous account’s SwiftData cache.
+
+### Insights & charts
+- Income trends are redesigned as research-grade charts: a smooth line riding a diagonal-hatched band with an endpoint marker, each month's figure in a quiet row along the top, a large total and the covered period above, and no axis clutter; touch the chart to scrub — a value flag rides the dotted crosshair and the header shows that month's income and its change versus the month before.
+- The global time-range toggle at the top of Insights is gone; the 3M / 6M / 1Y switch lives on the income chart itself, where it's the only card that needs one, and switching it no longer recomputes the whole sheet.
+- The income calendar now covers a full year of days, and the section headings between cards are gone — each card speaks for itself.
+- The income chart on client profiles uses the same standardized card, tinted with the client's color.
+
+### Search filters
+- Search now understands filters, not just text: while searching, minimal Date, Client, Project, and Status chips ride just above the search field, each opening a compact native menu built from your own ledger.
+- Applied filters appear as native tokens in the search field and combine naturally — a client plus a month plus "Paid" narrows to exactly those lines, and two months means either month.
+- Typing a date works too: "march", "march 2026", or "2026" finds lines from those dates, alongside the existing client, project, task, and amount matching.
+- The results header keeps its running count and earned total for whatever combination of filters and text is active.
+
 ## July 13, 2026
 
-### Search
-- Search now lives in the ledger's "…" menu and opens the system search experience focused and ready to type.
-- Fixed the resting search bar that floated over the bottom of the ledger.
+### Search & bottom toolbar
+- The ledger's bottom controls now match Apple's own list screens: a "…" circle, the system search field docked in the middle, and a "+" circle, all in the native Liquid Glass toolbar.
+- Tapping the docked field expands the familiar system search experience, focused and ready to type; fixed the detached search bar that previously floated over the ledger.
 
 ### Client achievements
 - Client profiles now include six automatic milestones derived from paid income history, with earned, locked, and progress states.

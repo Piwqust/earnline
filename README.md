@@ -66,21 +66,22 @@ ledger · summary rail). The data model, sync engine, and wire format are shared
 
 ## ✦ Full synchronization
 
-There is no separate server. Sync is a small set of conventions over four Postgres tables
+Sync is a small set of conventions over the ledger Postgres tables
 (`earnline_clients`, `earnline_entries`, `earnline_headings`, `earnline_tombstones`), scoped by a
 `workspace_id`:
 
-- **Personal, no‑login** — both clients connect with the project's *publishable* key and a shared
-  workspace ID (entered in each app's Settings). No accounts.
+- **Private accounts and paired devices** — Google/GitHub OAuth establishes an owner session.
+  A QR code grants a separate revocable device identity membership for one workspace; a valid
+  one-use token is verified before the identity is created.
 - **Offline‑first on both platforms** — iOS uses SwiftData, web uses Dexie / IndexedDB. Edits apply
   instantly and queue for sync.
 - **Last‑write‑wins** on `updated_at`, with **tombstones** so deletes propagate.
-- **Live** — the web app also subscribes to Supabase Realtime, so remote changes appear without a
-  manual refresh.
+- **Authenticated access** — Supabase RLS checks workspace membership for every ledger row,
+  profile, tombstone, and project icon. The web gateway validates a bearer token server-side.
 
 > [!NOTE]
-> The publishable / anon key is client‑safe; the `workspace_id` is the only access gate and is a
-> low‑security personal‑sharing identifier. Never put a `service_role` key in either app.
+> The publishable key is client-safe, but it is never an authorization bypass. Never put an OAuth
+> secret, a service-role key, a real workspace ID, user ID, or pairing token in either app.
 
 ## ✦ Repository layout
 
@@ -116,9 +117,13 @@ xcodegen generate      # regenerate earnline.xcodeproj
 open earnline.xcodeproj
 ```
 
-**☁️ Backend** — apply [`supabase/earnline_sync_schema.sql`](supabase/earnline_sync_schema.sql) to
-your Supabase project, replacing `your-workspace-id` with a private identifier, then enter the
-project URL, publishable key, and that workspace ID in each app's Settings.
+**☁️ Backend** — configure OAuth providers, apply the staged Supabase migrations, and perform the
+private legacy workspace handoff using [`docs/AUTH_ROLLOUT.md`](docs/AUTH_ROLLOUT.md). The
+production web origin is an external deployment setting; it is not committed here.
+Backup, verification, usage monitoring, and device lifecycle checks are documented in
+[`docs/SUPABASE_OPERATIONS.md`](docs/SUPABASE_OPERATIONS.md).
+The verified architecture, production snapshot, capacity estimate, and scaling decision are in
+[`docs/SUPABASE_AUDIT.md`](docs/SUPABASE_AUDIT.md).
 
 ## ✦ CI
 
