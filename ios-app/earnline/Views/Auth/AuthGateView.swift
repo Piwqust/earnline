@@ -330,14 +330,13 @@ private struct AuthGatePanel: View {
 
 private enum AuthControlMetrics {
     static let height: CGFloat = 44
-    static let cornerRadius: CGFloat = 12
 }
 
 // MARK: - Buttons
 
 /// A full-width provider action. The mark stays a fixed optical asset while
-/// the label shares the same 17-point rhythm and 44-point frame as Apple's
-/// system-owned control.
+/// the label shares the same 17-point semibold rhythm and 44-point capsule as
+/// Apple's system-owned control.
 private struct AuthProviderButton: View {
     let title: LocalizedStringKey
     let assetName: String
@@ -365,7 +364,7 @@ private struct AuthProviderButton: View {
                 .accessibilityHidden(true)
 
                 Text(title)
-                    .appFont(17, .medium)
+                    .appFont(17, .semibold)
                     .foregroundStyle(.white.opacity(0.92))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -383,9 +382,9 @@ private struct AuthProviderButton: View {
             // glass effectively disappears there, making real actions look
             // disabled even though they remain tappable.
             .regular.tint(.white.opacity(0.12)).interactive(),
-            in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+            in: .capsule
         )
-        .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
+        .contentShape(.capsule)
         // The in-flight provider keeps its look (only hit-testing is
         // dropped); the other options get the real disabled wash.
         .disabled(isDisabled && !isAuthenticating)
@@ -414,7 +413,7 @@ private struct AuthGateButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .appFont(17, .medium)
+                .appFont(17, .semibold)
                 .foregroundStyle(labelColor)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -423,7 +422,7 @@ private struct AuthGateButton: View {
         }
         .buttonStyle(.plain)
         .modifier(AuthGateGlass(emphasis: emphasis))
-        .contentShape(.rect(cornerRadius: AuthControlMetrics.cornerRadius))
+        .contentShape(.capsule)
         .disabled(isDisabled)
         .accessibilityHint(hint)
     }
@@ -445,25 +444,25 @@ private struct AuthGateGlass: ViewModifier {
         case .regular:
             content.glassEffect(
                 .regular.tint(.white.opacity(0.12)).interactive(),
-                in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+                in: .capsule
             )
         case .light:
             content.glassEffect(
                 .regular.tint(.white).interactive(),
-                in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+                in: .capsule
             )
         case .quiet:
             content.glassEffect(
                 .regular.tint(.white.opacity(0.08)).interactive(),
-                in: .rect(cornerRadius: AuthControlMetrics.cornerRadius)
+                in: .capsule
             )
         }
     }
 }
 
 /// The system Sign in with Apple control in the primary slot: the one solid
-/// button in the cluster — always white on the black panel — clipped to the
-/// same capsule as its glass siblings. On completion it hands the
+/// button in the cluster — always white on the black panel — using the same
+/// capsule geometry as its glass siblings. On completion it hands the
 /// authorization and the RAW nonce (whose SHA-256 digest rode the request)
 /// to the model.
 private struct AuthAppleButton: View {
@@ -483,7 +482,7 @@ private struct AuthAppleButton: View {
         .signInWithAppleButtonStyle(.white)
         .frame(maxWidth: .infinity)
         .frame(height: AuthControlMetrics.height)
-        .clipShape(RoundedRectangle(cornerRadius: AuthControlMetrics.cornerRadius, style: .continuous))
+        .clipShape(.capsule)
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.55 : 1)
         .accessibilityIdentifier("auth.apple")
