@@ -1,5 +1,9 @@
 # Supabase audit
 
+This is an operator audit record for the iPhone-first Earnline product, not the
+public project overview. Start with the [project README](../README.md) for the
+app or the [documentation map](README.md) for related runbooks.
+
 Verified on 2026-07-17 against both the empty staging project and the live
 production project. This document contains no project refs, user identifiers,
 workspace identifiers, URLs, keys, or private ledger values.

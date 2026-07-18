@@ -4,7 +4,7 @@
 
 - Read `PRODUCT.md` before product, UX, data-model, or navigation work.
 - Read `DESIGN.md` before any visual or interaction change.
-- Treat this repository as one product with two peer clients: native SwiftUI in `ios-app/` and a desktop-first React app in `web/`.
+- Treat this repository as one iPhone-first product: native SwiftUI in `ios-app/` is the primary client, while the desktop-first React app in `web/` is an optional companion.
 - Preserve the personal product model: one shared Supabase workspace, no login, no password, and no account UI unless the user explicitly changes that requirement.
 
 ## Design workflow
@@ -63,9 +63,9 @@ Small, well-scoped fixes do not require a separate design proposal, but they sti
 - Run relevant unit tests; run the full iOS test suite for shared model, sync, parser, or navigation changes.
 - Capture the changed screen and exercise the actual interaction, not only its launch state.
 
-## Web implementation
+## Optional web companion
 
-- Keep the web client desktop-first with its own sidebar, ledger, and summary-rail composition. Share product semantics and tokens with iOS, not platform-inappropriate layouts.
+- Keep the web client desktop-first with its own sidebar, ledger, and summary-rail composition. It supports the iPhone-first product rather than setting a parallel feature direction. Share product semantics and tokens with iOS, not platform-inappropriate layouts.
 - Reuse components and tokens under `web/src/ui/components/` and `web/src/ui/theme/`; do not introduce one-off colors, radii, shadows, or control vocabularies.
 - Preserve semantic HTML, keyboard navigation, focus restoration, responsive behavior, and Realtime/offline states.
 

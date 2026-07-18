@@ -1,19 +1,32 @@
 # earn›line for the web
 
-The desktop-first view of the same income ledger: a sidebar for clients, a
-readable ledger in the middle, and a summary rail for the month.
+**An optional desktop companion to the iPhone-first Earnline app.** It exists
+for people who specifically want a browser view of their private ledger; it is
+not a replacement for the native iPhone workflow or the project's product
+priority.
 
-![The desktop ledger with fictional local sample data](../docs/screenshots/readme/web-ledger.png)
+[Back to the iPhone-first project overview](../README.md) · [Primary iOS app](../ios-app/README.md)
 
-## What it does
+## When the companion helps
 
-- Keeps a local browser ledger so entry remains useful offline.
-- Makes month, client, project, and payment state easy to scan.
-- Connects to a private workspace only after sign-in, then synchronizes with
-  the iPhone app.
-- Shows connection and sync state in Settings instead of hiding a problem.
+- Review the same ledger at a desk with a persistent client sidebar and monthly
+  summary rail.
+- Keep a browser-local ledger useful during an offline session.
+- Sign in only when connecting the private workspace shared with the iPhone
+  app, and see connection or sync problems directly in Settings.
 
-![Web settings showing the local development sync state](../docs/screenshots/readme/web-local-only.png)
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="../docs/screenshots/readme/web-ledger.png" alt="Earnline optional desktop ledger with fictional sample data" width="360" />
+      <br /><sub><b>Desktop ledger</b><br />A wider companion view for desk work.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="../docs/screenshots/readme/web-local-only.png" alt="Earnline web Settings with fictional local sync state" width="360" />
+      <br /><sub><b>Visible sync state</b><br />Connection is clear instead of hidden.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Run locally
 
@@ -23,6 +36,15 @@ npm ci
 npm run dev
 ```
 
-Use `npm test`, `npm run typecheck`, and `npm run build` before shipping a web
-change. The screenshots above were captured from the running app with
-disposable fictional data.
+Before shipping a web change, run:
+
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+Keep the web client a companion: preserve the shared wire format and do not
+make a normal Earnline workflow web-only when it belongs in the primary iPhone
+app. The screenshots above were captured from the running app with disposable
+fictional data.

@@ -1,7 +1,10 @@
 # Private OAuth and device pairing rollout
 
-This is the runbook for A4RD-15. It deliberately separates compatible schema
-preparation from the authorization cutover. Do not put a legacy workspace ID,
+This is an operator runbook for A4RD-15, not the product introduction. It
+supports private sync and pairing for the iPhone-first app; begin with the
+[project README](../README.md) or [documentation map](README.md) for the right
+entry point. It deliberately separates compatible schema preparation from the
+authorization cutover. Do not put a legacy workspace ID,
 Supabase user ID, QR token, OAuth secret, service-role key, or a real web origin
 in this repository, an issue, a screenshot, or shell history.
 

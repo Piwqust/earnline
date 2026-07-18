@@ -1,5 +1,9 @@
 # Supabase operations
 
+This is an operator runbook for the iPhone-first Earnline product. For the app
+itself, start with the [project README](../README.md); use the
+[documentation map](README.md) to navigate the technical material.
+
 Earnline is one personal workspace owned by one permanent account. Additional
 phones and browsers receive revocable device identities. It is not a public
 multi-tenant signup product.

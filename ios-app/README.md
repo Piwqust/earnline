@@ -1,25 +1,41 @@
 # earn›line for iPhone
 
-The native SwiftUI companion for keeping an income ledger. It is designed for
-quick entry, clear month totals, and a calm phone-native workflow.
+**The primary Earnline experience.** This native SwiftUI app is a calm place
+to capture independent work, understand the month, and keep a personal ledger
+close at hand.
 
-![The iOS ledger with fictional local sample data](../docs/screenshots/readme/ios-ledger.png)
+[Back to the project overview](../README.md) · [Run locally](#run-locally) · [Optional web companion](../web/README.md)
 
-## What it does
+## A small screen tour
 
-- Add income with a focused composer: amount, client, project, task, date, and
-  payment state.
-- Keep the ledger locally on the device, including when the network is absent.
-- Search text and refine it with the native bottom `Filters` menu for Date,
-  Client, Project, and Status. Selected choices remain searchable tokens.
-- Connect a private workspace when needed to synchronize with the web app and
-  a paired device.
+<table>
+  <tr>
+    <td align="center" width="33.33%">
+      <img src="../docs/screenshots/readme/ios-ledger.png" alt="Earnline iPhone ledger with fictional sample data" width="220" />
+      <br /><sub><b>Ledger</b><br />A readable month, not a dashboard.</sub>
+    </td>
+    <td align="center" width="33.33%">
+      <img src="../docs/screenshots/readme/ios-composer.png" alt="Earnline iPhone income composer with fictional sample data" width="220" />
+      <br /><sub><b>Composer</b><br />Add a line without breaking focus.</sub>
+    </td>
+    <td align="center" width="33.33%">
+      <img src="../docs/screenshots/readme/ios-filters.png" alt="Earnline iPhone search with native Filters control" width="220" />
+      <br /><sub><b>Search</b><br />Find work with words and native filter tokens.</sub>
+    </td>
+  </tr>
+</table>
 
-| Native filters | Composer |
-| --- | --- |
-| ![Search with the native Filters control](../docs/screenshots/readme/ios-filters.png) | ![The income composer](../docs/screenshots/readme/ios-composer.png) |
+## What the iPhone app is for
 
-![Settings on a local device](../docs/screenshots/readme/ios-local-only.png)
+- Capture income with amount, client, project, task, date, and payment state in
+  one focused composer.
+- See the important hierarchy at a glance: amount first, work second, and
+  dates and status as quieter context.
+- Keep working offline. The ledger lives in SwiftData on the device first.
+- Search text, then refine it with the bottom `Filters` menu for Date, Client,
+  Project, and Status. Selected choices remain visible as search tokens.
+- Use the app fully locally, or sign in to a private workspace and pair your
+  own devices when sync is useful.
 
 ## Run locally
 
@@ -29,10 +45,27 @@ xcodegen generate
 open earnline.xcodeproj
 ```
 
-Run the `earnline` scheme on an iPhone simulator or a connected iPhone.
-For local Debug runs, Xcode also installs the separate `earnline Dev` companion
-to that same destination. It has its own blue Dev icon and bundle identifier
-(`com.earnline.app.dev`), and stays local-only; it is not a production-sync app.
+Select the `earnline` scheme and run it on an iPhone simulator or a connected
+iPhone. `project.yml` is the Xcode project source of truth, so regenerate after
+adding files or changing build settings.
 
-The production app keeps `com.earnline.app` and the standard app icon. The
-project file is generated from `project.yml`.
+For a regression check, use Xcode's Test action or run the scheme's tests:
+
+```bash
+xcodebuild \
+  -project earnline.xcodeproj \
+  -scheme earnline \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  test
+```
+
+## Development companion
+
+For local Debug runs, Xcode can also install the separate `earnline Dev`
+companion on the same destination. It has its own blue Dev icon and bundle
+identifier (`com.earnline.app.dev`) and stays local-only; it is not a
+production-sync app.
+
+The production app keeps `com.earnline.app` and the standard app icon. See
+[`project.yml`](project.yml) for the target configuration and
+[`../docs/README.md`](../docs/README.md) for private sync operations.

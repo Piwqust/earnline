@@ -1,6 +1,6 @@
 ---
 name: "earn›line"
-description: "A calm, precise income ledger for focused daily use on iOS and the web."
+description: "A calm, precise iPhone-first income ledger with an optional web companion."
 colors:
   accent-blue: "#0088FF"
   accent-blue-pressed: "#0072E0"
@@ -95,7 +95,7 @@ components:
 
 Earnline should feel like a carefully kept working notebook: immediate enough for a ten-second entry, structured enough to trust at a glance, and quiet enough to revisit many times a day. The interface serves the ledger rather than performing around it. Numbers, client names, work descriptions, and status carry the hierarchy; chrome recedes until it is needed.
 
-iOS and web share product semantics, color roles, typographic character, and component discipline, but each platform stays native. iOS uses standard SwiftUI navigation and adaptive system behavior. The web uses a desktop-first sidebar, ledger, and summary rail. Neither platform imitates the other mechanically.
+iOS and web share product semantics, color roles, typographic character, and component discipline, but each platform stays native. The native iPhone app is the primary product experience: it sets everyday interaction priority and release quality. The web is an optional desktop companion with a sidebar, ledger, and summary rail; it supports the iPhone workflow rather than setting a parallel direction. Neither platform imitates the other mechanically.
 
 **Key Characteristics:**
 
