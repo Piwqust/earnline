@@ -175,7 +175,7 @@ enum EntrySearch {
 // MARK: - Filter inventory
 
 extension EntrySearch {
-    /// Everything the filter chips can offer, gathered once when search opens
+    /// Everything the native Filters menu can offer, gathered once when search opens
     /// (one walk over the store) rather than per keystroke.
     struct FilterSource: Equatable {
         /// Months with data, newest first — the full snapshot's contract.

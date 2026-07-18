@@ -17,6 +17,9 @@ extension AppModel {
     /// Keep this separate from `isSupabaseConfigured`: callers that create an
     /// auth session need a client before sync itself is allowed to run.
     var hasSupabaseConfiguration: Bool {
+        // The installable Dev companion must never authenticate or contact a
+        // project. Its local ledger uses the Test container only.
+        guard !Self.isLocalOnlyDevBuild else { return false }
         let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: urlText),
               url.scheme?.lowercased() == "https",
@@ -72,7 +75,13 @@ extension AppModel {
         invokedByRetry = false
         // Demo rows seeded while sync was unconfigured must not leak into a
         // real workspace — drop the never-synced ones before the first push.
-        SampleData.purgeAutoSeededDemoIfNeeded(context)
+        do {
+            try SampleData.purgeAutoSeededDemoIfNeeded(context)
+        } catch {
+            syncMessage = String(localized: "Needs sync")
+            syncError = String(localized: "Earnline could not safely remove local sample data before sync. Nothing was uploaded. Try again after restarting the app.")
+            return
+        }
         let generation = syncGeneration
         isSyncing = true
         syncMessage = String(localized: "Syncing...")

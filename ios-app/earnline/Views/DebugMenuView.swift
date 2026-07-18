@@ -218,7 +218,7 @@ struct DebugMenuView: View {
         } header: {
             Text(verbatim: "Auth gate states")
         } footer: {
-            Text(verbatim: "Each row forces the account state and closes this menu so the gate is visible. Real sign-in still works from a forced gate.")
+            Text(verbatim: "Each row is a local visual state: it closes this menu and shows the gate without contacting auth or sync.")
         }
     }
 
@@ -433,6 +433,7 @@ extension AppModel {
 
     func debugForceGateState(_ preset: DebugGateState) {
         showSettings = false
+        debugAuthGatePreview = true
         switch preset {
         case .signedOut: accountState = .signedOut
         case .checking: accountState = .checking

@@ -73,9 +73,12 @@ enum IncomeLedgerImporter {
         let parsed = parse(bundledLedger, year: year)
         guard !parsed.isEmpty else { return 0 }
 
-        let existingClients = (try? context.fetch(FetchDescriptor<Client>())) ?? []
+        // A failed read is not an empty ledger. Continuing would create
+        // duplicate clients or entries during a later import, so propagate it
+        // to the existing Settings error surface instead.
+        let existingClients = try context.fetch(FetchDescriptor<Client>())
         var clientsByName = Dictionary(uniqueKeysWithValues: existingClients.map { ($0.name.normalizedLedgerKey, $0) })
-        let existingEntries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        let existingEntries = try context.fetch(FetchDescriptor<Entry>())
         let existingEntryIDs = Set(existingEntries.map(\.id))
         var inserted = 0
 

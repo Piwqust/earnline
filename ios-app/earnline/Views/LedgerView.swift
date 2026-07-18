@@ -22,8 +22,8 @@ struct LedgerView: View {
     /// Full-ledger snapshot for search, built when search opens: search spans
     /// every month, not just the materialized window.
     @State private var searchSnapshot: Insights.LedgerSnapshot?
-    /// Filter-chip inventory (months, clients, projects) gathered in the same
-    /// pass, so the chips never walk the store per render.
+    /// Filter-menu inventory (months, clients, projects) gathered in the same
+    /// pass, so the native menu never walks the store per render.
     @State private var searchFilterSource: EntrySearch.FilterSource?
 
     /// Mutually exclusive UI presentations are represented as typed routes,
@@ -261,6 +261,9 @@ struct LedgerView: View {
         LedgerBottomBarItems(
             clients: clients,
             pendingCount: ledgerSnapshot?.pendingCount ?? 0,
+            isSearching: isSearching,
+            filterSource: searchFilterSource,
+            searchTokens: $search.tokens,
             onInsights: { sheetRoute = .insights },
             onPending: { sheetRoute = .pending },
             onSettings: { app.showSettings = true },
@@ -382,12 +385,19 @@ struct LedgerView: View {
                 header(monthlyTotals: snapshot.earnedTotalByMonth)
             }
         }
-        // Minimal filter chips ride directly above the search field for the
-        // duration of a search session — above the keyboard while typing,
-        // above the docked field at rest.
+        // UIKit replaces the docked bottom-bar items with its full search
+        // field and Cancel control once search expands. Keep the one native
+        // Filters menu reachable in the same lower chrome, above that field,
+        // rather than reviving the former horizontal chip strip.
         .safeAreaBar(edge: .bottom) {
             if isSearching, let source = searchFilterSource {
-                LedgerSearchFilterBar(source: source, tokens: $search.tokens)
+                HStack {
+                    LedgerSearchFiltersMenu(source: source, tokens: $search.tokens)
+                        .buttonStyle(.glass)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 3)
             }
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -446,7 +456,7 @@ struct LedgerView: View {
 
     /// One walk over the store at search-open time: distinct months arrive
     /// with the full snapshot; clients and their distinct project names are
-    /// collected here so chip rendering is pure lookup.
+    /// collected here so native menu rendering is pure lookup.
     private func buildSearchFilterSource() -> EntrySearch.FilterSource {
         var source = EntrySearch.FilterSource()
         source.months = searchSnapshot?.months ?? []
@@ -554,30 +564,30 @@ struct LedgerView: View {
     /// directly so visual checks don't depend on scripted taps.
     private func runDemoIfNeeded() {
         guard !didRunDemo else { return }
-        let args = ProcessInfo.processInfo.arguments
-        if args.contains("-demoComposer") {
+        if AppModel.hasUIAutomationLaunchFlag("-demoComposer") {
             didRunDemo = true
             if let client = clients.first {
                 openComposer(for: client, month: .now)
             }
-        } else if args.contains("-demoSettings") || args.contains("-demoDeveloperSettings") {
+        } else if AppModel.hasUIAutomationLaunchFlag("-demoSettings")
+                    || AppModel.hasUIAutomationLaunchFlag("-demoDeveloperSettings") {
             didRunDemo = true
             app.showSettings = true
-        } else if args.contains("-demoHeadingEditor") {
+        } else if AppModel.hasUIAutomationLaunchFlag("-demoHeadingEditor") {
             didRunDemo = true
             sheetRoute = .newHeading
-        } else if args.contains("-demoEdit") {
+        } else if AppModel.hasUIAutomationLaunchFlag("-demoEdit") {
             didRunDemo = true
             if let entry = clients.first(where: { !$0.entries.isEmpty })?.entries.first {
                 sheetRoute = .editEntry(entry.id)
             }
-        } else if args.contains("-demoSearch") {
+        } else if AppModel.hasUIAutomationLaunchFlag("-demoSearch") {
             didRunDemo = true
             search.isPresented = true
-        } else if args.contains("-demoInsights") {
+        } else if AppModel.hasUIAutomationLaunchFlag("-demoInsights") {
             didRunDemo = true
             sheetRoute = .insights
-        } else if args.contains("-demoClientProfile"),
+        } else if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile"),
                   let stressClient = clients.first(where: { $0.name == "Stress Client 1" }) {
             didRunDemo = true
             navigationPath.append(.client(stressClient.id))

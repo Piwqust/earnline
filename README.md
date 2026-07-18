@@ -1,139 +1,60 @@
-<div align="center">
-
 # earn›line
 
-**An income‑only notebook for freelancers, on iOS *and* the web.**
+An income ledger for independent work. Write a line, keep the useful details,
+and see the month clearly on iPhone or on the web.
 
-Jot income the way you'd type it in Notes. Every line is parsed into a clean, self‑totalling,
-cloud‑synced ledger that stays in lock‑step across your phone and your browser.
+![The web ledger, shown with fictional local sample data](docs/screenshots/readme/web-ledger.png)
 
-<p>
-  <img src="https://img.shields.io/badge/iOS-26-0A84FF?style=for-the-badge&logo=apple&logoColor=white" alt="iOS 26">
-  <img src="https://img.shields.io/badge/Swift-6-F05138?style=for-the-badge&logo=swift&logoColor=white" alt="Swift 6">
-  <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 18">
-  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript 5">
-  <img src="https://img.shields.io/badge/Supabase-sync-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase">
-  <img src="https://img.shields.io/badge/License-MIT-7B00FF?style=for-the-badge" alt="MIT License">
-</p>
+## A quiet place for earned work
 
-<br>
+- Capture an amount, client, project, task, date, and payment state in one
+  compact line.
+- Keep working when offline. Each app stores its ledger locally first.
+- Search by words or native iOS filter tokens for date, client, project, and
+  status.
+- Use the same private workspace on iOS and web when you choose to sign in and
+  connect it.
 
-<img src="docs/screenshots/web-desktop.svg" width="860" alt="The earn›line desktop web app — sidebar, month‑grouped ledger, and a summary rail">
+## Built for the two places you work
 
-</div>
+The iOS app is a native SwiftUI ledger with a composer, contextual menus, and
+an iPhone-first layout.
 
----
-
-## ✦ What it is
-
-earn›line is **income‑only** by design. It is deliberately *not* a budget app, wallet, expense
-tracker, or CRM. You write what you earned as plain lines, and the app understands them:
-
-```text
-+$240 Acme: 2 screens
-⌛ +$140 Acme: Logotype        hold until 14.07
-✅ +$300 Studio X: Landing page
-```
-
-Every line is parsed into **amount · client · project · task · date · hold‑until · status**, and
-totals roll up automatically **by month, by client, and by status**.
-
-## ✦ One ledger, two apps
-
-| | Path | Stack |
+| Ledger | Native filters | Composer |
 | --- | --- | --- |
-| 📱 **iOS** | [`ios-app/`](ios-app) | SwiftUI (iOS 26) · Liquid Glass · SwiftData · Supabase Swift |
-| 🌐 **Web** | [`web/`](web) | React · Vite · TypeScript · Dexie (IndexedDB) · supabase‑js |
-| ☁️ **Backend** | [`supabase/`](supabase) | Shared Postgres schema + migrations |
+| ![iPhone ledger with fictional local sample data](docs/screenshots/readme/ios-ledger.png) | ![iPhone search with the native Filters control](docs/screenshots/readme/ios-filters.png) | ![iPhone income composer with fictional local sample data](docs/screenshots/readme/ios-composer.png) |
 
-Both clients are **peers** of one Supabase project, so a line added on the phone shows up in the
-browser and vice‑versa. They differ only in presentation: the iOS app is a phone‑native SwiftUI
-experience, and the web app is **desktop‑first**, with its own web‑native design system (sidebar ·
-ledger · summary rail). The data model, sync engine, and wire format are shared.
+![iPhone settings on a local device](docs/screenshots/readme/ios-local-only.png)
 
-<div align="center">
-<table>
-  <tr>
-    <td><img src="docs/screenshots/ledger.svg" width="290" alt="The earn›line iOS ledger"></td>
-    <td><img src="docs/screenshots/composer.svg" width="290" alt="The earn›line composer"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Native on iOS</b><br><sub>Liquid Glass · months · color‑coded statuses</sub></td>
-    <td align="center"><b>The smart composer</b><br><sub>type → chips → commit</sub></td>
-  </tr>
-</table>
-</div>
+The web app is desktop-first: sidebar, ledger, and a summary rail stay visible
+without imitating a phone UI.
 
-## ✦ Full synchronization
+## Local first, private when connected
 
-Sync is a small set of conventions over the ledger Postgres tables
-(`earnline_clients`, `earnline_entries`, `earnline_headings`, `earnline_tombstones`), scoped by a
-`workspace_id`:
+Local data is immediately usable, so a weak connection does not interrupt a
+workday. When a private workspace is connected, the iOS and web apps synchronize
+only that workspace. Account and device settings make the current state visible.
 
-- **Private accounts and paired devices** — Google/GitHub OAuth establishes an owner session.
-  A QR code grants a separate revocable device identity membership for one workspace; a valid
-  one-use token is verified before the identity is created.
-- **Offline‑first on both platforms** — iOS uses SwiftData, web uses Dexie / IndexedDB. Edits apply
-  instantly and queue for sync.
-- **Last‑write‑wins** on `updated_at`, with **tombstones** so deletes propagate.
-- **Authenticated access** — Supabase RLS checks workspace membership for every ledger row,
-  profile, tombstone, and project icon. The web gateway validates a bearer token server-side.
+![Web settings showing a local development sync state](docs/screenshots/readme/web-local-only.png)
 
-> [!NOTE]
-> The publishable key is client-safe, but it is never an authorization bypass. Never put an OAuth
-> secret, a service-role key, a real workspace ID, user ID, or pairing token in either app.
+All screenshots in this README are captured from the running apps with
+fictional disposable sample data. They contain no customer records, credentials,
+or stock/mockup artwork.
 
-## ✦ Repository layout
-
-```
-earnline/
-├─ ios-app/    SwiftUI app    · Models · Parsing · Theme · Sync · ViewModels · Views · Tests
-├─ web/        React + Vite   · domain · data · sync · state · ui (screens + components + theme)
-├─ supabase/   shared Postgres schema + migrations
-├─ docs/       screenshots
-└─ .github/    CI workflow + CODEOWNERS
-```
-
-Review ownership is declared in [`.github/CODEOWNERS`](.github/CODEOWNERS), and
-[`CONTRIBUTING.md`](CONTRIBUTING.md) documents the wire‑format contract both apps must uphold.
-
-## ✦ Get started
-
-**🌐 Web**
+## Run it locally
 
 ```bash
-cd web
-npm install
-npm run dev            # http://localhost:5173
-```
+# Web
+cd web && npm ci && npm run dev
 
-No Supabase yet? Open **Settings → Import sample ledger** for the same demo data as iOS.
-
-**📱 iOS**
-
-```bash
-cd ios-app
-xcodegen generate      # regenerate earnline.xcodeproj
+# iOS
+cd ios-app && xcodegen generate
 open earnline.xcodeproj
 ```
 
-**☁️ Backend** — configure OAuth providers, apply the staged Supabase migrations, and perform the
-private legacy workspace handoff using [`docs/AUTH_ROLLOUT.md`](docs/AUTH_ROLLOUT.md). The
-production web origin is an external deployment setting; it is not committed here.
-Backup, verification, usage monitoring, and device lifecycle checks are documented in
-[`docs/SUPABASE_OPERATIONS.md`](docs/SUPABASE_OPERATIONS.md).
-The verified architecture, production snapshot, capacity estimate, and scaling decision are in
-[`docs/SUPABASE_AUDIT.md`](docs/SUPABASE_AUDIT.md).
+The repository contains the iOS app, web app, and Supabase backend side by side.
+Each directory has a short README for its own local workflow.
 
-## ✦ CI
+## License
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs two jobs on every pull request: the
-**iOS** job regenerates the project with XcodeGen and runs `xcodebuild test`, and the **web** job
-runs the Vitest suite and a production build.
-
-## ✦ Contributing & license
-
-Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the monorepo layout and the
-one rule that keeps both apps in sync. Released under the [MIT License](LICENSE).
-
-<div align="center"><sub>Built with SwiftUI, React, and one shared wire format. ✦</sub></div>
+[MIT](LICENSE)

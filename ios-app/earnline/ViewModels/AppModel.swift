@@ -8,11 +8,49 @@ import Network
 @MainActor
 @Observable
 final class AppModel {
+    /// The side-by-side `earnline Dev` target is a companion for local UI
+    /// work, never a second client for a production workspace. Keeping this
+    /// compile-time (rather than a stored preference) means a clean Dev
+    /// install cannot inherit a production choice from anywhere.
+    nonisolated static var isLocalOnlyDevBuild: Bool {
+        #if DEBUGMENU
+        true
+        #else
+        false
+        #endif
+    }
+
     /// UI automation must not inherit a real device's lock state or start a
     /// live personal-workspace sync. This launch argument is set exclusively by
     /// the UI-test target and leaves normal app launches unchanged.
+    ///
+    /// XCUITest can retain a previous process's launch arguments while it
+    /// relaunches the same bundle in a long serial suite. Its per-launch
+    /// environment is authoritative, so test helpers set a complete flag set
+    /// there; command-line arguments remain the fallback for manual runs.
+    nonisolated static let uiTestFlagsEnvironmentKey = "EARNLINE_UI_TEST_FLAGS"
+
+    nonisolated static func hasUIAutomationLaunchFlag(_ flag: String) -> Bool {
+        let processInfo = ProcessInfo.processInfo
+        if let rawFlags = processInfo.environment[uiTestFlagsEnvironmentKey] {
+            return rawFlags
+                .split(whereSeparator: { $0 == " " || $0 == "\n" })
+                .contains { $0 == flag }
+        }
+        return processInfo.arguments.contains(flag)
+    }
+
     nonisolated static var isRunningUIAutomation: Bool {
-        ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        hasUIAutomationLaunchFlag("-uiTesting")
+    }
+    /// Swift Testing exercises the App Lock state machine directly, but its
+    /// ephemeral host window never receives a full scene appearance cycle.
+    /// Creating a second alert-level window there produces UIKit's spurious
+    /// unbalanced-transition warning; real app and UI-test launches keep the
+    /// production window path intact.
+    nonisolated static var isRunningUnitTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            && !isRunningUIAutomation
     }
     nonisolated static let supportedCurrencyCodes = ["USD", "EUR", "GBP", "RUB", "UAH"]
     nonisolated static let defaultBaseCurrencyCode = "USD"
@@ -121,6 +159,10 @@ final class AppModel {
     }
     var workspaceEnvironment: WorkspaceEnvironment {
         didSet {
+            if Self.isLocalOnlyDevBuild, workspaceEnvironment != .test {
+                workspaceEnvironment = .test
+                return
+            }
             guard workspaceEnvironment != oldValue else { return }
             defaults.set(workspaceEnvironment.rawValue, forKey: "workspaceEnvironment")
             workspaceID = defaults.string(forKey: "workspaceID.\(workspaceEnvironment.rawValue)")
@@ -211,15 +253,30 @@ final class AppModel {
     var shouldOfferFirstRunTour: Bool {
         guard !hasCompletedFirstRunTour else { return false }
         if Self.isRunningUIAutomation {
-            return ProcessInfo.processInfo.arguments.contains("-firstRunTour")
+            return Self.hasUIAutomationLaunchFlag("-firstRunTour")
         }
         return true
     }
     private(set) var isLocked = false
+    /// A non-blocking privacy message shown in Settings after the app disables
+    /// an impossible legacy lock (for example, after the device passcode was
+    /// removed). The ledger is never left behind a cover it cannot unlock.
+    var appLockNotice: String?
+    /// A non-blocking warning for an Apple sign-in credential check that could
+    /// not finish. Explicit Apple revocation still signs the account out; a
+    /// transient Keychain or Apple-service problem must not silently weaken
+    /// the check or erase the owner's local ledger.
+    var accountSecurityNotice: String?
     var isSyncing = false
     var syncMessage = String(localized: "Offline")
     var syncError: String?
     var accountState: AccountState = .checking
+    #if DEBUGMENU
+    /// A Dev-only visual override for exercising the account-gate states.
+    /// It never turns on authentication or sync; it only lets the root choose
+    /// the gate instead of the local ledger while a debug preset is active.
+    var debugAuthGatePreview = false
+    #endif
     /// Number of remote edits/deletes that changed after this device's last
     /// observed server version. These require an explicit user choice rather
     /// than a silent last-device-wins overwrite. Written by the sync pass in
@@ -281,13 +338,14 @@ final class AppModel {
     @ObservationIgnored var pathWasSatisfied = true
     @ObservationIgnored private var lockWindow: UIWindow?
     @ObservationIgnored private var isUnlocking = false
+    @ObservationIgnored var appleCredentialRevocationObserver: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         Self.migrateWorkspaceCurrencyProfilesIfNeeded(defaults: defaults)
 
         let savedEnvironment = defaults.string(forKey: "workspaceEnvironment").flatMap(WorkspaceEnvironment.init(rawValue:))
-        let resolvedEnvironment = savedEnvironment ?? .production
+        let resolvedEnvironment = Self.isLocalOnlyDevBuild ? .test : (savedEnvironment ?? .production)
         let resolvedBaseCurrencyCode = Self.normalizedCurrencyCode(
             defaults.string(forKey: Self.workspaceDefaultKey("baseCurrencyCode", environment: resolvedEnvironment)),
             fallback: Self.defaultBaseCurrencyCode
@@ -352,24 +410,23 @@ final class AppModel {
             appearanceMode = .system
         }
         accent = Theme.Accent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .blue
-        let launchArguments = ProcessInfo.processInfo.arguments
-        if launchArguments.contains("-resetDeveloperMode") {
+        if Self.hasUIAutomationLaunchFlag("-resetDeveloperMode") {
             defaults.set(false, forKey: "developerModeEnabled")
         }
-        if launchArguments.contains("-demoDeveloperSettings") {
+        if Self.hasUIAutomationLaunchFlag("-demoDeveloperSettings") {
             developerModeEnabled = true
         } else {
             developerModeEnabled = defaults.bool(forKey: "developerModeEnabled")
         }
-        if launchArguments.contains("-resetExperimentalFeatures") {
+        if Self.hasUIAutomationLaunchFlag("-resetExperimentalFeatures") {
             defaults.set(false, forKey: "clientBadgesEnabled")
         }
         clientBadgesEnabled = defaults.bool(forKey: "clientBadgesEnabled")
-        if Self.isRunningUIAutomation && launchArguments.contains("-demoClientProfile") {
+        if Self.isRunningUIAutomation && Self.hasUIAutomationLaunchFlag("-demoClientProfile") {
             clientBadgesEnabled = true
         }
         requireAppLock = defaults.bool(forKey: "requireAppLock")
-        if launchArguments.contains("-resetFirstRunTour") {
+        if Self.hasUIAutomationLaunchFlag("-resetFirstRunTour") {
             defaults.set(false, forKey: "hasCompletedFirstRunTour")
         }
         hasCompletedFirstRunTour = defaults.bool(forKey: "hasCompletedFirstRunTour")
@@ -381,7 +438,7 @@ final class AppModel {
     /// Cold launches start covered when the lock is on; the biometric prompt
     /// fires as soon as the window exists (called from the root `.task`).
     func lockOnLaunchIfNeeded() {
-        guard requireAppLock else { return }
+        guard canUseAppLock else { return }
         isLocked = true
         showLockWindow()
         attemptUnlockIfNeeded()
@@ -390,7 +447,7 @@ final class AppModel {
     /// Called on backgrounding — covers the content before the app-switcher
     /// snapshot is taken, so amounts never show in the multitasking UI.
     func lockIfNeeded() {
-        guard requireAppLock, !isLocked else { return }
+        guard canUseAppLock, !isLocked else { return }
         isLocked = true
         showLockWindow()
     }
@@ -402,7 +459,7 @@ final class AppModel {
     /// Center or an incoming-call banner returns straight to content, no
     /// re-authentication.
     func coverIfNeeded() {
-        guard requireAppLock, !isLocked else { return }
+        guard canUseAppLock, !isLocked else { return }
         showLockWindow()
     }
 
@@ -420,18 +477,41 @@ final class AppModel {
         isUnlocking = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if await AppLockAuth.evaluate(reason: String(localized: "Unlock your income ledger")) {
+            switch await AppLockAuth.evaluate(reason: String(localized: "Unlock your income ledger")) {
+            case .authenticated:
                 self.isLocked = false
                 self.hideLockWindow()
+            case .unavailable:
+                self.disableUnavailableAppLock()
+                self.isLocked = false
+                self.hideLockWindow()
+            case .denied:
+                break
             }
             self.isUnlocking = false
         }
+    }
+
+    private var canUseAppLock: Bool {
+        guard requireAppLock else { return false }
+        guard AppLockAuth.isAuthenticationAvailable else {
+            disableUnavailableAppLock()
+            return false
+        }
+        return true
+    }
+
+    private func disableUnavailableAppLock() {
+        guard requireAppLock else { return }
+        requireAppLock = false
+        appLockNotice = String(localized: "App Lock was turned off because this iPhone no longer has a device passcode.")
     }
 
     /// The lock lives in its own alert-level window for the same reason dark
     /// mode is a window-level override: a SwiftUI overlay in the root view
     /// sits *under* presented sheets, and the lock must cover those too.
     private func showLockWindow() {
+        guard !Self.isRunningUnitTests else { return }
         guard lockWindow == nil else { return }
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState != .unattached }) ?? scenes.first else { return }

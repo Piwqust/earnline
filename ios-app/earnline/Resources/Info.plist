@@ -2,9 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>$(DEVELOPMENT_LANGUAGE)</string>
-    <key>CFBundleExecutable</key>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>$(PRODUCT_DISPLAY_NAME)</string>
+	<key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
@@ -31,12 +33,16 @@
     <string>$(EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY)</string>
     <key>EarnlineSupabaseProductionURL</key>
     <string>$(EARNLINE_SUPABASE_PRODUCTION_URL)</string>
+    <key>EarnlinePrivacyPolicyURL</key>
+    <string>$(EARNLINE_PRIVACY_POLICY_URL)</string>
     <key>EarnlineSupabaseTestPublishableKey</key>
     <string>$(EARNLINE_SUPABASE_TEST_PUBLISHABLE_KEY)</string>
     <key>EarnlineSupabaseTestURL</key>
     <string>$(EARNLINE_SUPABASE_TEST_URL)</string>
     <key>NSCameraUsageDescription</key>
     <string>Scan an Earnline pairing code to connect this device.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Use Face ID to unlock your income ledger.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>

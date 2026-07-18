@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "38CA04C708B209CC19037885"
-               BuildableName = "earnline-dev.app"
-               BlueprintName = "earnline-dev"
+               BlueprintIdentifier = "3C808029FA63CFF3B263CB5F"
+               BuildableName = "earnline.app"
+               BlueprintName = "earnline"
                ReferencedContainer = "container:earnline.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -32,27 +32,14 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "38CA04C708B209CC19037885"
-            BuildableName = "earnline-dev.app"
-            BlueprintName = "earnline-dev"
+            BlueprintIdentifier = "3C808029FA63CFF3B263CB5F"
+            BuildableName = "earnline.app"
+            BlueprintName = "earnline"
             ReferencedContainer = "container:earnline.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DF4B0F539550901E0E32E4D6"
-               BuildableName = "earnlineDevUITests.xctest"
-               BlueprintName = "earnlineDevUITests"
-               ReferencedContainer = "container:earnline.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
-      <CommandLineArguments>
-      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -68,9 +55,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "38CA04C708B209CC19037885"
-            BuildableName = "earnline-dev.app"
-            BlueprintName = "earnline-dev"
+            BlueprintIdentifier = "3C808029FA63CFF3B263CB5F"
+            BuildableName = "earnline.app"
+            BlueprintName = "earnline"
             ReferencedContainer = "container:earnline.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -87,9 +74,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "38CA04C708B209CC19037885"
-            BuildableName = "earnline-dev.app"
-            BlueprintName = "earnline-dev"
+            BlueprintIdentifier = "3C808029FA63CFF3B263CB5F"
+            BuildableName = "earnline.app"
+            BlueprintName = "earnline"
             ReferencedContainer = "container:earnline.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

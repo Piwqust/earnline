@@ -58,4 +58,17 @@ struct AppLockTests {
         let title = AppLockAuth.settingTitle
         #expect(!title.isEmpty)
     }
+
+    @Test func missingDevicePasscodeIsNeverAnAuthenticationSuccess() {
+        // A missing policy used to be treated as an immediate unlock, leaving
+        // a visibly enabled App Lock without any protection.
+        #expect(AppLockAuth.evaluation(
+            policyAvailable: false,
+            authenticationSucceeded: true
+        ) == .unavailable)
+        #expect(AppLockAuth.evaluation(
+            policyAvailable: true,
+            authenticationSucceeded: false
+        ) == .denied)
+    }
 }

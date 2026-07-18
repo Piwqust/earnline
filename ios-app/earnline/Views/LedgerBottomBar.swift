@@ -9,6 +9,9 @@ import SwiftUI
 struct LedgerBottomBarItems: ToolbarContent {
     let clients: [Client]
     let pendingCount: Int
+    let isSearching: Bool
+    let filterSource: EntrySearch.FilterSource?
+    @Binding var searchTokens: [LedgerSearchToken]
     let onInsights: () -> Void
     let onPending: () -> Void
     let onSettings: () -> Void
@@ -18,13 +21,22 @@ struct LedgerBottomBarItems: ToolbarContent {
     let onPasteLines: () -> Void
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .bottomBar) { moreMenu }
+        ToolbarItem(placement: .bottomBar) { leadingMenu }
         ToolbarSpacer(.fixed, placement: .bottomBar)
         // The `.searchable` field rests here, Mail-style, instead of
         // floating in its own detached bar.
         DefaultToolbarItem(kind: .search, placement: .bottomBar)
         ToolbarSpacer(.fixed, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) { addMenu }
+    }
+
+    @ViewBuilder
+    private var leadingMenu: some View {
+        if isSearching, let filterSource {
+            LedgerSearchFiltersMenu(source: filterSource, tokens: $searchTokens)
+        } else {
+            moreMenu
+        }
     }
 
     private var addMenu: some View {
@@ -90,38 +102,43 @@ struct LedgerBottomBarItems: ToolbarContent {
     }
 }
 
-/// Minimal filter chips floating just above the search field while a search
-/// session is open: Date, Client, Project, Status. Each chip is a native
-/// `Menu` of checkable rows backed by the same tokens the search field shows,
-/// so a filter can be applied from the chip and removed from either place.
-struct LedgerSearchFilterBar: View {
+/// One native menu in the bottom toolbar while a search is open. It keeps
+/// every filter in the familiar system menu while the field remains focused
+/// and continues to show the selected values as searchable tokens.
+struct LedgerSearchFiltersMenu: View {
     let source: EntrySearch.FilterSource
     @Binding var tokens: [LedgerSearchToken]
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                dateChip
-                if !source.clients.isEmpty { clientChip }
-                if !source.projects.isEmpty { projectChip }
-                statusChip
+        Menu {
+            dateMenu
+            if !source.clients.isEmpty { clientMenu }
+            if !source.projects.isEmpty { projectMenu }
+            statusMenu
+
+            if !tokens.isEmpty {
+                Divider()
+                Button(role: .destructive) {
+                    tokens.removeAll()
+                } label: {
+                    Label("Clear filters", systemImage: "xmark.circle")
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 2)
+        } label: {
+            Label("Filters", systemImage: filterSymbol)
         }
-        .scrollIndicators(.hidden)
-        .scrollClipDisabled()
+        .tint(.primary)
+        .accessibilityLabel("Filters")
+        .accessibilityValue(filterAccessibilityValue)
+        .accessibilityIdentifier("ledger.filters")
     }
 
-    // MARK: Chips
+    // MARK: Filter sections
 
-    private var dateChip: some View {
-        let selected = tokens.filter(\.isDateToken)
-        return chip(title: "Date", systemImage: "calendar", selected: selected) {
+    private var dateMenu: some View {
+        Menu {
             let years = source.years
             if years.count > 1 {
-                // Sections per year, each openable as a whole ("All of…") or
-                // month by month.
                 ForEach(years, id: \.self) { year in
                     Section(String(year)) {
                         toggleRow(for: .year(year), titleOverride: String(localized: "All of \(String(year))"))
@@ -135,68 +152,49 @@ struct LedgerSearchFilterBar: View {
                     toggleRow(for: .month(month))
                 }
             }
+        } label: {
+            Label("Date", systemImage: "calendar")
         }
     }
 
-    private var clientChip: some View {
-        let selected = tokens.filter { if case .client = $0 { true } else { false } }
-        return chip(title: "Client", systemImage: "person.crop.circle", selected: selected) {
+    private var clientMenu: some View {
+        Menu {
             ForEach(source.clients, id: \.id) { client in
                 toggleRow(for: .client(client.id, name: client.name))
             }
+        } label: {
+            Label("Client", systemImage: "person.crop.circle")
         }
     }
 
-    private var projectChip: some View {
-        let selected = tokens.filter { if case .project = $0 { true } else { false } }
-        return chip(title: "Project", systemImage: "folder", selected: selected) {
+    private var projectMenu: some View {
+        Menu {
             ForEach(source.projects, id: \.self) { project in
                 toggleRow(for: .project(project))
             }
+        } label: {
+            Label("Project", systemImage: "folder")
         }
     }
 
-    private var statusChip: some View {
-        let selected = tokens.filter { if case .status = $0 { true } else { false } }
-        return chip(title: "Status", systemImage: "checkmark.circle", selected: selected) {
+    private var statusMenu: some View {
+        Menu {
             ForEach(EntryStatus.allCases) { status in
                 toggleRow(for: .status(status), systemImage: status.symbol)
             }
+        } label: {
+            Label("Status", systemImage: "checkmark.circle")
         }
     }
 
-    // MARK: Pieces
+    private var filterSymbol: String {
+        tokens.isEmpty
+            ? "line.3.horizontal.decrease"
+            : "line.3.horizontal.decrease.circle.fill"
+    }
 
-    /// A resting chip names its filter; an active chip names the selection
-    /// (or counts it) and switches to the prominent glass.
-    @ViewBuilder
-    private func chip(
-        title: LocalizedStringKey,
-        systemImage: String,
-        selected: [LedgerSearchToken],
-        @ViewBuilder rows: () -> some View
-    ) -> some View {
-        let menu = Menu(content: rows) {
-            if let only = selected.first, selected.count == 1 {
-                Label(only.label, systemImage: systemImage)
-            } else if selected.count > 1 {
-                Label {
-                    Text("\(Text(title)) · \(selected.count)")
-                } icon: {
-                    Image(systemName: systemImage)
-                }
-            } else {
-                Label(title, systemImage: systemImage)
-            }
-        }
-        .controlSize(.small)
-        .accessibilityLabel(Text(title))
-
-        if selected.isEmpty {
-            menu.buttonStyle(.glass).tint(.primary)
-        } else {
-            menu.buttonStyle(.glassProminent)
-        }
+    private var filterAccessibilityValue: String {
+        tokens.isEmpty ? String(localized: "No filters selected") : String(localized: "\(tokens.count) filters selected")
     }
 
     private func toggleRow(
@@ -224,14 +222,5 @@ struct LedgerSearchFilterBar: View {
                 }
             }
         )
-    }
-}
-
-private extension LedgerSearchToken {
-    var isDateToken: Bool {
-        switch self {
-        case .month, .year: true
-        case .client, .project, .status: false
-        }
     }
 }

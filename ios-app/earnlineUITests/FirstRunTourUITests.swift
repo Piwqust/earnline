@@ -7,12 +7,15 @@ import XCTest
 final class FirstRunTourUITests: XCTestCase {
     private func launchWithTour(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = [
+        let launchArguments = [
             "-uiTesting",
             "-firstRunTour",
             "-resetDeveloperMode",
             "-resetExperimentalFeatures"
         ] + extra
+        app.launchArguments = launchArguments
+        app.launchEnvironment["EARNLINE_UI_TEST_FLAGS"] = launchArguments.joined(separator: " ")
+        app.launchEnvironment["EARNLINE_UI_TEST_AUTH_GATE_STATE"] = "signedOut"
         app.launch()
         return app
     }

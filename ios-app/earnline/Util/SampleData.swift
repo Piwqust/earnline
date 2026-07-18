@@ -33,9 +33,8 @@ enum SampleData {
     /// before the first configured sync. Demo rows the user already synced (or
     /// clients they hung real lines on) are left alone.
     @discardableResult
-    static func purgeAutoSeededDemoIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+    static func purgeAutoSeededDemoIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) throws -> Int {
         guard defaults.bool(forKey: autoSeededDemoKey) else { return 0 }
-        defaults.set(false, forKey: autoSeededDemoKey)
 
         // Regenerate the demo ledger's deterministic IDs so we drop exactly the
         // rows we auto-seeded (and no real ones the user later added).
@@ -44,12 +43,12 @@ enum SampleData {
         let demoClientIDs = Set(seed.clients.map(\.id))
 
         var removed = 0
-        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        let entries = try context.fetch(FetchDescriptor<Entry>())
         for entry in entries where demoEntryIDs.contains(entry.id) && entry.lastSyncedAt == nil {
             context.delete(entry)
             removed += 1
         }
-        let clients = (try? context.fetch(FetchDescriptor<Client>())) ?? []
+        let clients = try context.fetch(FetchDescriptor<Client>())
         for client in clients where demoClientIDs.contains(client.id) && client.lastSyncedAt == nil {
             let hasRealEntries = client.entries.contains { !demoEntryIDs.contains($0.id) }
             if !hasRealEntries {
@@ -57,14 +56,18 @@ enum SampleData {
                 removed += 1
             }
         }
-        if removed > 0 { try? context.save() }
+        if removed > 0 { try context.save() }
+        // Mark this one-shot cleanup complete only after every deletion has
+        // persisted. Otherwise a later sync could upload demo rows that a
+        // failed cleanup merely appeared to remove.
+        defaults.set(false, forKey: autoSeededDemoKey)
         return removed
     }
 
     @discardableResult
-    static func cleanupLegacyDemoEntriesIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+    static func cleanupLegacyDemoEntriesIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) throws -> Int {
         guard defaults.integer(forKey: legacyDemoCleanupKey) < legacyDemoCleanupVersion else { return 0 }
-        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        let entries = try context.fetch(FetchDescriptor<Entry>())
         var deleted = 0
 
         // Fingerprint matching alone is too blunt: a real line that happens to
@@ -77,13 +80,9 @@ enum SampleData {
             deleted += 1
         }
 
+        try context.save()
         defaults.set(legacyDemoCleanupVersion, forKey: legacyDemoCleanupKey)
-        do {
-            try context.save()
-            return deleted
-        } catch {
-            return 0
-        }
+        return deleted
     }
 
     /// Older UI tests used the selected workspace's persistent store. Demo and

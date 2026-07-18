@@ -1,20 +1,15 @@
-# Earnline Supabase backend
+# earn›line backend
 
-The timestamped files in `migrations/` are the only schema source of truth.
-Apply them in order with the Supabase CLI. There is intentionally no standalone
-schema snapshot: the former `earnline_sync_schema.sql` encoded the retired
-fixed-workspace anonymous policy and was unsafe to run after the authenticated
-workspace cutover.
+This directory contains the shared Supabase database migrations and the small
+functions that support private workspace sync and device pairing.
 
-Production rollout, private owner handoff, Edge Function secrets, backup, and
-verification steps live in [`../docs/AUTH_ROLLOUT.md`](../docs/AUTH_ROLLOUT.md).
+## What belongs here
 
-Functions:
+- Timestamped migrations in `migrations/`, applied in order.
+- `earnline-sync`, which synchronizes a caller's permitted ledger data.
+- `earnline-pair-device`, which exchanges a valid one-time pairing code for a
+  revocable device identity.
 
-- `earnline-sync`: JWT-protected, RLS-scoped ledger sync with request batching.
-- `earnline-pair-device`: public only in the sense that it accepts no existing
-  session; a valid ten-minute, one-use pairing token is required before it
-  creates a revocable device identity.
-
-Never add a service-role key, OAuth secret, user ID, workspace ID, pairing
-token, production row export, or database dump to this directory.
+The iOS and web apps remain local-first; this backend is used only when a
+private workspace is connected. Never commit service-role keys, OAuth secrets,
+pairing codes, production records, user IDs, or workspace identifiers here.

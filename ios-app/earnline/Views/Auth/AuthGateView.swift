@@ -6,9 +6,9 @@ import SwiftUI
 
 /// The production entry point for a private Earnline workspace.
 ///
-/// The anatomy follows the Figma "MainPage" gate (node 389-3889): a live,
-/// scripted preview of the actual ledger fills the screen, and a black
-/// bottom panel carries the brand line plus every way in — Apple as the
+/// The anatomy follows the Figma "MainPage" gate (node 389-3889): a quiet
+/// looping video fills the screen, and a black bottom panel carries the brand
+/// line plus every way in — Apple as the
 /// solid primary, labelled provider controls, and the two
 /// local-only routes beneath their own divider.
 struct AuthGateView: View {
@@ -19,23 +19,37 @@ struct AuthGateView: View {
     @State private var readyFeedback = false
     @State private var selectedProviderName: String?
     @State private var dockHeight: CGFloat = 0
+    @State private var isOnboardingVideoMuted = true
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            AuthBackdropPreview(isActive: previewIsActive, dockHeight: dockHeight)
+        GeometryReader { _ in
+            ZStack(alignment: .bottom) {
+                AuthBackdropVideo(
+                    isActive: previewIsActive,
+                    isMuted: isOnboardingVideoMuted,
+                    dockHeight: dockHeight
+                )
 
-            AuthGatePanel(
-                state: app.accountState,
-                selectedProviderName: selectedProviderName,
-                pair: { showingPairDevice = true },
-                guest: { app.continueWithoutAccount() },
-                signIn: signIn,
-                signInApple: signInWithApple,
-                retry: { Task { await app.retryWorkspaceResolution() } },
-                signOut: { Task { await app.signOutAccount() } }
-            )
+                AuthGatePanel(
+                    state: app.accountState,
+                    selectedProviderName: selectedProviderName,
+                    pair: { showingPairDevice = true },
+                    guest: { app.continueWithoutAccount() },
+                    signIn: signIn,
+                    signInApple: signInWithApple,
+                    retry: { Task { await app.retryWorkspaceResolution() } },
+                    signOut: { Task { await app.signOutAccount() } },
+                    reportHeight: { dockHeight = $0 }
+                )
+            }
+            .overlay(alignment: .topTrailing) {
+                if previewIsActive {
+                    AuthVideoAudioButton(isMuted: $isOnboardingVideoMuted)
+                        .padding(.top, 8)
+                        .padding(.trailing, 20)
+                }
+            }
         }
-        .onPreferenceChange(AuthDockHeightKey.self) { dockHeight = $0 }
         .sheet(isPresented: $showingPairDevice) {
             PairDeviceRedeemSheet()
                 .presentationDetents([.large])
@@ -78,16 +92,6 @@ struct AuthGateView: View {
     }
 }
 
-/// The scene uses the actual dock height so the establishing shot remains
-/// legible above it when localized or accessibility text makes the dock grow.
-private struct AuthDockHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 // MARK: - Bottom panel
 
 /// The black bottom card from the Figma: 50 pt top corners, a deep upward
@@ -102,6 +106,7 @@ private struct AuthGatePanel: View {
     let signInApple: (Result<ASAuthorization, Error>, String) -> Void
     let retry: () -> Void
     let signOut: () -> Void
+    let reportHeight: (CGFloat) -> Void
 
     var body: some View {
         content
@@ -116,13 +121,14 @@ private struct AuthGatePanel: View {
                     .shadow(color: .black.opacity(0.25), radius: 44, y: -24)
                     .ignoresSafeArea(edges: .bottom)
             }
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: AuthDockHeightKey.self, value: proxy.size.height)
-                }
-            }
             .environment(\.colorScheme, .dark)
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            // Report the final laid-out panel, including its action buttons,
+            // directly to the video. Preference propagation here could retain
+            // a zero height during the gate's initial layout.
+            .onGeometryChange(for: CGFloat.self, of: { proxy in
+                proxy.size.height
+            }, action: reportHeight)
     }
 
     @ViewBuilder

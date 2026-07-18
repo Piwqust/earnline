@@ -50,8 +50,8 @@ struct LedgerSearchState {
     /// while the field is expanded (keyboard up, ledger filtering in place).
     var isPresented = false
     var query = ""
-    /// Structured filter chips riding in the field alongside the typed text —
-    /// months, years, clients, projects, statuses.
+    /// Structured filter tokens shown in the field alongside typed text.
+    /// They are selected from the native bottom-toolbar Filters menu.
     var tokens: [LedgerSearchToken] = []
 }
 

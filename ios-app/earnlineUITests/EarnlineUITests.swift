@@ -4,13 +4,37 @@ import XCTest
 final class EarnlineUITests: XCTestCase {
     private func launchApp(_ arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = [
+        let launchArguments = [
             "-uiTesting",
             "-resetDeveloperMode",
             "-resetExperimentalFeatures"
         ] + arguments
+        app.launchArguments = launchArguments
+        app.launchEnvironment["EARNLINE_UI_TEST_FLAGS"] = launchArguments.joined(separator: " ")
+        app.launchEnvironment["EARNLINE_UI_TEST_AUTH_GATE_STATE"] = "signedOut"
         app.launch()
         return app
+    }
+
+    /// Settings grows when Developer Mode exposes diagnostic routes. Assert on
+    /// the actual elements rather than assuming one swipe equals one section;
+    /// that kept this release check from exercising the lower recovery tools
+    /// after the separate Connection route was added.
+    private func reveal(_ element: XCUIElement,
+                        in app: XCUIApplication,
+                        maxSwipes: Int = 6) -> Bool {
+        for _ in 0..<maxSwipes where !element.exists {
+            app.swipeUp()
+        }
+        return element.waitForExistence(timeout: 3)
+    }
+
+    private func returnToSettingsHeader(in app: XCUIApplication,
+                                        close: XCUIElement) -> Bool {
+        for _ in 0..<8 where !close.exists {
+            app.swipeDown()
+        }
+        return close.waitForExistence(timeout: 3)
     }
 
     func testLedgerAndSettingsAreReachable() {
@@ -29,7 +53,7 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Display conversion rate"].exists)
     }
 
-    func testSearchOpensFromDockedBottomToolbarFieldWithFilterChips() {
+    func testSearchOpensFromDockedBottomToolbarFieldWithNativeFiltersMenu() {
         let app = launchApp()
 
         // The resting search field is docked in the bottom toolbar between
@@ -38,15 +62,42 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
 
-        // Minimal filter chips ride above the field while searching; Status
-        // is always offered, so it anchors the check.
-        let statusChip = app.buttons["Status"].firstMatch
-        XCTAssertTrue(statusChip.waitForExistence(timeout: 3))
-        statusChip.tap()
+        // A contextual native menu replaces More while searching. Status is
+        // always offered, so it anchors the check.
+        let filters = app.buttons["ledger.filters"]
+        XCTAssertTrue(filters.waitForExistence(timeout: 3))
+        XCTAssertEqual(filters.label, "Filters")
+        XCTAssertTrue(filters.isHittable)
+        filters.tap()
+
+        let status = app.buttons["Status"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 2))
+        status.tap()
 
         let paid = app.descendants(matching: .any)["Paid"].firstMatch
         XCTAssertTrue(paid.waitForExistence(timeout: 2))
         paid.tap()
+
+        filters.tap()
+        let clear = app.buttons["Clear filters"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 2))
+        clear.tap()
+    }
+
+    func testFiltersRemainReachableAtAccessibilityTextSize() {
+        let app = launchApp([
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL"
+        ])
+
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+
+        let filters = app.buttons["ledger.filters"]
+        XCTAssertTrue(filters.waitForExistence(timeout: 3))
+        XCTAssertTrue(filters.isHittable)
+        XCTAssertGreaterThanOrEqual(filters.frame.height, 44)
     }
 
     func testDeveloperModeRevealsAdvancedSettingsOnlyWhenEnabled() {
@@ -63,23 +114,19 @@ final class EarnlineUITests: XCTestCase {
         developerMode.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
 
         XCTAssertEqual(app.switches["Developer Mode"].value as? String, "1")
-        app.swipeUp()
-        XCTAssertTrue(app.staticTexts["Experimental"].waitForExistence(timeout: 2))
+        XCTAssertTrue(reveal(app.staticTexts["Experimental"], in: app))
         let clientBadges = app.switches["Client badges"]
-        XCTAssertTrue(clientBadges.exists)
+        XCTAssertTrue(reveal(clientBadges, in: app))
         XCTAssertEqual(clientBadges.value as? String, "0")
         clientBadges.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertEqual(clientBadges.value as? String, "1")
-        XCTAssertTrue(app.staticTexts["Supabase"].waitForExistence(timeout: 2))
-        app.swipeUp()
-        XCTAssertTrue(app.staticTexts["Sync"].waitForExistence(timeout: 2))
-        app.swipeUp()
-        XCTAssertTrue(app.staticTexts["Data"].waitForExistence(timeout: 2))
-        app.swipeUp()
-        XCTAssertTrue(app.staticTexts["About"].waitForExistence(timeout: 2))
+        XCTAssertTrue(reveal(app.staticTexts["Connection"], in: app))
+        XCTAssertTrue(reveal(app.staticTexts["Sync"], in: app))
+        XCTAssertTrue(reveal(app.staticTexts["Data"], in: app))
+        XCTAssertTrue(reveal(app.staticTexts["About"], in: app))
 
         let close = app.buttons["Close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 2))
+        XCTAssertTrue(returnToSettingsHeader(in: app, close: close))
         close.tap()
 
         let menu = app.buttons["ledger.menu"]
@@ -103,26 +150,20 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertEqual(restoredClientBadges.value as? String, "1")
     }
 
-    func testWorkspacePickerOffersDistinctNativeProductionAndTestOptions() {
+    func testDeveloperConnectionSettingsStayInASafeSeparateRoute() {
         let app = launchApp(["-demoSettings", "-demoDeveloperSettings"])
 
-        let workspace = app.buttons["settings.workspace"]
-        for _ in 0..<5 where !workspace.exists {
+        let connection = app.buttons["settings.supabaseConnection"]
+        for _ in 0..<5 where !connection.exists {
             app.swipeUp()
         }
-        XCTAssertTrue(workspace.waitForExistence(timeout: 3))
-        XCTAssertTrue(workspace.isEnabled)
-        workspace.tap()
+        XCTAssertTrue(connection.waitForExistence(timeout: 3))
+        XCTAssertTrue(connection.isHittable)
+        XCTAssertTrue(connection.label.contains("Personal Supabase database"))
+        connection.tap()
 
-        let production = app.buttons["Production"]
-        let test = app.buttons["Test"]
-        XCTAssertTrue(production.waitForExistence(timeout: 2))
-        XCTAssertTrue(test.exists)
-        test.tap()
-
-        XCTAssertTrue(workspace.waitForExistence(timeout: 3))
-        let selectedValue = workspace.value as? String ?? ""
-        XCTAssertTrue(workspace.label.contains("Test") || selectedValue.contains("Test"))
+        XCTAssertTrue(app.staticTexts["Current connection"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Set up a personal Supabase database"].exists)
     }
 
     func testComposerSubmitKeepsAccessibleGlassButtonSize() {

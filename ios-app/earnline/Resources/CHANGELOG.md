@@ -8,13 +8,32 @@
 - Workspace owners can now review paired devices in Settings and remove a lost or retired device; removal invalidates that device’s cloud access.
 - Web sync batches concurrent reads and checks for remote updates less aggressively while still syncing local edits immediately, reducing free-plan function usage.
 
+### Reliability
+- If an older local ledger cannot be opened after an update, Earnline now keeps its files untouched instead of quitting. After you sign in, you can explicitly create a separate local cache for the authenticated workspace and import the older ledger later.
+- If a previously signed-in iPhone starts while offline, it now opens the last server-verified local workspace instead of treating a transport outage as a sign-in failure. Server denials still stay blocked.
+- Apple sign-in credentials are now rechecked when the app starts and when Apple revokes them, so a revoked Apple account returns this iPhone to the sign-in screen instead of keeping its old cloud session.
+- Signing out now always removes this iPhone’s local session, even when it is offline; a paired device that could not be remotely disconnected is called out clearly so the owner can revoke it after reconnecting.
+- Signed Release builds now require a configured HTTPS privacy-policy link, and show it in Settings under Privacy.
+- Face ID now has the required system privacy explanation before it is used to unlock the ledger.
+- App Lock now stays off when this iPhone has no device passcode, instead of looking protected while allowing an immediate unlock. Settings explains how to turn it on safely.
+- If an Apple credential check cannot finish, Settings now explains the reduced protection and tells you how to restore it; explicit Apple revocation still blocks ledger access immediately.
+- Before the first cloud sync, Earnline now stops and explains if it cannot safely remove local sample data; it never marks that cleanup complete or uploads around a failed cleanup.
+
 ### Onboarding
+- The onboarding video now uses four distinct positions based on the live account-panel height: short panels leave the film full-screen, while medium, tall, and accessibility-height panels lift it progressively farther above the controls. A bare safe-area sound icon lets you enable or mute it without covering the film.
+- The scripted ledger tour behind the account buttons has been replaced with the supplied looping onboarding video. Its sound is muted and the frame lifts dynamically above the account dock so the subject remains visible at normal and accessible text sizes.
 - The account screen now uses one native 44-point control language: Apple remains system-owned, while Google, GitHub, local, pairing, recovery, and sign-out actions now share the same labelled full-width rhythm.
 - Every account action now shares the Apple button’s visual label rhythm and native capsule geometry; Apple remains the single solid primary action while the alternatives use interactive Liquid Glass.
 - **Earnline in Motion** now tells one connected income story rather than cycling through feature slides: a real draft line becomes paid, resolves into the monthly chart, and lands in its real client profile. The motion stays quiet and readable, while a calm settled ledger appears whenever motion should not play.
 - The tour now uses one stable visual plane: directional native replacements take the place of competing camera transforms and matched-geometry movement, so story beats no longer jump, resize, or drift between states.
 - The calmer 13-second tour now gives every moment time to read: the draft composer resolves into its saved row, the editor confirms its paid status, and the chart and client history enter with measured native motion.
 - After you enter an empty ledger, one optional spotlight points to the first income action and disappears automatically after you save it.
+
+### Search & developer builds
+- Search filters now live in one native bottom-toolbar Filters menu. Date, Client, Project, and Status selections stay visible as system search tokens, and Clear filters returns to a clean search in one tap.
+- The normal Debug build now installs a separate local-only earnline Dev companion with its own home-screen icon, so it can sit beside the production app without sharing its data or identity.
+- Dev’s Debug menu once again renders every local auth-gate preview without enabling real authentication or sync.
+- Supabase URL and publishable-key fields now live behind a dedicated **Personal Supabase database** screen with an explicit connection check and confirmation, instead of changing the active sync project while typing in Settings.
 
 ## July 15, 2026
 

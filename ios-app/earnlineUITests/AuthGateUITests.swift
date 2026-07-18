@@ -4,18 +4,21 @@ import XCTest
 final class AuthGateUITests: XCTestCase {
     private func launchAuthGate(state: String = "signedOut", extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = [
+        let launchArguments = [
             "-uiTesting",
             "-authGatePreview",
             "-authGateState", state,
             "-resetDeveloperMode",
             "-resetExperimentalFeatures"
         ] + extraArguments
+        app.launchArguments = launchArguments
+        app.launchEnvironment["EARNLINE_UI_TEST_FLAGS"] = launchArguments.joined(separator: " ")
+        app.launchEnvironment["EARNLINE_UI_TEST_AUTH_GATE_STATE"] = state
         app.launch()
         return app
     }
 
-    func testGateShowsTheBrandHeadlineOverTheLivePreview() {
+    func testGateShowsTheBrandHeadlineOverTheOnboardingVideo() {
         let app = launchAuthGate()
         XCTAssertTrue(app.staticTexts["Track every income"].waitForExistence(timeout: 3))
     }
@@ -50,6 +53,17 @@ final class AuthGateUITests: XCTestCase {
 
         app.buttons["Cancel"].tap()
         XCTAssertTrue(google.waitForExistence(timeout: 2))
+    }
+
+    func testOnboardingVideoAudioCanBeEnabledAndMuted() {
+        let app = launchAuthGate()
+
+        let enableSound = app.buttons["Enable sound"]
+        XCTAssertTrue(enableSound.waitForExistence(timeout: 3))
+        XCTAssertGreaterThanOrEqual(enableSound.frame.height, 44)
+        enableSound.tap()
+
+        XCTAssertTrue(app.buttons["Mute sound"].waitForExistence(timeout: 2))
     }
 
     func testAuthGateRendersProcessingAndRecoveryStatesWithoutNetwork() {

@@ -56,6 +56,18 @@ extension AppModel {
         }
     }
 
+    /// The last server-verified membership lets an already authenticated owner
+    /// open their *local* ledger while transport is unavailable. It is never
+    /// used for a server denial or for a different Supabase user, so an offline
+    /// launch cannot turn a failed authorization check into cloud access.
+    private struct CachedWorkspaceMembership: Codable {
+        let userID: String
+        let email: String?
+        let workspaceID: String
+        let membershipRole: String
+        let isPairedDevice: Bool
+    }
+
     private struct PairingTokenResponse: Decodable {
         let pairingToken: UUID
         let expiresAt: Date
@@ -108,15 +120,33 @@ extension AppModel {
     /// while the rest of UI automation stays offline and in-memory. Production
     /// code never sets this argument.
     nonisolated static var isAuthGatePreview: Bool {
-        isRunningUIAutomation && ProcessInfo.processInfo.arguments.contains("-authGatePreview")
+        isRunningUIAutomation && hasUIAutomationLaunchFlag("-authGatePreview")
     }
 
     var requiresAccountAuthentication: Bool {
+        // Dev is deliberately a local-only companion. It has no production
+        // auth route, even if a configuration file contains development keys.
+        guard !Self.isLocalOnlyDevBuild else { return false }
         if Self.isAuthGatePreview { return true }
         return workspaceEnvironment == .production && !Self.isRunningUIAutomation
     }
 
+    /// Debug gate presets are visual, local-only states. They must still be
+    /// able to replace the ledger in the Dev app, even though that app never
+    /// requires a real Supabase account.
+    var isDebugAuthGatePreview: Bool {
+        #if DEBUGMENU
+        debugAuthGatePreview
+        #else
+        false
+        #endif
+    }
+
     var isAccountReady: Bool {
+        if isDebugAuthGatePreview {
+            if case .ready = accountState { return true }
+            return false
+        }
         guard requiresAccountAuthentication else { return true }
         if case .ready = accountState { return true }
         return false
@@ -132,6 +162,9 @@ extension AppModel {
             applyAuthGatePreviewState()
             return
         }
+        // Keep an explicitly selected Dev preview stable while the view tree
+        // refreshes. No auth client is created for this path.
+        if isDebugAuthGatePreview { return }
         guard requiresAccountAuthentication else {
             if case .ready = accountState { return }
             accountState = .ready(AccountSession(userID: "local", email: nil, workspaceID: workspaceID, membershipRole: "owner", isPairedDevice: false))
@@ -146,9 +179,11 @@ extension AppModel {
             return
         }
 
+        startObservingAppleCredentialRevocationsIfNeeded()
         accountState = .checking
         do {
             let session = try await supabase().auth.session
+            guard await verifyAppleCredentialState(for: session) else { return }
             await resolveWorkspace(for: session)
         } catch {
             accountState = .signedOut
@@ -245,12 +280,27 @@ extension AppModel {
                 accountState = .failure(String(localized: "This build is missing its Supabase configuration."))
                 return
             }
-            accountState = .authenticating
-            do {
-                let session = try await supabase().auth.signInWithIdToken(
-                    credentials: OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce)
-                )
-                await resolveWorkspace(for: session)
+        accountState = .authenticating
+        do {
+            let session = try await supabase().auth.signInWithIdToken(
+                credentials: OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce)
+            )
+            await resolveWorkspace(for: session)
+            if case let .ready(account) = accountState,
+               account.userID == session.user.id.uuidString {
+                do {
+                    try await AppleCredentialIdentifierStore.shared.save(
+                        credential.user,
+                        forSupabaseUserID: account.userID
+                    )
+                    accountSecurityNotice = nil
+                } catch {
+                    // Authentication succeeded, so do not throw the owner
+                    // back out of a valid workspace. Make the reduced
+                    // revocation coverage explicit instead of swallowing it.
+                    accountSecurityNotice = String(localized: "Signed in, but Earnline could not save this iPhone’s Apple sign-in check. Unlock the iPhone and sign in with Apple again to restore automatic revocation checks.")
+                }
+            }
             } catch {
                 accountState = .failure(authErrorMessage(error))
             }
@@ -370,28 +420,147 @@ extension AppModel {
             accountState = .signedOut
             return
         }
-        do {
-            let pairedDevice = switch accountState {
-            case let .ready(session): session.isPairedDevice
-            case let .awaitingWorkspace(isPairedDevice): isPairedDevice
-            default: false
-            }
-            if pairedDevice {
+        let userID = accountSession?.userID
+        let pairedDevice = switch accountState {
+        case let .ready(session): session.isPairedDevice
+        case let .awaitingWorkspace(isPairedDevice): isPairedDevice
+        default: false
+        }
+        var remoteDisconnectFailure: Error?
+
+        if pairedDevice {
+            do {
                 let removed: Bool = try await supabase()
                     .rpc("earnline_disconnect_current_device")
                     .execute()
                     .value
-                guard removed else { throw AccountAuthError.deviceNotFound }
+                if !removed { remoteDisconnectFailure = AccountAuthError.deviceNotFound }
+            } catch {
+                remoteDisconnectFailure = error
             }
+        }
+
+        // Supabase clears the local session before its best-effort `/logout`
+        // request. Always finish detaching this iPhone even when that request
+        // (or paired-device revocation) cannot reach the server.
+        var localSignOutFailure: Error?
+        do {
             try await supabase().auth.signOut(scope: .local)
         } catch {
-            syncError = authErrorMessage(error)
-            return
+            localSignOutFailure = error
+        }
+        if let userID {
+            do {
+                try await AppleCredentialIdentifierStore.shared.remove(forSupabaseUserID: userID)
+            } catch {
+                // The identifier is non-secret and account-scoped, but record
+                // cleanup trouble rather than silently hiding it. A later
+                // Apple sign-in overwrites the same key.
+                syncError = String(localized: "Signed out on this iPhone, but the local Apple sign-in check could not be cleared. It will be replaced after your next Sign in with Apple.")
+            }
         }
         detachWorkspaceStore()
         workspaceID = workspaceEnvironment.workspaceID
         workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):signed-out"
-        accountState = .signedOut
+        resetSupabaseClient()
+
+        if remoteDisconnectFailure != nil || localSignOutFailure != nil {
+            let message: String
+            if pairedDevice {
+                message = String(localized: "Signed out on this iPhone. This paired device could not be disconnected from your workspace while offline. Reconnect it, then revoke it from your owner device.")
+            } else {
+                message = String(localized: "Signed out on this iPhone. The server could not be reached to end this session remotely.")
+            }
+            accountState = .failure(message)
+        } else {
+            accountState = .signedOut
+        }
+    }
+
+    private func startObservingAppleCredentialRevocationsIfNeeded() {
+        guard appleCredentialRevocationObserver == nil else { return }
+        appleCredentialRevocationObserver = NotificationCenter.default.addObserver(
+            forName: ASAuthorizationAppleIDProvider.credentialRevokedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.revalidateAppleCredentialAfterNotification()
+            }
+        }
+    }
+
+    private func revalidateAppleCredentialAfterNotification() async {
+        guard hasSupabaseConfiguration else { return }
+        let session: Session
+        do {
+            session = try await supabase().auth.session
+        } catch {
+            accountSecurityNotice = String(localized: "Earnline could not recheck your Apple sign-in after an account-change notification. Your existing session stays available and will be checked again on the next launch.")
+            return
+        }
+        _ = await verifyAppleCredentialState(for: session)
+    }
+
+    /// Apple errors are treated as inconclusive so a temporary system-service
+    /// outage cannot sign the owner out. Only Apple's explicit revoked,
+    /// not-found, or transferred states clear the local Supabase session.
+    private func verifyAppleCredentialState(for session: Session) async -> Bool {
+        let appleUserIdentifier: String?
+        do {
+            appleUserIdentifier = try await AppleCredentialIdentifierStore.shared.load(
+                forSupabaseUserID: session.user.id.uuidString
+            )
+        } catch {
+            accountSecurityNotice = String(localized: "Earnline could not read this iPhone’s Apple sign-in check. Your existing session stays available, but automatic revocation checks will retry after you unlock the iPhone.")
+            return true
+        }
+        guard let appleUserIdentifier else {
+            return true
+        }
+        guard let state = await appleCredentialState(forUserID: appleUserIdentifier) else {
+            accountSecurityNotice = String(localized: "Earnline could not check your Apple sign-in right now. Your existing session stays available and will be checked again later.")
+            return true
+        }
+        switch state {
+        case .authorized:
+            accountSecurityNotice = nil
+            return true
+        case .revoked, .notFound, .transferred:
+            await signOutAfterAppleCredentialInvalidation(session: session)
+            return false
+        @unknown default:
+            return true
+        }
+    }
+
+    private func appleCredentialState(forUserID userID: String) async -> ASAuthorizationAppleIDProvider.CredentialState? {
+        await withCheckedContinuation { continuation in
+            ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in
+                continuation.resume(returning: error == nil ? state : nil)
+            }
+        }
+    }
+
+    private func signOutAfterAppleCredentialInvalidation(session: Session) async {
+        var didFailLocalCleanup = false
+        do {
+            try await supabase().auth.signOut(scope: .local)
+        } catch {
+            didFailLocalCleanup = true
+        }
+        do {
+            try await AppleCredentialIdentifierStore.shared.remove(forSupabaseUserID: session.user.id.uuidString)
+        } catch {
+            didFailLocalCleanup = true
+        }
+        detachWorkspaceStore()
+        workspaceID = workspaceEnvironment.workspaceID
+        workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):signed-out"
+        accountSecurityNotice = didFailLocalCleanup
+            ? String(localized: "Your Apple sign-in was revoked. Earnline blocked access to this ledger, but could not clear every local sign-in check. Restart the app, unlock the iPhone, and sign in again.")
+            : nil
+        accountState = .failure(String(localized: "Your Apple sign-in was revoked. Sign in again to continue."))
         resetSupabaseClient()
     }
 
@@ -408,18 +577,98 @@ extension AppModel {
 
             let pairedDevice = isPairedIdentity(session)
             activateResolvedWorkspace(membership.workspaceID, userID: session.user.id.uuidString)
-            accountState = .ready(AccountSession(
+            let account = AccountSession(
                 userID: session.user.id.uuidString,
                 email: pairedDevice ? nil : session.user.email,
                 workspaceID: membership.workspaceID,
                 membershipRole: membership.membershipRole,
                 isPairedDevice: pairedDevice
-            ))
+            )
+            cacheVerifiedMembership(account)
+            accountState = .ready(account)
             syncMessage = String(localized: "Ready")
             syncError = nil
         } catch {
+            if Self.isOfflineTransportError(error), restoreCachedMembership(for: session) {
+                return
+            }
             accountState = .failure(authErrorMessage(error))
         }
+    }
+
+    private func cacheVerifiedMembership(_ account: AccountSession) {
+        let membership = CachedWorkspaceMembership(
+            userID: account.userID,
+            email: account.email,
+            workspaceID: account.workspaceID,
+            membershipRole: account.membershipRole,
+            isPairedDevice: account.isPairedDevice
+        )
+        do {
+            let data = try JSONEncoder().encode(membership)
+            defaults.set(data, forKey: Self.cachedMembershipKey(for: account.userID))
+        } catch {
+            // Online authorization remains valid, but make it clear that the
+            // offline fallback could not be refreshed for this device.
+            accountSecurityNotice = String(localized: "Earnline could not save this iPhone’s offline workspace check. Online sync still works, but offline access may require signing in again.")
+        }
+    }
+
+    /// Restoring this cache only makes the on-device SwiftData ledger usable.
+    /// `isSupabaseConfigured` remains subject to the normal network sync path,
+    /// and the next successful membership request replaces this cached record.
+    private func restoreCachedMembership(for session: Session) -> Bool {
+        let userID = session.user.id.uuidString
+        guard let data = defaults.data(forKey: Self.cachedMembershipKey(for: userID)),
+              let membership = try? JSONDecoder().decode(CachedWorkspaceMembership.self, from: data),
+              membership.userID == userID,
+              membership.isPairedDevice == isPairedIdentity(session) else {
+            return false
+        }
+        activateResolvedWorkspace(membership.workspaceID, userID: userID)
+        accountState = .ready(AccountSession(
+            userID: membership.userID,
+            email: membership.email,
+            workspaceID: membership.workspaceID,
+            membershipRole: membership.membershipRole,
+            isPairedDevice: membership.isPairedDevice
+        ))
+        syncMessage = String(localized: "Offline")
+        syncError = String(localized: "You're offline. Showing your last verified workspace access on this iPhone.")
+        return true
+    }
+
+    private static func cachedMembershipKey(for userID: String) -> String {
+        "cachedWorkspaceMembership.\(userID)"
+    }
+
+    /// A membership response that was rejected by Supabase must fail closed.
+    /// Only concrete URL transport failures are eligible for the local-cache
+    /// fallback above; HTTP 401/403 and decoded RPC errors never match here.
+    static func isOfflineTransportError(_ error: Error) -> Bool {
+        let networkCodes: Set<URLError.Code> = [
+            .notConnectedToInternet,
+            .networkConnectionLost,
+            .cannotConnectToHost,
+            .cannotFindHost,
+            .dnsLookupFailed,
+            .timedOut,
+            .dataNotAllowed,
+            .internationalRoamingOff
+        ]
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain,
+           networkCodes.contains(URLError.Code(rawValue: nsError.code)) {
+            return true
+        }
+        if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            let underlyingNSError = underlyingError as NSError
+            guard underlyingNSError.domain != nsError.domain || underlyingNSError.code != nsError.code else {
+                return false
+            }
+            return isOfflineTransportError(underlyingError)
+        }
+        return false
     }
 
     private func activateResolvedWorkspace(_ resolvedWorkspaceID: String, userID: String) {
@@ -449,6 +698,24 @@ extension AppModel {
               let accountSession else { return }
         defaults.set(true, forKey: "accountStoreMigrated.\(workspaceID)")
         defaults.set(accountSession.userID, forKey: "accountStoreFirstUserID")
+        accountStoreMode = .account
+        workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):\(workspaceID):\(accountStoreMode.rawValue)"
+    }
+
+    /// A legacy SwiftData file that can no longer be opened must not block the
+    /// owner from reaching their authenticated workspace. This only changes the
+    /// active cache identity; it never deletes, moves, or imports the legacy
+    /// SQLite files. The recovery UI asks for an explicit confirmation first.
+    var canCreateFreshAccountStoreAfterRecovery: Bool {
+        guard workspaceEnvironment == .production,
+              accountStoreMode == .legacy,
+              let accountSession else { return false }
+        return !accountSession.isLocalOnly
+    }
+
+    func createFreshAccountStoreAfterRecovery() {
+        guard canCreateFreshAccountStoreAfterRecovery else { return }
+        defaults.set(true, forKey: "accountStoreMigrated.\(workspaceID)")
         accountStoreMode = .account
         workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):\(workspaceID):\(accountStoreMode.rawValue)"
     }
@@ -503,11 +770,14 @@ extension AppModel {
     }
 
     private func applyAuthGatePreviewState() {
-        let arguments = ProcessInfo.processInfo.arguments
+        let processInfo = ProcessInfo.processInfo
+        let environmentState = processInfo.environment["EARNLINE_UI_TEST_AUTH_GATE_STATE"]
+        let arguments = processInfo.arguments
         let stateIndex = arguments.firstIndex(of: "-authGateState")
-        let state = stateIndex.flatMap { index in
+        let argumentState = stateIndex.flatMap { index in
             arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
-        } ?? "signedOut"
+        }
+        let state = environmentState ?? argumentState ?? "signedOut"
 
         switch state {
         case "checking":

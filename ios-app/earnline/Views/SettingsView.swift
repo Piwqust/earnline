@@ -72,10 +72,28 @@ struct SettingsView: View {
                 )) {
                     SettingsRowLabel(verbatim: AppLockAuth.settingTitle, glyph: "faceid")
                 }
+                if let privacyPolicyURL = PrivacyPolicyURL.current {
+                    Link(destination: privacyPolicyURL) {
+                        SettingsRowLabel("Privacy policy", glyph: "hand.raised")
+                    }
+                    .accessibilityIdentifier("settings.privacyPolicy")
+                }
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Locks the ledger when the app goes to the background. Unlock with biometrics or your passcode.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Locks the ledger when the app goes to the background. Unlock with biometrics or your passcode.")
+                    if let notice = appModel.appLockNotice {
+                        Label(notice, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.statusProgress)
+                            .accessibilityIdentifier("settings.appLockNotice")
+                    }
+                    if let notice = appModel.accountSecurityNotice {
+                        Label(notice, systemImage: "exclamationmark.shield.fill")
+                            .foregroundStyle(Theme.statusProgress)
+                            .accessibilityIdentifier("settings.accountSecurityNotice")
+                    }
+                }
             }
 
             Section {
@@ -185,8 +203,22 @@ struct SettingsView: View {
                 }
 
                 #if DEBUG
-                Section("Supabase") {
-                    developerSupabaseContent
+                Section {
+                    NavigationLink {
+                        SupabaseConnectionSettingsView()
+                    } label: {
+                        HStack {
+                            SettingsRowLabel("Personal Supabase database", glyph: "cylinder.split.1x2")
+                            Spacer()
+                            Text(app.isUsingCustomSupabaseConnection ? "Personal" : "Built-in")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.supabaseConnection")
+                } header: {
+                    Text("Connection")
+                } footer: {
+                    Text("Connect a Supabase project you administer only when you intentionally need a separate database.")
                 }
                 #endif
 
@@ -265,33 +297,6 @@ struct SettingsView: View {
     }
 
     // MARK: Building blocks
-
-    @ViewBuilder
-    private var developerSupabaseContent: some View {
-        HStack(spacing: 12) {
-            SettingsRowGlyph(glyph: "network")
-            TextField("Project URL", text: Bindable(appModel).supabaseURLString)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-        }
-        HStack(spacing: 12) {
-            SettingsRowGlyph(glyph: "key.horizontal")
-            TextField("Publishable key", text: Bindable(appModel).supabaseKey)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-        }
-        Picker(selection: Bindable(appModel).workspaceEnvironment) {
-            ForEach(AppModel.WorkspaceEnvironment.allCases) { environment in
-                Text(environment.title).tag(environment)
-            }
-        } label: {
-            SettingsRowLabel("Workspace", glyph: "externaldrive")
-        }
-        .pickerStyle(.menu)
-        .tint(valueGray)
-        .accessibilityIdentifier("settings.workspace")
-    }
 
     @ViewBuilder
     private var developerSyncContent: some View {
@@ -512,8 +517,16 @@ struct SettingsView: View {
     private func setAppLock(_ enable: Bool) {
         guard enable != appModel.requireAppLock else { return }
         Task { @MainActor in
-            if await AppLockAuth.evaluate(reason: String(localized: "Confirm to change the app lock")) {
+            switch await AppLockAuth.evaluate(reason: String(localized: "Confirm to change the app lock")) {
+            case .authenticated:
                 appModel.requireAppLock = enable
+                appModel.appLockNotice = nil
+            case .unavailable:
+                if enable {
+                    appModel.appLockNotice = AppLockAuth.unavailableMessage
+                }
+            case .denied:
+                break
             }
         }
     }

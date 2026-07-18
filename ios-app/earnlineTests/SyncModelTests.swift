@@ -268,12 +268,12 @@ struct SyncModelTests {
         #expect(inserted > 0)
         #expect(defaults.bool(forKey: SampleData.autoSeededDemoKey))
 
-        let removed = SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults)
+        let removed = try SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults)
         #expect(removed == inserted)
         #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
         #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
         // One-shot: a second call must be a no-op.
-        #expect(SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults) == 0)
+        #expect(try SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults) == 0)
         defaults.removePersistentDomain(forName: suite)
     }
 

@@ -84,14 +84,14 @@ enum UndoableDelete {
         case .entry(let snapshot):
             try restoreEntry(snapshot, in: context)
         case .heading(let snapshot):
-            SyncDeleteQueue.dequeue(.heading, id: snapshot.id, in: context)
+            try SyncDeleteQueue.dequeue(.heading, id: snapshot.id, in: context)
             context.insert(Heading(id: snapshot.id,
                                    title: snapshot.title,
                                    date: snapshot.date,
                                    sortIndex: snapshot.sortIndex,
                                    createdAt: snapshot.createdAt))
         case .client(let snapshot):
-            SyncDeleteQueue.dequeue(.client, id: snapshot.id, in: context)
+            try SyncDeleteQueue.dequeue(.client, id: snapshot.id, in: context)
             let client = Client(id: snapshot.id,
                                 name: snapshot.name,
                                 colorHex: snapshot.colorHex,
@@ -105,7 +105,7 @@ enum UndoableDelete {
     }
 
     private func restoreEntry(_ snapshot: EntrySnapshot, in context: ModelContext) throws {
-        SyncDeleteQueue.dequeue(.entry, id: snapshot.id, in: context)
+        try SyncDeleteQueue.dequeue(.entry, id: snapshot.id, in: context)
         // Reattach to the owning client; if that client vanished in the
         // meantime (deleted on another device), there is nothing to restore
         // into — an orphan row would never render or sync.
