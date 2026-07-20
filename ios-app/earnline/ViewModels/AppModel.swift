@@ -8,18 +8,60 @@ import Network
 @MainActor
 @Observable
 final class AppModel {
+    /// The side-by-side `earnline Dev` target is a companion for local UI
+    /// work, never a second client for a production workspace. Keeping this
+    /// compile-time (rather than a stored preference) means a clean Dev
+    /// install cannot inherit a production choice from anywhere.
+    nonisolated static var isLocalOnlyDevBuild: Bool {
+        #if DEBUGMENU
+        true
+        #else
+        false
+        #endif
+    }
+
     /// UI automation must not inherit a real device's lock state or start a
     /// live personal-workspace sync. This launch argument is set exclusively by
     /// the UI-test target and leaves normal app launches unchanged.
+    ///
+    /// XCUITest can retain a previous process's launch arguments while it
+    /// relaunches the same bundle in a long serial suite. Its per-launch
+    /// environment is authoritative, so test helpers set a complete flag set
+    /// there; command-line arguments remain the fallback for manual runs.
+    nonisolated static let uiTestFlagsEnvironmentKey = "EARNLINE_UI_TEST_FLAGS"
+
+    nonisolated static func hasUIAutomationLaunchFlag(_ flag: String) -> Bool {
+        let processInfo = ProcessInfo.processInfo
+        if let rawFlags = processInfo.environment[uiTestFlagsEnvironmentKey] {
+            return rawFlags
+                .split(whereSeparator: { $0 == " " || $0 == "\n" })
+                .contains { $0 == flag }
+        }
+        return processInfo.arguments.contains(flag)
+    }
+
     nonisolated static var isRunningUIAutomation: Bool {
-        ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        hasUIAutomationLaunchFlag("-uiTesting")
+    }
+    /// Swift Testing exercises the App Lock state machine directly, but its
+    /// ephemeral host window never receives a full scene appearance cycle.
+    /// Creating a second alert-level window there produces UIKit's spurious
+    /// unbalanced-transition warning; real app and UI-test launches keep the
+    /// production window path intact.
+    nonisolated static var isRunningUnitTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            && !isRunningUIAutomation
     }
     nonisolated static let supportedCurrencyCodes = ["USD", "EUR", "GBP", "RUB", "UAH"]
     nonisolated static let defaultBaseCurrencyCode = "USD"
     nonisolated static let defaultSecondaryCurrencyCode = "RUB"
     nonisolated static let defaultExchangeRate = 83.0
-    nonisolated static let productionWorkspaceID = "earnline-personal"
-    nonisolated static let testWorkspaceID = "earnline-dev"
+    /// Local sentinels only. A real production workspace is resolved from the
+    /// authenticated membership RPC and is never committed to source.
+    nonisolated static let productionWorkspaceID = "legacy-production-cache"
+    nonisolated static let testWorkspaceID = "local-test-cache"
+    nonisolated static let workspaceCurrencyProfileStorageVersion = 1
+    nonisolated static let uiAutomationDefaultsSuite = "com.earnline.app.ui-tests"
 
     enum WorkspaceEnvironment: String, CaseIterable, Identifiable {
         case production
@@ -53,6 +95,15 @@ final class AppModel {
         var storeName: String { "earnline-\(rawValue)" }
     }
 
+    enum AccountStoreMode: String, Hashable {
+        /// The old, unscoped SwiftData container. It is preserved through the
+        /// first authenticated push and is never deleted by this migration.
+        case legacy
+        /// A workspace-specific container populated from the first successful
+        /// authenticated pull.
+        case account
+    }
+
     var baseCurrencyCode: String {
         didSet {
             let normalized = Self.normalizedCurrencyCode(baseCurrencyCode, fallback: oldValue)
@@ -63,7 +114,8 @@ final class AppModel {
             if secondaryCurrencyCode == baseCurrencyCode {
                 secondaryCurrencyCode = Self.replacementCurrencyCode(excluding: baseCurrencyCode)
             }
-            defaults.set(baseCurrencyCode, forKey: "baseCurrencyCode")
+            defaults.set(baseCurrencyCode, forKey: workspaceDefaultKey("baseCurrencyCode"))
+            markWorkspaceProfileDirtyIfNeeded()
         }
     }
     var secondaryCurrencyCode: String {
@@ -77,7 +129,8 @@ final class AppModel {
                 secondaryCurrencyCode = Self.replacementCurrencyCode(excluding: baseCurrencyCode)
                 return
             }
-            defaults.set(secondaryCurrencyCode, forKey: "secondaryCurrencyCode")
+            defaults.set(secondaryCurrencyCode, forKey: workspaceDefaultKey("secondaryCurrencyCode"))
+            markWorkspaceProfileDirtyIfNeeded()
         }
     }
     /// Secondary units per 1 base unit (e.g. RUB per USD).
@@ -88,7 +141,8 @@ final class AppModel {
                 rate = normalized
                 return
             }
-            defaults.set(rate, forKey: "rate")
+            defaults.set(rate, forKey: workspaceDefaultKey("rate"))
+            markWorkspaceProfileDirtyIfNeeded()
         }
     }
     var supabaseURLString: String {
@@ -105,19 +159,33 @@ final class AppModel {
     }
     var workspaceEnvironment: WorkspaceEnvironment {
         didSet {
+            if Self.isLocalOnlyDevBuild, workspaceEnvironment != .test {
+                workspaceEnvironment = .test
+                return
+            }
             guard workspaceEnvironment != oldValue else { return }
             defaults.set(workspaceEnvironment.rawValue, forKey: "workspaceEnvironment")
-            workspaceID = workspaceEnvironment.workspaceID
+            workspaceID = defaults.string(forKey: "workspaceID.\(workspaceEnvironment.rawValue)")
+                ?? workspaceEnvironment.workspaceID
             defaults.set(workspaceID, forKey: "workspaceID")
+            accountStoreMode = defaults.bool(forKey: "accountStoreMigrated.\(workspaceID)") ? .account : .legacy
+            workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):\(workspaceID):\(accountStoreMode.rawValue)"
             // Each environment points at its own Supabase project — swap the
             // URL/key over to the new one before rebuilding the client.
             loadWorkspaceSupabaseConfig()
+            loadWorkspaceCurrencyProfile()
             loadWorkspaceSyncState()
+            loadWorkspaceProfileSyncState()
             detachWorkspaceStore()
             resetSupabaseClient()
         }
     }
-    private(set) var workspaceID: String
+    var workspaceID: String
+    /// Changes whenever a resolved account must use a different local SwiftData
+    /// container. The host observes this instead of letting a newly-signed-in
+    /// account render a previous account's cache.
+    var workspaceStoreIdentity: String
+    var accountStoreMode: AccountStoreMode
 
     /// System / Light / Dark — the standard three-way appearance choice Apple
     /// apps offer. `system` follows the device scheme (`.unspecified`).
@@ -155,18 +223,66 @@ final class AppModel {
         didSet { defaults.set(accent.rawValue, forKey: "accentColor") }
     }
     var accentColor: Color { accent.color }
+    /// Advanced controls affect both Settings and the ledger chrome, so the
+    /// preference belongs to the app model and survives sheet recreation and
+    /// relaunches. UI automation explicitly resets it with a launch argument.
+    var developerModeEnabled: Bool {
+        didSet { defaults.set(developerModeEnabled, forKey: "developerModeEnabled") }
+    }
+    /// Client badges are still being evaluated, so they stay off by default
+    /// and are only configurable from the Experimental developer section.
+    var clientBadgesEnabled: Bool {
+        didSet { defaults.set(clientBadgesEnabled, forKey: "clientBadgesEnabled") }
+    }
     /// Face ID / passcode lock on backgrounding — opt-in via Settings.
     var requireAppLock: Bool {
         didSet { defaults.set(requireAppLock, forKey: "requireAppLock") }
     }
+    /// The guided first-entry tour runs once per install — for guests and
+    /// signed-in accounts alike — then never again. Skipping counts as
+    /// completing.
+    var hasCompletedFirstRunTour: Bool {
+        didSet { defaults.set(hasCompletedFirstRunTour, forKey: "hasCompletedFirstRunTour") }
+    }
+    /// Debug-menu escape hatch: lets the tour replay on a ledger that already
+    /// has rows. Transient — never persisted.
+    var debugForceFirstRunTour = false
+    /// UI automation launches with an empty store, which would otherwise start
+    /// the tour under every ledger test — so under automation the tour is
+    /// opt-in via the `-firstRunTour` launch argument.
+    var shouldOfferFirstRunTour: Bool {
+        guard !hasCompletedFirstRunTour else { return false }
+        if Self.isRunningUIAutomation {
+            return Self.hasUIAutomationLaunchFlag("-firstRunTour")
+        }
+        return true
+    }
     private(set) var isLocked = false
+    /// A non-blocking privacy message shown in Settings after the app disables
+    /// an impossible legacy lock (for example, after the device passcode was
+    /// removed). The ledger is never left behind a cover it cannot unlock.
+    var appLockNotice: String?
+    /// A non-blocking warning for an Apple sign-in credential check that could
+    /// not finish. Explicit Apple revocation still signs the account out; a
+    /// transient Keychain or Apple-service problem must not silently weaken
+    /// the check or erase the owner's local ledger.
+    var accountSecurityNotice: String?
     var isSyncing = false
     var syncMessage = String(localized: "Offline")
     var syncError: String?
+    var accountState: AccountState = .checking
+    #if DEBUGMENU
+    /// A Dev-only visual override for exercising the account-gate states.
+    /// It never turns on authentication or sync; it only lets the root choose
+    /// the gate instead of the local ledger while a debug preset is active.
+    var debugAuthGatePreview = false
+    #endif
     /// Number of remote edits/deletes that changed after this device's last
     /// observed server version. These require an explicit user choice rather
-    /// than a silent last-device-wins overwrite.
-    private(set) var syncConflictCount = 0
+    /// than a silent last-device-wins overwrite. Written by the sync pass in
+    /// `AppModel+Sync.swift`; module-internal setter (only that extension
+    /// writes it — views read it).
+    var syncConflictCount = 0
     /// When the last sync completed — display only ("Last sync" in Settings).
     var lastSyncAt: Date? {
         didSet { defaults.set(lastSyncAt, forKey: workspaceDefaultKey("lastSyncAt")) }
@@ -189,63 +305,90 @@ final class AppModel {
     /// Production/Test picker inside it.
     var showSettings = false
 
-    private let defaults = UserDefaults.standard
-    @ObservationIgnored private var supabaseClient: SupabaseClient?
-    @ObservationIgnored private var queuedSyncTask: Task<Void, Never>?
-    @ObservationIgnored private var realtimeChannel: RealtimeChannelV2?
+    // Persisted-settings store plus the sync / realtime / retry machinery.
+    // These are module-`internal` (not `private`) only so the sync orchestration
+    // can live in `AppModel+Sync.swift` while remaining owned by `AppModel`;
+    // `@ObservationIgnored` keeps them off the observation graph. Treat as
+    // private to the type — nothing outside `AppModel` should touch them.
+    let defaults: UserDefaults
+    @ObservationIgnored var supabaseClient: SupabaseClient?
+    @ObservationIgnored var queuedSyncTask: Task<Void, Never>?
+    @ObservationIgnored var realtimeChannel: RealtimeChannelV2?
     /// The client that owns `realtimeChannel` — kept so teardown can remove the
     /// channel even after `supabaseClient` has been reset to nil.
-    @ObservationIgnored private var realtimeClient: SupabaseClient?
-    @ObservationIgnored private var realtimeTask: Task<Void, Never>?
-    @ObservationIgnored private var realtimeContext: ModelContext?
-    @ObservationIgnored private var configRefreshTask: Task<Void, Never>?
-    @ObservationIgnored private var followUpSyncRequested = false
+    @ObservationIgnored var realtimeClient: SupabaseClient?
+    @ObservationIgnored var realtimeTask: Task<Void, Never>?
+    @ObservationIgnored var realtimeContext: ModelContext?
+    @ObservationIgnored var configRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var followUpSyncRequested = false
     /// Bumped on every workspace detach. An in-flight `syncNow` snapshots the
     /// generation before its await and discards its results if the workspace
     /// changed underneath it — otherwise a Production pass finishing after a
     /// switch to Test would write its cursor under Test's keys.
-    @ObservationIgnored private var syncGeneration = 0
-    @ObservationIgnored private var retryTask: Task<Void, Never>?
-    @ObservationIgnored private var retryAttempt = 0
-    @ObservationIgnored private var invokedByRetry = false
-    @ObservationIgnored private var lastSyncFailed = false
-    @ObservationIgnored private let pathMonitor = NWPathMonitor()
-    @ObservationIgnored private var pathMonitorStarted = false
-    @ObservationIgnored private var pathWasSatisfied = true
+    @ObservationIgnored var syncGeneration = 0
+    @ObservationIgnored var retryTask: Task<Void, Never>?
+    @ObservationIgnored var retryAttempt = 0
+    @ObservationIgnored var invokedByRetry = false
+    @ObservationIgnored var lastSyncFailed = false
+    @ObservationIgnored var profileNeedsSync = false
+    @ObservationIgnored var profileEditGeneration = 0
+    @ObservationIgnored var isApplyingRemoteProfile = false
+    @ObservationIgnored let pathMonitor = NWPathMonitor()
+    @ObservationIgnored var pathMonitorStarted = false
+    @ObservationIgnored var pathWasSatisfied = true
     @ObservationIgnored private var lockWindow: UIWindow?
     @ObservationIgnored private var isUnlocking = false
+    @ObservationIgnored var appleCredentialRevocationObserver: NSObjectProtocol?
 
-    init() {
-        let resolvedBaseCurrencyCode = Self.normalizedCurrencyCode(defaults.string(forKey: "baseCurrencyCode"),
-                                                                   fallback: Self.defaultBaseCurrencyCode)
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        Self.migrateWorkspaceCurrencyProfilesIfNeeded(defaults: defaults)
+
+        let savedEnvironment = defaults.string(forKey: "workspaceEnvironment").flatMap(WorkspaceEnvironment.init(rawValue:))
+        let resolvedEnvironment = Self.isLocalOnlyDevBuild ? .test : (savedEnvironment ?? .production)
+        let resolvedBaseCurrencyCode = Self.normalizedCurrencyCode(
+            defaults.string(forKey: Self.workspaceDefaultKey("baseCurrencyCode", environment: resolvedEnvironment)),
+            fallback: Self.defaultBaseCurrencyCode
+        )
         baseCurrencyCode = resolvedBaseCurrencyCode
-        let savedSecondary = Self.normalizedCurrencyCode(defaults.string(forKey: "secondaryCurrencyCode"),
-                                                         fallback: Self.defaultSecondaryCurrencyCode)
+        let savedSecondary = Self.normalizedCurrencyCode(
+            defaults.string(forKey: Self.workspaceDefaultKey("secondaryCurrencyCode", environment: resolvedEnvironment)),
+            fallback: Self.defaultSecondaryCurrencyCode
+        )
         secondaryCurrencyCode = savedSecondary == resolvedBaseCurrencyCode
             ? Self.replacementCurrencyCode(excluding: resolvedBaseCurrencyCode)
             : savedSecondary
-        var r = defaults.double(forKey: "rate")
-        // One-time reset to the current shipped rate (83 ₽/$): values carried
-        // over from older builds move to the new default on first launch;
-        // afterwards whatever the user types always wins.
-        if !defaults.bool(forKey: "didApplyDefaultRate83") {
-            r = Self.defaultExchangeRate
-            defaults.set(r, forKey: "rate")
-            defaults.set(true, forKey: "didApplyDefaultRate83")
-        }
+        let rateKey = Self.workspaceDefaultKey("rate", environment: resolvedEnvironment)
+        let r = defaults.object(forKey: rateKey) == nil
+            ? Self.defaultExchangeRate
+            : defaults.double(forKey: rateKey)
         rate = Self.validExchangeRate(r, fallback: Self.defaultExchangeRate)
-        let savedEnvironment = defaults.string(forKey: "workspaceEnvironment").flatMap(WorkspaceEnvironment.init(rawValue:))
-        let resolvedEnvironment = savedEnvironment ?? .production
         // Supabase config is per environment: seed each field from its stored
         // per-workspace value, falling back to the project preloaded for that
         // environment so the app syncs out of the box with nothing to paste.
         let config = resolvedEnvironment.defaultSupabaseConfig
-        supabaseURLString = defaults.string(forKey: "supabaseURLString.\(resolvedEnvironment.rawValue)") ?? config.url
-        supabaseKey = defaults.string(forKey: "supabaseKey.\(resolvedEnvironment.rawValue)") ?? config.publishableKey
+        supabaseURLString = Self.configuredSupabaseValue(
+            defaults.string(forKey: "supabaseURLString.\(resolvedEnvironment.rawValue)"),
+            fallback: config.url
+        )
+        supabaseKey = Self.configuredSupabaseValue(
+            defaults.string(forKey: "supabaseKey.\(resolvedEnvironment.rawValue)"),
+            fallback: config.publishableKey
+        )
+        let resolvedWorkspaceID = defaults.string(forKey: "workspaceID.\(resolvedEnvironment.rawValue)")
+            ?? defaults.string(forKey: "workspaceID")
+            ?? resolvedEnvironment.workspaceID
+        let resolvedStoreMode: AccountStoreMode = defaults.bool(forKey: "accountStoreMigrated.\(resolvedWorkspaceID)")
+            ? .account
+            : .legacy
         workspaceEnvironment = resolvedEnvironment
-        workspaceID = resolvedEnvironment.workspaceID
+        workspaceID = resolvedWorkspaceID
+        accountStoreMode = resolvedStoreMode
+        workspaceStoreIdentity = "\(resolvedEnvironment.rawValue):\(resolvedWorkspaceID):\(resolvedStoreMode.rawValue)"
         defaults.set(resolvedEnvironment.rawValue, forKey: "workspaceEnvironment")
-        defaults.set(resolvedEnvironment.workspaceID, forKey: "workspaceID")
+        defaults.set(resolvedWorkspaceID, forKey: "workspaceID")
+        defaults.set(resolvedWorkspaceID, forKey: "workspaceID.\(resolvedEnvironment.rawValue)")
+        profileNeedsSync = defaults.bool(forKey: "profileNeedsSync.\(resolvedEnvironment.rawValue)")
         let workspaceKeySuffix = resolvedEnvironment.rawValue
         let savedLastSyncAt = defaults.object(forKey: "lastSyncAt.\(workspaceKeySuffix)") as? Date
             ?? defaults.object(forKey: "lastSyncAt") as? Date
@@ -267,7 +410,26 @@ final class AppModel {
             appearanceMode = .system
         }
         accent = Theme.Accent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .blue
+        if Self.hasUIAutomationLaunchFlag("-resetDeveloperMode") {
+            defaults.set(false, forKey: "developerModeEnabled")
+        }
+        if Self.hasUIAutomationLaunchFlag("-demoDeveloperSettings") {
+            developerModeEnabled = true
+        } else {
+            developerModeEnabled = defaults.bool(forKey: "developerModeEnabled")
+        }
+        if Self.hasUIAutomationLaunchFlag("-resetExperimentalFeatures") {
+            defaults.set(false, forKey: "clientBadgesEnabled")
+        }
+        clientBadgesEnabled = defaults.bool(forKey: "clientBadgesEnabled")
+        if Self.isRunningUIAutomation && Self.hasUIAutomationLaunchFlag("-demoClientProfile") {
+            clientBadgesEnabled = true
+        }
         requireAppLock = defaults.bool(forKey: "requireAppLock")
+        if Self.hasUIAutomationLaunchFlag("-resetFirstRunTour") {
+            defaults.set(false, forKey: "hasCompletedFirstRunTour")
+        }
+        hasCompletedFirstRunTour = defaults.bool(forKey: "hasCompletedFirstRunTour")
         syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
     }
 
@@ -276,7 +438,7 @@ final class AppModel {
     /// Cold launches start covered when the lock is on; the biometric prompt
     /// fires as soon as the window exists (called from the root `.task`).
     func lockOnLaunchIfNeeded() {
-        guard requireAppLock else { return }
+        guard canUseAppLock else { return }
         isLocked = true
         showLockWindow()
         attemptUnlockIfNeeded()
@@ -285,7 +447,7 @@ final class AppModel {
     /// Called on backgrounding — covers the content before the app-switcher
     /// snapshot is taken, so amounts never show in the multitasking UI.
     func lockIfNeeded() {
-        guard requireAppLock, !isLocked else { return }
+        guard canUseAppLock, !isLocked else { return }
         isLocked = true
         showLockWindow()
     }
@@ -297,7 +459,7 @@ final class AppModel {
     /// Center or an incoming-call banner returns straight to content, no
     /// re-authentication.
     func coverIfNeeded() {
-        guard requireAppLock, !isLocked else { return }
+        guard canUseAppLock, !isLocked else { return }
         showLockWindow()
     }
 
@@ -315,18 +477,41 @@ final class AppModel {
         isUnlocking = true
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if await AppLockAuth.evaluate(reason: String(localized: "Unlock your income ledger")) {
+            switch await AppLockAuth.evaluate(reason: String(localized: "Unlock your income ledger")) {
+            case .authenticated:
                 self.isLocked = false
                 self.hideLockWindow()
+            case .unavailable:
+                self.disableUnavailableAppLock()
+                self.isLocked = false
+                self.hideLockWindow()
+            case .denied:
+                break
             }
             self.isUnlocking = false
         }
+    }
+
+    private var canUseAppLock: Bool {
+        guard requireAppLock else { return false }
+        guard AppLockAuth.isAuthenticationAvailable else {
+            disableUnavailableAppLock()
+            return false
+        }
+        return true
+    }
+
+    private func disableUnavailableAppLock() {
+        guard requireAppLock else { return }
+        requireAppLock = false
+        appLockNotice = String(localized: "App Lock was turned off because this iPhone no longer has a device passcode.")
     }
 
     /// The lock lives in its own alert-level window for the same reason dark
     /// mode is a window-level override: a SwiftUI overlay in the root view
     /// sits *under* presented sheets, and the lock must cover those too.
     private func showLockWindow() {
+        guard !Self.isRunningUnitTests else { return }
         guard lockWindow == nil else { return }
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState != .unattached }) ?? scenes.first else { return }
@@ -408,616 +593,122 @@ final class AppModel {
 
     // MARK: Currency
 
-    /// Base-currency value of one unit of `code`, or `nil` when the app has no
-    /// rate for it (anything other than the base or secondary currency).
-    func conversionRate(from code: String) -> Decimal? {
-        if code == baseCurrencyCode { return 1 }
-        if code == secondaryCurrencyCode { return 1 / rateDecimal }
-        return nil
+    /// A value-type snapshot of the current currency settings. The money math
+    /// lives in `CurrencyConverter` so it's testable without an `AppModel`;
+    /// rebuilt per read since the three fields are trivial to copy.
+    var converter: CurrencyConverter {
+        CurrencyConverter(baseCurrencyCode: baseCurrencyCode,
+                          secondaryCurrencyCode: secondaryCurrencyCode,
+                          rate: rate)
     }
 
-    /// Whether an amount in `code` can be converted to the base currency.
-    func canConvert(_ code: String) -> Bool { conversionRate(from: code) != nil }
+    func conversionRate(from code: String) -> Decimal? { converter.conversionRate(from: code) }
+    func canConvert(_ code: String) -> Bool { converter.canConvert(code) }
+    func toBase(_ amount: Decimal, code: String) -> Decimal { converter.toBase(amount, code: code) }
+    func secondary(_ base: Decimal) -> Decimal { converter.secondary(base) }
+    func primaryString(_ base: Decimal) -> String { converter.primaryString(base) }
+    func secondaryString(_ base: Decimal) -> String { converter.secondaryString(base) }
 
-    /// Convert an entry amount into the base currency.
-    func toBase(_ amount: Decimal, code: String) -> Decimal {
-        if code == baseCurrencyCode { return amount }
-        if code == secondaryCurrencyCode { return amount / rateDecimal }
-        // A third currency is a valid imported or synced state, but adding its
-        // raw units to a base-currency total fabricates a financial result.
-        // Callers retain and display the entry's original amount; consolidated
-        // totals exclude it until a conversion rate is available.
-        #if DEBUG
-        print("⚠️ toBase: no rate for \(code); excluding it from consolidated totals.")
-        #endif
-        return .zero
-    }
+    // MARK: Grouping, totals & insights
 
-    /// The secondary-currency value for a base amount.
-    func secondary(_ base: Decimal) -> Decimal { base * rateDecimal }
+    /// The aggregation layer — grouping/totals, trend series, the daily
+    /// heatmap, and the pending queue — lives in the pure `Insights` value
+    /// type. `AppModel` forwards to a snapshot built from the current
+    /// `converter`, so views keep calling `app.total(…)`, `app.monthlySeries(…)`
+    /// etc. unchanged while the math is unit-tested in isolation.
+    var insights: Insights { Insights(converter: converter) }
 
-    func primaryString(_ base: Decimal) -> String {
-        CurrencyFormatter.string(base, code: baseCurrencyCode)
-    }
-    func secondaryString(_ base: Decimal) -> String {
-        CurrencyFormatter.string(secondary(base), code: secondaryCurrencyCode)
-    }
+    func entries(of client: Client, in month: Date) -> [Entry] { insights.entries(of: client, in: month) }
+    func earnedEntries(of client: Client, in month: Date) -> [Entry] { insights.earnedEntries(of: client, in: month) }
+    func total(of client: Client, in month: Date) -> Decimal { insights.total(of: client, in: month) }
+    func clientsWithEntries(_ clients: [Client], in month: Date) -> [Client] { insights.clientsWithEntries(clients, in: month) }
+    func monthTotal(_ clients: [Client], in month: Date) -> Decimal { insights.monthTotal(clients, in: month) }
 
-    // MARK: Grouping & totals
-
-    func entries(of client: Client, in month: Date) -> [Entry] {
-        client.entries
-            .filter { sameMonth($0.date, month) }
-            .sorted { $0.sortIndex == $1.sortIndex ? $0.createdAt > $1.createdAt : $0.sortIndex < $1.sortIndex }
-    }
-
-    func earnedEntries(of client: Client, in month: Date) -> [Entry] {
-        entries(of: client, in: month).filter { $0.status.isIncludedInEarnedTotals }
-    }
-
-    func total(of client: Client, in month: Date) -> Decimal {
-        // A running sum doesn't care about order, so skip the filtered-array
-        // allocation and the sort that `earnedEntries` does — this runs per
-        // client, per visible month, and (×6) on every summary refresh.
-        client.entries.reduce(Decimal.zero) { sum, entry in
-            guard entry.status.isIncludedInEarnedTotals, sameMonth(entry.date, month) else { return sum }
-            return sum + toBase(entry.amount, code: entry.currencyCode)
-        }
-    }
-
-    func clientsWithEntries(_ clients: [Client], in month: Date) -> [Client] {
-        clients
-            .filter { !entries(of: $0, in: month).isEmpty }
-            .sorted { $0.sortIndex < $1.sortIndex }
-    }
-
-    func monthTotal(_ clients: [Client], in month: Date) -> Decimal {
-        clients.reduce(Decimal.zero) { $0 + total(of: $1, in: month) }
-    }
-
-    // MARK: Insights
-
-    /// Earned base-currency total for each of the last `lastNMonths` months,
-    /// oldest first. Months with no data come back as 0 so the chart is continuous.
     func monthlySeries(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, total: Decimal)] {
-        let calendar = Calendar.current
-        let thisMonth = DateFormat.monthStart(of: .now)
-        return (0..<max(lastNMonths, 1)).reversed().compactMap { offset in
-            guard let month = calendar.date(byAdding: .month, value: -offset, to: thisMonth) else { return nil }
-            return (month: month, total: monthTotal(clients, in: month))
-        }
+        insights.monthlySeries(clients, lastNMonths: lastNMonths)
     }
-
-    /// Every client that earned over the last `lastNMonths` months, highest
-    /// first, dropping clients with nothing earned — the full breakdown behind
-    /// the Top clients composition bar.
     func clientTotals(_ clients: [Client], lastNMonths: Int = 12) -> [(client: Client, total: Decimal)] {
-        let months = monthlySeries(clients, lastNMonths: lastNMonths).map(\.month)
-        return clients
-            .map { client in
-                (client: client, total: months.reduce(Decimal.zero) { $0 + total(of: client, in: $1) })
-            }
-            .filter { $0.total > 0 }
-            .sorted { $0.total > $1.total }
+        insights.clientTotals(clients, lastNMonths: lastNMonths)
     }
-
-    /// The `limit` highest-earning clients over the window.
     func topClients(_ clients: [Client], lastNMonths: Int = 12, limit: Int = 3) -> [(client: Client, total: Decimal)] {
-        Array(clientTotals(clients, lastNMonths: lastNMonths).prefix(limit))
+        insights.topClients(clients, lastNMonths: lastNMonths, limit: limit)
     }
-
-    /// Month-over-month change in earned revenue across the last `lastNMonths`
-    /// months: each month's earned total minus the prior month's. An extra
-    /// leading month is fetched so the first bar has a real baseline.
     func monthlyDeltas(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, delta: Decimal, total: Decimal)] {
-        let series = monthlySeries(clients, lastNMonths: lastNMonths + 1)
-        guard series.count >= 2 else {
-            return series.map { (month: $0.month, delta: $0.total, total: $0.total) }
-        }
-        return (1..<series.count).map { index in
-            (month: series[index].month,
-             delta: series[index].total - series[index - 1].total,
-             total: series[index].total)
-        }
+        insights.monthlyDeltas(clients, lastNMonths: lastNMonths)
     }
 
-    /// Straight-line month-end projection for the running month: the earned
-    /// total so far scaled up to the full month. Nil while there's nothing to
-    /// extrapolate — no earnings yet, or the first two days of a month (one
-    /// early invoice would project an absurd figure).
+    /// Straight-line month-end projection — see `Insights.monthPace`. Kept as a
+    /// static forwarder so existing `AppModel.monthPace` call sites and tests
+    /// need no change.
     nonisolated static func monthPace(total: Decimal,
                                       now: Date = .now,
                                       calendar: Calendar = .current) -> Decimal? {
-        guard total > 0 else { return nil }
-        let day = calendar.component(.day, from: now)
-        guard day >= 3,
-              let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count else { return nil }
-        return (total / Decimal(day) * Decimal(daysInMonth)).rounded()
+        Insights.monthPace(total: total, now: now, calendar: calendar)
     }
 
-    // MARK: Insights — daily heatmap
-
-    /// How a single line lands on the calendar: the base-currency amount it
-    /// contributes per day and the span of days it covers. A *held* line
-    /// spreads its amount evenly across every day from its own date through the
-    /// hold-release day (inclusive) — the money is "earning" across the wait —
-    /// while every other line lands wholly on its date.
-    private func heatSpan(of entry: Entry) -> (start: Date, end: Date, perDay: Decimal, dayCount: Int) {
-        let calendar = Calendar.current
-        let base = toBase(entry.amount, code: entry.currencyCode)
-        let start = calendar.startOfDay(for: entry.date)
-        guard let hold = entry.holdUntil else { return (start, start, base, 1) }
-        let end = calendar.startOfDay(for: hold)
-        guard end > start else { return (start, start, base, 1) }
-        let count = (calendar.dateComponents([.day], from: start, to: end).day ?? 0) + 1
-        return (start, end, base / Decimal(count), count)
-    }
-
-    /// Earned base-currency amount for each calendar day in `[startDay, endDay]`,
-    /// with held lines distributed evenly over their span. Canceled lines are
-    /// excluded; days with nothing earned are simply absent from the result.
-    /// Keys are start-of-day, matching what the heatmap looks up.
     func dailyEarnings(_ clients: [Client], from startDay: Date, through endDay: Date) -> [Date: Decimal] {
-        let calendar = Calendar.current
-        let lo = calendar.startOfDay(for: startDay)
-        let hi = calendar.startOfDay(for: endDay)
-        guard lo <= hi else { return [:] }
-        var map: [Date: Decimal] = [:]
-        for client in clients {
-            for entry in client.entries where entry.status.isIncludedInEarnedTotals {
-                let span = heatSpan(of: entry)
-                var day = max(span.start, lo)
-                let last = min(span.end, hi)
-                while day <= last {
-                    map[day, default: .zero] += span.perDay
-                    guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-                    day = next
-                }
-            }
-        }
-        return map
+        insights.dailyEarnings(clients, from: startDay, through: endDay)
     }
-
-    /// The lines earning on `day`, largest slice first, each paired with the
-    /// base-currency amount it contributes that day (a full amount, or one even
-    /// slice of a held line). Powers the tapped-day breakdown.
     func dayContributions(on day: Date, clients: [Client]) -> [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] {
-        let calendar = Calendar.current
-        let target = calendar.startOfDay(for: day)
-        var rows: [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] = []
-        for client in clients {
-            for entry in client.entries where entry.status.isIncludedInEarnedTotals {
-                let span = heatSpan(of: entry)
-                if target >= span.start && target <= span.end {
-                    rows.append((entry: entry, amount: span.perDay, isHeldSlice: span.dayCount > 1))
-                }
-            }
-        }
-        return rows.sorted { $0.amount > $1.amount }
+        insights.dayContributions(on: day, clients: clients)
     }
 
-    // MARK: Pending / outstanding
-
-    /// All in-progress lines, soonest `holdUntil` first (undated last), then by
-    /// creation. These are the lines that still need follow-up.
-    func pendingEntries(_ clients: [Client]) -> [Entry] {
-        clients
-            .flatMap(\.entries)
-            .filter { $0.status == .inProgress }
-            .sorted { a, b in
-                switch (a.holdUntil, b.holdUntil) {
-                case let (l?, r?): return l == r ? a.createdAt < b.createdAt : l < r
-                case (_?, nil): return true   // dated before undated
-                case (nil, _?): return false
-                case (nil, nil): return a.createdAt < b.createdAt
-                }
-            }
-    }
-
-    /// An in-progress line whose hold date is already in the past.
-    func isOverdue(_ entry: Entry) -> Bool {
-        guard entry.status == .inProgress, let hold = entry.holdUntil else { return false }
-        return hold < Calendar.current.startOfDay(for: .now)
-    }
+    func pendingEntries(_ clients: [Client]) -> [Entry] { insights.pendingEntries(clients) }
+    func isOverdue(_ entry: Entry) -> Bool { insights.isOverdue(entry) }
+    func monthsWithData(_ clients: [Client]) -> [Date] { insights.monthsWithData(clients) }
 
     /// Rebuild local hold-until reminders from the current entries. Called after
     /// every save point (via `queueSync`) and after a sync pull, so the schedule
-    /// always matches the data without any delta tracking.
+    /// always matches the data without any delta tracking. Stateful (fetches the
+    /// context), so it stays on `AppModel` rather than in `Insights`.
     func refreshPendingReminders(context: ModelContext) {
-        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        // Reminders only ever exist for in-progress lines with a hold date
+        // (`PendingNotifications.desiredRequests` drops everything else), so
+        // fetch just those instead of materializing the whole table after
+        // every save. Legacy raw statuses all map to `.paid`, so matching the
+        // raw column against `.inProgress` is exact.
+        let inProgress = EntryStatus.inProgress.rawValue
+        let descriptor = FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.holdUntil != nil && $0.statusRaw == inProgress }
+        )
+        let entries = (try? context.fetch(descriptor)) ?? []
         PendingNotifications.sync(entries)
     }
 
-    /// Months containing at least one visible entry (newest first), always including this month.
-    func monthsWithData(_ clients: [Client]) -> [Date] {
-        var set = Set<Date>()
-        for c in clients {
-            for e in c.entries {
-                set.insert(DateFormat.monthStart(of: e.date))
-            }
+    static func workspaceDefaultKey(_ key: String, environment: WorkspaceEnvironment) -> String {
+        "\(key).\(environment.rawValue)"
+    }
+
+    /// Currency settings used to share three global UserDefaults keys across
+    /// Production and Test. Migrate the last cached tuple to Production only,
+    /// then force the first pass for both environments to read the authoritative
+    /// cloud profile instead of pushing a potentially cross-contaminated cache.
+    private static func migrateWorkspaceCurrencyProfilesIfNeeded(defaults: UserDefaults) {
+        let migrationKey = "workspaceCurrencyProfileStorageVersion"
+        guard defaults.integer(forKey: migrationKey) < workspaceCurrencyProfileStorageVersion else { return }
+
+        let production = WorkspaceEnvironment.production
+        let productionBaseKey = workspaceDefaultKey("baseCurrencyCode", environment: production)
+        let productionSecondaryKey = workspaceDefaultKey("secondaryCurrencyCode", environment: production)
+        let productionRateKey = workspaceDefaultKey("rate", environment: production)
+
+        if defaults.object(forKey: productionBaseKey) == nil,
+           let legacyBase = defaults.string(forKey: "baseCurrencyCode") {
+            defaults.set(legacyBase, forKey: productionBaseKey)
         }
-        set.insert(DateFormat.monthStart(of: .now))
-        return set.sorted(by: >)
-    }
-
-    private func sameMonth(_ a: Date, _ b: Date) -> Bool {
-        Calendar.current.isDate(a, equalTo: b, toGranularity: .month)
-    }
-
-    // MARK: Supabase
-
-    var isSupabaseConfigured: Bool {
-        let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: urlText),
-              url.scheme?.lowercased() == "https",
-              url.host() != nil else { return false }
-        return !supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func refreshSupabaseSession() async {
-        guard isSupabaseConfigured else {
-            syncMessage = String(localized: "Offline")
-            return
+        if defaults.object(forKey: productionSecondaryKey) == nil,
+           let legacySecondary = defaults.string(forKey: "secondaryCurrencyCode") {
+            defaults.set(legacySecondary, forKey: productionSecondaryKey)
         }
-        do {
-            _ = try supabase()
-            syncMessage = String(localized: "Ready")
-            syncError = nil
-        } catch {
-            syncMessage = String(localized: "Needs setup")
-            syncError = error.localizedDescription
+        if defaults.object(forKey: productionRateKey) == nil,
+           defaults.object(forKey: "rate") != nil {
+            defaults.set(defaults.double(forKey: "rate"), forKey: productionRateKey)
         }
-    }
 
-    func syncNow(context: ModelContext,
-                 conflictResolution: SyncCoordinator.ConflictResolution = .requireUserChoice) async {
-        guard isSupabaseConfigured else {
-            syncMessage = String(localized: "Offline")
-            return
+        for environment in WorkspaceEnvironment.allCases {
+            defaults.set(false, forKey: workspaceDefaultKey("profileNeedsSync", environment: environment))
         }
-        guard !isSyncing else {
-            // A pass is already on the wire — run another when it finishes so
-            // edits made mid-flight are pushed rather than dropped.
-            followUpSyncRequested = true
-            return
-        }
-        // Any pass supersedes a pending retry; an externally triggered one
-        // (edit, foreground, realtime) also restarts the backoff ladder.
-        retryTask?.cancel()
-        if !invokedByRetry { retryAttempt = 0 }
-        invokedByRetry = false
-        // Demo rows seeded while sync was unconfigured must not leak into a
-        // real workspace — drop the never-synced ones before the first push.
-        SampleData.purgeAutoSeededDemoIfNeeded(context)
-        let generation = syncGeneration
-        isSyncing = true
-        syncMessage = String(localized: "Syncing...")
-        syncError = nil
-        do {
-            let nextCursor = try await SyncCoordinator.sync(context: context,
-                                                            client: supabase(),
-                                                            workspaceID: workspaceID,
-                                                            lastPulledAt: syncCursor,
-                                                            conflictResolution: conflictResolution)
-            guard generation == syncGeneration else {
-                finishStaleSyncPass()
-                return
-            }
-            syncCursor = nextCursor.rowUpdatedAt
-            lastSyncAt = Date()
-            syncMessage = String(localized: "Synced")
-            try context.save()
-            refreshPendingReminders(context: context)
-            retryAttempt = 0
-            lastSyncFailed = false
-            syncConflictCount = 0
-        } catch {
-            guard generation == syncGeneration else {
-                finishStaleSyncPass()
-                return
-            }
-            context.rollback()
-            if let conflict = error as? SyncCoordinator.SyncConflictError {
-                syncConflictCount = conflict.count
-                syncMessage = String(localized: "Resolve conflict")
-                syncError = conflict.localizedDescription
-                lastSyncFailed = false
-            } else {
-                syncMessage = String(localized: "Needs sync")
-                syncError = error.localizedDescription
-                lastSyncFailed = true
-                scheduleRetrySync(context: context)
-            }
-        }
-        isSyncing = false
-        if followUpSyncRequested {
-            followUpSyncRequested = false
-            await syncNow(context: context)
-        }
-    }
-
-    /// An in-flight pass outlived a workspace switch: drop its results and
-    /// state writes. If a sync was requested for the *new* workspace while the
-    /// stale pass held `isSyncing`, run it now against the current store.
-    private func finishStaleSyncPass() {
-        isSyncing = false
-        if followUpSyncRequested {
-            followUpSyncRequested = false
-            if let context = realtimeContext { queueSync(context: context) }
-        }
-    }
-
-    /// Replace the local SwiftData cache with the selected Supabase workspace.
-    /// This intentionally does not enqueue tombstones: the user is switching
-    /// sources of truth, not deleting remote income rows.
-    @discardableResult
-    func resetLocalDataAndPull(context: ModelContext) async -> String? {
-        guard isSupabaseConfigured else {
-            syncMessage = String(localized: "Offline")
-            return String(localized: "Add the Supabase URL and publishable key first.")
-        }
-        syncGeneration += 1 // a pass already on the wire must not restore the old cursor
-        queuedSyncTask?.cancel()
-        retryTask?.cancel()
-        followUpSyncRequested = false
-        retryAttempt = 0
-        invokedByRetry = false
-        lastSyncFailed = false
-        do {
-            try clearLocalStore(context)
-            syncCursor = nil
-            lastSyncAt = nil
-            defaults.set(false, forKey: SampleData.autoSeededDemoKey)
-            await syncNow(context: context)
-            return syncError
-        } catch {
-            syncMessage = String(localized: "Needs sync")
-            syncError = error.localizedDescription
-            return error.localizedDescription
-        }
-    }
-
-    func queueSync(context: ModelContext) {
-        queuedSyncTask?.cancel()
-        queuedSyncTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled, let self else { return }
-            self.refreshPendingReminders(context: context)
-            await self.syncNow(context: context)
-        }
-    }
-
-    /// The user has reviewed the conflict warning and intentionally wants this
-    /// iPhone's dirty rows to replace the remote copies.
-    func keepLocalConflictChanges(context: ModelContext) async {
-        await syncNow(context: context, conflictResolution: .preferLocal)
-    }
-
-    func detachWorkspaceStore() {
-        syncGeneration += 1
-        queuedSyncTask?.cancel()
-        retryTask?.cancel()
-        configRefreshTask?.cancel()
-        followUpSyncRequested = false
-        retryAttempt = 0
-        invokedByRetry = false
-        lastSyncFailed = false
-        realtimeContext = nil
-        stopRealtime()
-    }
-
-    // MARK: Persistence
-
-    /// The one persistence path: commit pending changes and kick the debounced
-    /// sync. Returns `nil` on success, or a user-facing message on failure —
-    /// assign it to the caller's error state and surface it with
-    /// `.saveErrorAlert`. Every screen saves through here so the save + sync +
-    /// error-reporting behaviour is identical everywhere.
-    @discardableResult
-    func save(_ context: ModelContext) -> String? {
-        do {
-            try context.save()
-            queueSync(context: context)
-            return nil
-        } catch {
-            // A save error must leave the screen exactly as it was before the
-            // action. Without this rollback, a later unrelated save could
-            // commit an insert/edit/delete the user was told had failed.
-            context.rollback()
-            return error.localizedDescription
-        }
-    }
-
-    private func clearLocalStore(_ context: ModelContext) throws {
-        for entry in try context.fetch(FetchDescriptor<Entry>()) {
-            context.delete(entry)
-        }
-        for heading in try context.fetch(FetchDescriptor<Heading>()) {
-            context.delete(heading)
-        }
-        for tombstone in try context.fetch(FetchDescriptor<SyncTombstone>()) {
-            context.delete(tombstone)
-        }
-        for client in try context.fetch(FetchDescriptor<Client>()) {
-            context.delete(client)
-        }
-        try context.save()
-    }
-
-    /// Delete an entry through the standard tombstone → save → undo flow, so a
-    /// deletion looks the same whether it comes from the ledger, a client, or
-    /// the pending list. Returns `nil` on success (with the undo staged) or the
-    /// error message on failure.
-    @discardableResult
-    func delete(_ entry: Entry, context: ModelContext) -> String? {
-        let snapshot = UndoableDelete.entry(EntrySnapshot(entry))
-        SyncDeleteQueue.enqueue(.entry, id: entry.id, in: context)
-        withAnimation(.snappy) { context.delete(entry) }
-        let error = save(context)
-        if error == nil { stageUndo(snapshot) }
-        return error
-    }
-
-    // MARK: Retry & reconnect
-
-    /// A failed pass retries itself with growing delays, then gives up until
-    /// the next external trigger (edit, foreground, realtime, reconnect) —
-    /// endless polling against a dead endpoint would just burn battery.
-    private func scheduleRetrySync(context: ModelContext) {
-        guard let delay = Self.retryDelay(attempt: retryAttempt) else { return }
-        retryAttempt += 1
-        retryTask?.cancel()
-        retryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self, self.isSupabaseConfigured, !self.isSyncing else { return }
-            self.invokedByRetry = true
-            await self.syncNow(context: context)
-        }
-    }
-
-    /// Backoff ladder: 5 s → 15 s → 45 s → 120 s, then nil (stop).
-    nonisolated static func retryDelay(attempt: Int) -> Duration? {
-        let delays: [Duration] = [.seconds(5), .seconds(15), .seconds(45), .seconds(120)]
-        guard delays.indices.contains(attempt) else { return nil }
-        return delays[attempt]
-    }
-
-    /// Sync as soon as connectivity returns after a failed pass, instead of
-    /// sitting on "Needs sync" until the user happens to touch something.
-    private func startPathMonitorIfNeeded() {
-        guard !pathMonitorStarted else { return }
-        pathMonitorStarted = true
-        pathMonitor.pathUpdateHandler = { [weak self] path in
-            let satisfied = path.status == .satisfied
-            Task { @MainActor [weak self] in
-                self?.handlePathChange(satisfied: satisfied)
-            }
-        }
-        pathMonitor.start(queue: DispatchQueue(label: "earnline.path-monitor"))
-    }
-
-    private func handlePathChange(satisfied: Bool) {
-        let cameBackOnline = satisfied && !pathWasSatisfied
-        pathWasSatisfied = satisfied
-        guard cameBackOnline, lastSyncFailed, let context = realtimeContext else { return }
-        queueSync(context: context)
-    }
-
-    private func supabase() throws -> SupabaseClient {
-        if let supabaseClient { return supabaseClient }
-        let urlText = supabaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: urlText), !key.isEmpty else {
-            throw SyncError.missingConfiguration
-        }
-        let client = SupabaseClient(supabaseURL: url, supabaseKey: key)
-        supabaseClient = client
-        return client
-    }
-
-    private func resetSupabaseClient() {
-        supabaseClient = nil
-        syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
-        scheduleConfigRefresh()
-    }
-
-    private func workspaceDefaultKey(_ key: String) -> String {
-        "\(key).\(workspaceEnvironment.rawValue)"
-    }
-
-    private func loadWorkspaceSyncState() {
-        lastSyncAt = defaults.object(forKey: workspaceDefaultKey("lastSyncAt")) as? Date
-        syncCursor = defaults.object(forKey: workspaceDefaultKey("syncCursor")) as? Date
-    }
-
-    /// Load the Supabase URL/key for the active environment: the user's stored
-    /// value for that workspace, or the project preloaded for it. Assigning
-    /// these fires their `didSet`s, which persist the values under the new
-    /// workspace's keys and rebuild the client.
-    private func loadWorkspaceSupabaseConfig() {
-        let config = workspaceEnvironment.defaultSupabaseConfig
-        supabaseURLString = defaults.string(forKey: workspaceDefaultKey("supabaseURLString")) ?? config.url
-        supabaseKey = defaults.string(forKey: workspaceDefaultKey("supabaseKey")) ?? config.publishableKey
-    }
-
-    /// The Settings fields fire their didSets on every keystroke — debounce
-    /// before rebuilding the realtime subscription, and kick off a sync so a
-    /// freshly configured workspace pulls without waiting for a manual "Sync
-    /// now" or the next edit.
-    private func scheduleConfigRefresh() {
-        guard realtimeContext != nil else { return }
-        configRefreshTask?.cancel()
-        configRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled, let self else { return }
-            self.restartRealtime()
-            if let context = self.realtimeContext, self.isSupabaseConfigured {
-                await self.syncNow(context: context)
-            }
-        }
-    }
-
-    // MARK: Realtime
-
-    /// Subscribe to workspace changes and trigger a debounced sync on any remote
-    /// insert/update/delete. One schema-wide channel filtered by `workspace_id`
-    /// covers clients, entries, headings, and tombstones.
-    func startRealtime(context: ModelContext) {
-        realtimeContext = context
-        startPathMonitorIfNeeded()
-        guard isSupabaseConfigured, realtimeChannel == nil, let client = try? supabase() else { return }
-        let workspace = workspaceID
-        let channel = client.channel("earnline:\(workspace)")
-        realtimeChannel = channel
-        realtimeClient = client
-        let stream = channel.postgresChange(
-            AnyAction.self,
-            schema: "public",
-            filter: .eq("workspace_id", value: workspace)
-        )
-        realtimeTask = Task { @MainActor [weak self] in
-            do {
-                try await channel.subscribeWithError()
-            } catch {
-                // Realtime is an optimization, not a reason to hide a failed
-                // subscription. The next foreground/manual sync still works.
-                self?.syncError = "Realtime updates unavailable: \(error.localizedDescription)"
-            }
-            for await _ in stream {
-                self?.handleRealtimeChange()
-            }
-        }
-    }
-
-    private func handleRealtimeChange() {
-        guard let realtimeContext else { return }
-        queueSync(context: realtimeContext)
-    }
-
-    private func restartRealtime() {
-        let context = realtimeContext
-        stopRealtime()
-        if let context { startRealtime(context: context) }
-    }
-
-    private func stopRealtime() {
-        realtimeTask?.cancel()
-        realtimeTask = nil
-        // Tear down against the client that created the channel — after a
-        // config change `supabaseClient` is already nil, and skipping the
-        // removal leaked a live subscription per change.
-        let client = realtimeClient
-        realtimeClient = nil
-        if let channel = realtimeChannel {
-            realtimeChannel = nil
-            Task { await client?.removeChannel(channel) }
-        }
-    }
-
-    private var rateDecimal: Decimal {
-        Decimal(string: String(rate), locale: Locale(identifier: "en_US_POSIX"))
-            ?? Decimal(Self.defaultExchangeRate)
+        defaults.set(workspaceCurrencyProfileStorageVersion, forKey: migrationKey)
     }
 
     nonisolated static func validExchangeRate(_ value: Double, fallback: Double = defaultExchangeRate) -> Double {

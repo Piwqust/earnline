@@ -16,6 +16,7 @@ struct PasteLinesSheet: View {
     @State private var text = ""
     @State private var selectedClient: Client?
     @State private var saveError: String?
+    @State private var successFeedback = 0
 
     private var drafts: [ParsedLine] {
         LineParser.parseLedgerBlock(text, defaultCurrency: app.baseCurrencyCode)
@@ -85,6 +86,7 @@ struct PasteLinesSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.background)
+        .sensoryFeedback(.success, trigger: successFeedback)
     }
 
     /// Client picker with a truncating label — long names shorten instead of
@@ -100,12 +102,12 @@ struct PasteLinesSheet: View {
         } label: {
             HStack(spacing: 5) {
                 Text(selectedClient?.name ?? String(localized: "Choose"))
-                    .foregroundStyle(Theme.label(0.45))
+                    .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.label(0.35))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: 190, alignment: .trailing)
         }
@@ -130,13 +132,13 @@ struct PasteLinesSheet: View {
                             .monospacedDigit()
                     }
                     Text(describe(draft))
-                        .foregroundStyle(Theme.label(0.65))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 if let date = draft.date {
                     Text(DateFormat.month(date))
                         .appFont(14)
-                        .foregroundStyle(Theme.label(0.45))
+                        .foregroundStyle(.tertiary)
                 }
                 if !valid {
                     Text("No amount — will be skipped")
@@ -180,7 +182,7 @@ struct PasteLinesSheet: View {
             // `AppModel.save` rolls the entire failed transaction back.
             saveError = error
         } else {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            successFeedback += 1
             dismiss()
         }
     }

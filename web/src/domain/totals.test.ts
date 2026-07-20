@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Client, Entry } from "./types";
-import { entriesOf, earnedEntriesOf, totalOf, monthTotal } from "./totals";
+import { entriesOf, earnedEntriesOf, totalOf, monthTotal, summarizeEntries } from "./totals";
 import { dayMsFromParts } from "./dateFormat";
 
 const settings = { baseCurrencyCode: "USD", secondaryCurrencyCode: "RUB", rate: 100 };
@@ -40,5 +40,18 @@ describe("totals — canceled excluded from earned", () => {
     expect(monthTotal([client], entries, month, settings)).toBe(150);
     expect(entriesOf("c1", entries, month).length).toBe(3);
     expect(earnedEntriesOf("c1", entries, month).length).toBe(2);
+  });
+
+  it("excludes unsupported currencies and marks the total incomplete", () => {
+    const summary = summarizeEntries([
+      entry({ amountCents: 10000, status: "paid", sortIndex: 0, currencyCode: "USD" }),
+      entry({ amountCents: 50000, status: "paid", sortIndex: 1, currencyCode: "EUR" }),
+    ], settings);
+    expect(summary).toEqual({
+      value: 100,
+      isComplete: false,
+      unsupportedCurrencyCodes: ["EUR"],
+      excludedEntryCount: 1,
+    });
   });
 });

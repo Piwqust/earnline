@@ -12,7 +12,7 @@ struct MonthDivider: View {
                 .frame(width: 28, height: 1)
             Text(title)
                 .appFont(14, .medium)
-                .foregroundStyle(Theme.label(0.6))
+                .foregroundStyle(.secondary)
             Rectangle()
                 .fill(Theme.hairline)
                 .frame(height: 1)

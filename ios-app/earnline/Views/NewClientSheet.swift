@@ -24,12 +24,6 @@ struct NewClientSheet: View {
     /// Measured height of the content stack, used to size the sheet exactly.
     @State private var contentHeight: CGFloat = 300
 
-    /// One namespace so the selection ring is a single view that *slides*
-    /// between swatches (matched geometry) as the pick changes, rather than
-    /// blinking off one circle and on another.
-    @Namespace private var swatchSelection
-
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 6)
     private var existingCount: Int { existingClients.count }
     private var validation: ClientNameValidation {
         Validation.validateClientName(name, existingNames: existingClients.map(\.name))
@@ -81,12 +75,9 @@ struct NewClientSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             CardHeader("Name")
             ChromeCard {
-                ChromeRow {
-                    Circle()
-                        .fill(Color(hex: colorHex))
-                        .frame(width: 12, height: 12)
+                ChromeRow(icon: "person.circle.fill") {
                     TextField("Client name", text: $name)
-                        .appFont(17, .medium)
+                        .appFont(17)
                         .onChange(of: name) { _, value in
                             hasEdited = true
                             name = Validation.capped(value, max: Limits.maxClientNameLength)
@@ -103,46 +94,9 @@ struct NewClientSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             CardHeader("Color")
             ChromeCard {
-                LazyVGrid(columns: columns, spacing: 18) {
-                    ForEach(Theme.clientPalette, id: \.self) { hex in
-                        swatch(hex)
-                    }
-                }
-                .padding(18)
+                ClientColorGrid(selection: $colorHex)
             }
         }
-    }
-
-    /// Palette swatch — selection is an outer ring in the ink color (the
-    /// ChatGPT accent-picker treatment). The ring carries a matched geometry
-    /// id, so tapping a new color springs it across to the new swatch while the
-    /// tapped swatch gives a small pop; the name dot recolors in the same beat.
-    private func swatch(_ hex: String) -> some View {
-        let selected = hex == colorHex
-        return Circle()
-            .fill(Color(hex: hex))
-            .frame(height: 36)
-            .overlay {
-                Circle().strokeBorder(Theme.label(0.08), lineWidth: 0.5)
-            }
-            .overlay {
-                if selected {
-                    Circle()
-                        .stroke(Theme.label(0.85), lineWidth: 2.5)
-                        .padding(-4)
-                        .matchedGeometryEffect(id: "swatchRing", in: swatchSelection)
-                }
-            }
-            .scaleEffect(selected ? 1.08 : 1)
-            .contentShape(.circle)
-            .onTapGesture {
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
-                    colorHex = hex
-                }
-                UISelectionFeedbackGenerator().selectionChanged()
-            }
-            .accessibilityLabel(Text("Color"))
-            .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func create() {

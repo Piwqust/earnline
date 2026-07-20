@@ -1,0 +1,3 @@
+// Debug builds may include the ignored Local.private.xcconfig generated for
+// this checkout. Release and CI supply their build settings externally.
+#include? "Local.private.xcconfig"

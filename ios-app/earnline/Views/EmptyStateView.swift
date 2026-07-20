@@ -1,36 +1,32 @@
 import SwiftUI
 
+/// Hand-rolled rather than `ContentUnavailableView`: inside the ledger's
+/// List row the system component stretches its action button to fill the
+/// whole remaining viewport (iOS 26), which reads as a broken giant pill —
+/// especially under the first-run tour's spotlight.
 struct EmptyStateView: View {
     var onStart: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 8) {
             Image(systemName: "pencil.and.scribble")
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.label(0.35))
-                .frame(width: 72, height: 72)
-                .glassEffect(.regular, in: .circle)
-
-            VStack(spacing: 6) {
-                Text("Write your first line")
-                    .appFont(20, .semibold)
-                    .foregroundStyle(Theme.label)
-                Text("Jot income like a notebook —\n“$240 Acme: 2 screens”")
-                    .appFont(15)
-                    .foregroundStyle(Theme.label(0.5))
-                    .multilineTextAlignment(.center)
-            }
-
-            Button(action: onStart) {
-                Text("New line")
-                    .appFont(16, .medium)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-            }
-            .buttonStyle(.glass)
-            .padding(.top, 4)
+                .font(.system(size: 40, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 6)
+                .accessibilityHidden(true)
+            Text("Write your first line")
+                .font(.title3.weight(.semibold))
+            Text("Jot income like a notebook —\n“$240 Acme: 2 screens”")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("New line", systemImage: "plus", action: onStart)
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.regular)
+                .padding(.top, 10)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 80)
+        .padding(.vertical, 40)
     }
 }

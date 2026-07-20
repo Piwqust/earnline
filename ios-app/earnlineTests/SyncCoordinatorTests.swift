@@ -93,7 +93,7 @@ struct SyncCoordinatorTests {
 
     private func makeContainer() throws -> ModelContainer {
         try ModelContainer(
-            for: Client.self, Entry.self, Heading.self, SyncTombstone.self,
+            for: Client.self, Entry.self, Heading.self, SyncTombstone.self, ProjectIconPreference.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
     }
@@ -118,6 +118,57 @@ struct SyncCoordinatorTests {
     }
 
     // MARK: Pull
+
+    @Test func workspaceProfileSeedsCloudWithPrecisionSafeCurrencyTuple() async throws {
+        MockTransport.reset()
+        MockTransport.respond("POST", "earnline_profiles", json: """
+        {"workspace_id":"\(workspace)","base_currency_code":"USD",
+          "secondary_currency_code":"RUB","exchange_rate":"89.125",
+          "updated_at":"2026-07-11T08:00:00.000Z"}
+        """)
+
+        let payload = WorkspaceProfilePayload(workspaceID: workspace,
+                                              baseCurrencyCode: "USD",
+                                              secondaryCurrencyCode: "RUB",
+                                              exchangeRate: 89.125)
+        let profile = try await SyncCoordinator.syncWorkspaceProfile(
+            client: makeClient(),
+            workspaceID: workspace,
+            local: payload,
+            pushLocal: true
+        )
+
+        #expect(profile.exchangeRate.decimal == Decimal(string: "89.125"))
+        let request = try #require(MockTransport.recorded.first { $0.method == "POST" })
+        #expect(request.table == "earnline_profiles")
+        #expect(request.body.contains("\"exchange_rate\":\"89.125\""))
+        #expect(request.query.contains("on_conflict=workspace_id"))
+    }
+
+    @Test func workspaceProfilePullsCloudWithoutOverwritingItOnLaunch() async throws {
+        MockTransport.reset()
+        MockTransport.respond("GET", "earnline_profiles", json: """
+        [{"workspace_id":"\(workspace)","base_currency_code":"USD",
+          "secondary_currency_code":"RUB","exchange_rate":"72.5",
+          "updated_at":"2026-07-13T00:00:00.000Z"}]
+        """)
+
+        let local = WorkspaceProfilePayload(workspaceID: workspace,
+                                            baseCurrencyCode: "EUR",
+                                            secondaryCurrencyCode: "GBP",
+                                            exchangeRate: 89.125)
+        let profile = try await SyncCoordinator.syncWorkspaceProfile(
+            client: makeClient(),
+            workspaceID: workspace,
+            local: local,
+            pushLocal: false
+        )
+
+        #expect(profile.exchangeRate.decimal == Decimal(string: "72.5"))
+        #expect(profile.baseCurrencyCode == "USD")
+        #expect(MockTransport.recorded.contains { $0.method == "GET" && $0.table == "earnline_profiles" })
+        #expect(!MockTransport.recorded.contains { $0.method == "POST" && $0.table == "earnline_profiles" })
+    }
 
     @Test func pullInsertsRemoteRowsAndAdvancesCursor() async throws {
         MockTransport.reset()
@@ -180,6 +231,34 @@ struct SyncCoordinatorTests {
         #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
     }
 
+    @Test func pullInsertsProjectIconAndAdvancesCursor() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let id = try #require(ProjectIconResolver.preferenceID(for: "Launch Kit"))
+
+        MockTransport.respond("GET", "earnline_project_icons", json: """
+        [{"id":"\(id.uuidString)","workspace_id":"\(workspace)",
+          "project_key":"launch kit","symbol_name":"paintpalette",
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-04T10:00:00.000Z"}]
+        """)
+
+        let cursor = try await SyncCoordinator.sync(
+            context: context,
+            client: makeClient(),
+            workspaceID: workspace
+        )
+
+        let preference = try #require(
+            try context.fetch(FetchDescriptor<ProjectIconPreference>()).first
+        )
+        #expect(preference.id == id)
+        #expect(preference.projectKey == "launch kit")
+        #expect(preference.symbol == .paintpalette)
+        #expect(preference.syncState == .synced)
+        #expect(cursor.rowUpdatedAt == timestamp("2026-07-04T10:00:00.000Z"))
+    }
+
     @Test func malformedRemoteRowsAreSkippedNotDefaulted() async throws {
         MockTransport.reset()
         let container = try makeContainer()
@@ -215,9 +294,15 @@ struct SyncCoordinatorTests {
 
         let client = Client(name: "Acme")
         let entry = Entry(amount: 240, task: "2 screens")
+        let projectIcon = ProjectIconPreference(
+            id: ProjectIconResolver.preferenceID(for: "Site")!,
+            projectKey: ProjectIconResolver.normalizedKey(for: "Site"),
+            symbol: .display
+        )
         entry.client = client
         context.insert(client)
         context.insert(entry)
+        context.insert(projectIcon)
         try context.save()
 
         let cursor = try await SyncCoordinator.sync(context: context,
@@ -227,9 +312,15 @@ struct SyncCoordinatorTests {
         let posts = MockTransport.recorded.filter { $0.method == "POST" }
         #expect(posts.contains { $0.table == "earnline_clients" && $0.body.contains("Acme") })
         #expect(posts.contains { $0.table == "earnline_entries" && $0.body.contains("2 screens") })
+        #expect(posts.contains {
+            $0.table == "earnline_project_icons"
+                && $0.body.contains("site")
+                && $0.body.contains("display")
+        })
 
         #expect(try context.fetch(FetchDescriptor<Client>()).first?.syncState == .synced)
         #expect(try context.fetch(FetchDescriptor<Entry>()).first?.syncState == .synced)
+        #expect(try context.fetch(FetchDescriptor<ProjectIconPreference>()).first?.syncState == .synced)
         // Nothing was pulled, so there is no observed server stamp to advance to.
         #expect(cursor.rowUpdatedAt == nil)
     }
@@ -352,6 +443,44 @@ struct SyncCoordinatorTests {
         #expect(client.name == "Local edit")
         #expect(!MockTransport.recorded.contains {
             $0.method == "POST" && $0.table == "earnline_clients"
+        })
+    }
+
+    @Test func newerCloudProjectIconConflictsBeforeThisIPhonePushes() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let baseline = timestamp("2026-07-01T10:00:00.000Z")
+        let id = try #require(ProjectIconResolver.preferenceID(for: "Site"))
+        let preference = ProjectIconPreference(
+            id: id,
+            projectKey: "site",
+            symbol: .camera,
+            createdAt: baseline,
+            updatedAt: timestamp("2026-07-02T10:00:00.000Z"),
+            syncState: .dirty,
+            lastSyncedAt: baseline
+        )
+        context.insert(preference)
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_project_icons", json: """
+        [{"id":"\(id.uuidString)","workspace_id":"\(workspace)",
+          "project_key":"site","symbol_name":"video",
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-03T10:00:00.000Z"}]
+        """)
+
+        await #expect(throws: SyncCoordinator.SyncConflictError.detected(1)) {
+            try await SyncCoordinator.sync(
+                context: context,
+                client: makeClient(),
+                workspaceID: workspace
+            )
+        }
+
+        #expect(preference.symbol == .camera)
+        #expect(!MockTransport.recorded.contains {
+            $0.method == "POST" && $0.table == "earnline_project_icons"
         })
     }
 

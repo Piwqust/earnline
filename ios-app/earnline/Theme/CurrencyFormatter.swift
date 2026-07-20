@@ -1,37 +1,34 @@
 import Foundation
 
-/// Formats money the earn›line way: a leading/trailing symbol with
-/// space-grouped thousands ("$3 222", "250 513 ₽") — matching the Figma.
+/// Formats money the earn›line way: whole, normally rounded amounts with a
+/// leading/trailing symbol and space-grouped thousands ("$3 222", "250 513 ₽").
 enum CurrencyFormatter {
     static let symbols: [String: String] = [
         "USD": "$", "RUB": "₽", "EUR": "€", "GBP": "£", "UAH": "₴",
     ]
 
-    private static func formatter(for code: String) -> NumberFormatter {
+    /// One shared instance (the configuration is identical for every currency):
+    /// building a `NumberFormatter` costs on the order of a millisecond, and it
+    /// used to happen for every money label on every render — a per-frame cost
+    /// while the ledger scrolls. `.autoupdatingCurrent` keeps the decimal
+    /// separator following the user's region without rebuilding.
+    private static let shared: NumberFormatter = {
         let f = NumberFormatter()
-        // Follow the user's region for the decimal separator ("3 222,50" in
-        // Berlin, "3 222.50" in New York); the thousands grouping stays the
-        // app's no-break space idiom from the design.
+        // Amounts stay precise in storage and sync; only the UI presentation is
+        // rounded to a whole unit. `.halfUp` makes the boundary explicit and
+        // unsurprising: 423.49 → 423, 423.50 → 424.
         f.locale = .autoupdatingCurrent
         f.numberStyle = .decimal
         f.groupingSeparator = "\u{00A0}" // no-break space (consistent, visible)
         f.usesGroupingSeparator = true
-        f.maximumFractionDigits = fractionDigits(for: code)
+        f.roundingMode = .halfUp
+        f.maximumFractionDigits = 0
         f.minimumFractionDigits = 0
         return f
-    }
-
-    static func fractionDigits(for code: String) -> Int {
-        switch code {
-        case "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF":
-            return 0
-        default:
-            return 2
-        }
-    }
+    }()
 
     static func grouped(_ value: Decimal, code: String) -> String {
-        formatter(for: code).string(from: value as NSDecimalNumber) ?? "\(value)"
+        shared.string(from: value as NSDecimalNumber) ?? "\(value)"
     }
 
     /// Symbol-prefixed (e.g. "$3 222"). Currencies whose symbol trails (₽, ₴) go after.

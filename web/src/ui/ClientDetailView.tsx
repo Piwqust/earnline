@@ -1,14 +1,12 @@
 // Per-client page: hero total, by-status / by-project breakdowns, all lines,
 // rename + recolor. Lives inside the app shell (sidebar persists).
-import { useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Client, Entry, EntryStatus } from "../domain/types";
-import { STATUS_ORDER } from "../domain/types";
-import { clientEntries, clientTotalAll, projectTotals, statusTotal } from "../domain/totals";
-import { Limits, capped } from "../domain/validation";
-import { useClient, useClients, useEntries } from "../state/data";
+import { Limits, capped, clientNameMessage, validateClientName } from "../domain/validation";
+import { useClient, useClients, useDataReady, useEntries } from "../state/data";
 import { useSettings, currencySettings } from "../state/settings";
-import { deleteEntry, setEntryStatus, updateClient } from "../data/repository";
+import { deleteClient, deleteEntry, setEntryStatus, updateClient } from "../data/repository";
 import { queueSync } from "../state/store";
 import { CLIENT_PALETTE } from "./theme/theme";
 import { MoneyAmountText } from "./MoneyAmountText";
@@ -19,14 +17,25 @@ import { ClientTag } from "./components/ClientTag";
 import { StatusBadge } from "./components/StatusBadge";
 import { Field } from "./components/Field";
 import { Swatches } from "./components/Swatches";
-import { IconButton } from "./components/Button";
+import { Button, IconButton } from "./components/Button";
 import { ConfirmDialog } from "./components/Dialog";
-import { BackIcon } from "./icons";
+import { BackIcon, TrashIcon } from "./icons";
+import { buildClientDetailModel } from "./ledgerModel";
 
 export function ClientDetailView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const client = useClient(id);
+  const dataReady = useDataReady();
+
+  if (!dataReady) {
+    return (
+      <div className="page detail-loading" role="status" aria-live="polite">
+        <h1 className="u-sr">Client details</h1>
+        <span>Loading client…</span>
+      </div>
+    );
+  }
 
   if (!client) {
     return (
@@ -35,7 +44,7 @@ export function ClientDetailView() {
           <IconButton label="Back" onClick={() => navigate("/")}>
             <BackIcon />
           </IconButton>
-          <span className="topbar__title">Client</span>
+          <h1 className="topbar__title">Client</h1>
         </header>
         <div className="page__body">
           <p className="detail-missing">This client no longer exists.</p>
@@ -54,35 +63,84 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
   const cs = currencySettings(settings);
   const [editing, setEditing] = useState<Entry | null>(null);
   const [deleting, setDeleting] = useState<Entry | null>(null);
+  const [deletingClient, setDeletingClient] = useState(false);
   const [name, setName] = useState(client.name);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const cancelNameCommit = useRef(false);
+  const nameId = useId();
+  const nameErrorId = useId();
 
-  const list = [...clientEntries(client.id, entries)].sort((a, b) => b.date - a.date);
-  const totalAll = clientTotalAll(client.id, entries, cs);
-  const projects = projectTotals(client.id, entries, cs);
+  const model = useMemo(
+    () => buildClientDetailModel(client.id, entries, cs),
+    [client.id, entries, settings.baseCurrencyCode, settings.rate, settings.secondaryCurrencyCode],
+  );
+  const list = model.entries;
+  const totalAll = model.total;
+  const projects = model.projects;
   const showProjects = projects.length > 1 || (projects[0]?.name ?? "—") !== "—";
   const realProjectCount = projects.filter((p) => p.name !== "—").length;
-  const statusRows = STATUS_ORDER.map((s) => ({ status: s, ...statusTotal(client.id, entries, s, cs) })).filter(
-    (r) => r.count > 0,
-  );
+  const statusRows = model.statuses;
+  const unsupportedCount = model.unsupportedCount;
 
-  async function changeName(v: string) {
-    const capped2 = capped(v, Limits.maxClientNameLength);
-    setName(capped2);
-    await updateClient(client.id, { name: capped2 });
-    queueSync();
+  useEffect(() => {
+    setName(client.name);
+  }, [client.name]);
+
+  async function commitName() {
+    if (cancelNameCommit.current) {
+      cancelNameCommit.current = false;
+      return;
+    }
+    const validation = validateClientName(
+      name,
+      clients.filter((item) => item.id !== client.id).map((item) => item.name),
+    );
+    if (validation.kind !== "valid") {
+      setNameError(clientNameMessage(validation));
+      return;
+    }
+    setName(validation.name);
+    setNameError(null);
+    if (validation.name === client.name) return;
+    setSavingName(true);
+    try {
+      await updateClient(client.id, { name: validation.name });
+      queueSync();
+    } catch {
+      setNameError("The name could not be saved. Try again.");
+    } finally {
+      setSavingName(false);
+    }
   }
   async function recolor(hex: string) {
-    await updateClient(client.id, { colorHex: hex });
-    queueSync();
+    setActionError(null);
+    try {
+      await updateClient(client.id, { colorHex: hex });
+      queueSync();
+    } catch {
+      setActionError("The client color could not be saved. Try again.");
+    }
   }
   async function changeStatus(e: Entry, s: EntryStatus) {
-    await setEntryStatus(e.id, s);
-    queueSync();
+    setActionError(null);
+    try {
+      await setEntryStatus(e.id, s);
+      queueSync();
+    } catch {
+      setActionError("The line status could not be saved. Try again.");
+    }
   }
   async function confirmDelete() {
     if (!deleting) return;
     await deleteEntry(deleting.id);
     queueSync();
+  }
+  async function confirmDeleteClient() {
+    await deleteClient(client.id);
+    queueSync();
+    onBack();
   }
 
   return (
@@ -91,10 +149,15 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
         <IconButton label="Back to ledger" onClick={onBack}>
           <BackIcon />
         </IconButton>
-        <span className="topbar__title">{client.name}</span>
+        <h1 className="topbar__title">{client.name}</h1>
       </header>
 
       <div className="page__body detail">
+        {actionError && (
+          <p className="settings-note settings-note--error" role="alert">
+            {actionError}
+          </p>
+        )}
         <div className="detail-hero">
           <ClientTag name={client.name} color={client.colorHex} size="lg" />
           <MoneyAmountText baseAmount={totalAll} className="detail-hero__amount tabular" />
@@ -116,12 +179,17 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
                 </span>
               </>
             )}
+            {unsupportedCount > 0 && (
+              <span className="total-incomplete">
+                {unsupportedCount} unsupported {unsupportedCount === 1 ? "currency is" : "currencies are"} excluded
+              </span>
+            )}
           </div>
         </div>
 
         <div className="detail-grid">
           <Card className="detail-card">
-            <h3 className="detail-card__title">By status</h3>
+            <h2 className="detail-card__title">By status</h2>
             {statusRows.map((r) => (
               <div className="detail-line" key={r.status}>
                 <StatusBadge status={r.status} />
@@ -133,7 +201,7 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
 
           {showProjects && (
             <Card className="detail-card">
-              <h3 className="detail-card__title">By project</h3>
+              <h2 className="detail-card__title">By project</h2>
               {projects.map((p) => (
                 <div className="detail-line" key={p.name}>
                   <span className="detail-line__name">{p.name}</span>
@@ -145,7 +213,7 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
         </div>
 
         <Card className="detail-card">
-          <h3 className="detail-card__title">Lines</h3>
+          <h2 className="detail-card__title">Lines</h2>
           {list.length === 0 ? (
             <p className="detail-empty">No lines yet.</p>
           ) : (
@@ -164,17 +232,44 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
         </Card>
 
         <Card className="detail-card">
-          <h3 className="detail-card__title">Client</h3>
-          <Field label="Name">
+          <h2 className="detail-card__title">Client</h2>
+          <Field label="Name" htmlFor={nameId}>
             <input
+              id={nameId}
               className="input"
               value={name}
-              onChange={(e) => void changeName(e.target.value)}
+              disabled={savingName}
+              aria-invalid={nameError != null}
+              aria-describedby={nameError ? nameErrorId : undefined}
+              onChange={(event) => {
+                setName(capped(event.target.value, Limits.maxClientNameLength));
+                setNameError(null);
+              }}
+              onBlur={() => void commitName()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+                if (event.key === "Escape") {
+                  cancelNameCommit.current = true;
+                  setName(client.name);
+                  setNameError(null);
+                  event.currentTarget.blur();
+                }
+              }}
             />
+            {nameError && (
+              <p id={nameErrorId} className="field__error" role="alert">
+                {nameError}
+              </p>
+            )}
           </Field>
           <div className="detail-color">
             <span className="field__label">Color</span>
             <Swatches colors={CLIENT_PALETTE} value={client.colorHex} onChange={(hex) => void recolor(hex)} />
+          </div>
+          <div className="detail-danger">
+            <Button variant="danger" leading={<TrashIcon size={15} />} onClick={() => setDeletingClient(true)}>
+              Delete client
+            </Button>
           </div>
         </Card>
       </div>
@@ -189,8 +284,22 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
             </>
           }
           confirmLabel="Delete line"
-          onConfirm={() => void confirmDelete()}
+          onConfirm={confirmDelete}
           onClose={() => setDeleting(null)}
+        />
+      )}
+      {deletingClient && (
+        <ConfirmDialog
+          title="Delete client?"
+          message={
+            <>
+              This permanently removes <strong>{client.name}</strong> and {list.length} associated{" "}
+              {list.length === 1 ? "line" : "lines"}.
+            </>
+          }
+          confirmLabel="Delete client"
+          onConfirm={confirmDeleteClient}
+          onClose={() => setDeletingClient(false)}
         />
       )}
     </div>

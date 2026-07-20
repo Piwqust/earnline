@@ -1,6 +1,6 @@
 // Create a client — name + color palette, with duplicate/empty validation.
 // The web-native replacement for NewClientSheet (a centered dialog, not a sheet).
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { Client } from "../domain/types";
 import { Limits, capped, clientNameMessage, validateClientName } from "../domain/validation";
 import { createClient } from "../data/repository";
@@ -21,6 +21,10 @@ export function NewClientDialog({
 }) {
   const [name, setName] = useState("");
   const [colorHex, setColorHex] = useState(paletteColor(existingClients.length));
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const nameId = useId();
+  const nameErrorId = useId();
   const validation = validateClientName(
     name,
     existingClients.map((c) => c.name),
@@ -29,14 +33,22 @@ export function NewClientDialog({
 
   async function create() {
     if (validation.kind !== "valid") return;
-    const client = await createClient({
-      name: validation.name,
-      colorHex,
-      sortIndex: existingClients.length,
-    });
-    queueSync();
-    onCreated?.(client);
-    onClose();
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      const client = await createClient({
+        name: validation.name,
+        colorHex,
+        sortIndex: existingClients.length,
+      });
+      queueSync();
+      onCreated?.(client);
+      onClose();
+    } catch {
+      setCreateError("The client could not be added. Your name is still here.");
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   return (
@@ -45,40 +57,56 @@ export function NewClientDialog({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn--secondary btn--md" onClick={onClose}>
+          <button type="button" className="btn btn--secondary btn--md" disabled={isCreating} onClick={onClose}>
             <span>Cancel</span>
           </button>
           <button
             type="button"
             className="btn btn--primary btn--md"
-            disabled={!valid}
+            disabled={!valid || isCreating}
             onClick={() => void create()}
           >
-            <span>Add client</span>
+            <span>{isCreating ? "Adding…" : "Add client"}</span>
           </button>
         </>
       }
     >
       <div className="form-stack">
-        <Field label="Name">
+        <Field label="Name" htmlFor={nameId}>
           <div className="name-field">
             <span className="name-field__dot" style={{ background: colorHex }} />
             <input
+              id={nameId}
               className="input"
               data-autofocus
               placeholder="Client name"
               value={name}
-              onChange={(e) => setName(capped(e.target.value, Limits.maxClientNameLength))}
+              required
+              aria-invalid={name !== "" && !valid}
+              aria-describedby={name !== "" && !valid ? nameErrorId : undefined}
+              onChange={(e) => {
+                setName(capped(e.target.value, Limits.maxClientNameLength));
+                setCreateError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && valid) void create();
               }}
             />
           </div>
-          {!valid && name !== "" && <p className="field__error">{clientNameMessage(validation)}</p>}
+          {!valid && name !== "" && (
+            <p id={nameErrorId} className="field__error" role="alert">
+              {clientNameMessage(validation)}
+            </p>
+          )}
         </Field>
         <Field label="Color">
           <Swatches colors={CLIENT_PALETTE} value={colorHex} onChange={setColorHex} />
         </Field>
+        {createError && (
+          <p className="field__error" role="alert">
+            {createError}
+          </p>
+        )}
       </div>
     </Dialog>
   );

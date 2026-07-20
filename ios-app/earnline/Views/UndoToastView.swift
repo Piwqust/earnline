@@ -26,7 +26,7 @@ struct UndoToastHost: ViewModifier {
         HStack(spacing: 14) {
             Text("Deleted")
                 .appFont(14)
-                .foregroundStyle(Theme.label(0.6))
+                .foregroundStyle(.secondary)
             Button {
                 undoError = app.performUndo(context: context)
             } label: {

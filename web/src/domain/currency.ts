@@ -26,11 +26,19 @@ export function canConvert(code: string, s: CurrencySettings): boolean {
   return conversionRate(code, s) !== null;
 }
 
-/** Convert an amount in `code` into the base currency (lossy 1:1 fallback). */
+/** Convert an amount in `code` into the base currency, or null without a rate. */
+export function convertToBase(amount: number, code: string, s: CurrencySettings): number | null {
+  const rate = conversionRate(code, s);
+  return rate == null ? null : amount * rate;
+}
+
+/**
+ * Numeric compatibility helper for aggregate callers. Unsupported currencies
+ * are excluded (0), never silently treated as 1:1. Use `convertToBase` when the
+ * UI needs to distinguish an incomplete conversion from an actual zero.
+ */
 export function toBase(amount: number, code: string, s: CurrencySettings): number {
-  if (code === s.baseCurrencyCode) return amount;
-  if (code === s.secondaryCurrencyCode) return amount / s.rate;
-  return amount;
+  return convertToBase(amount, code, s) ?? 0;
 }
 
 /** The secondary-currency value for a base amount. */

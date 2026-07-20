@@ -5,6 +5,7 @@ xcuserdata/
 *.xcuserstate
 *.moved-aside
 DerivedData/
+.derived-data/
 *.hmap
 
 # Build outputs
@@ -23,6 +24,7 @@ docs/screenshots/*.jpeg
 .vscode/
 .idea/
 .xcodebuildmcp/
+.playwright-mcp/
 .cursor/
 .codegraph/
 .ios-simulator-output/
@@ -31,3 +33,10 @@ docs/screenshots/*.jpeg
 .env
 .env.*
 !.env.example
+ios-app/Config/Local.private.xcconfig
+
+# Private operational backups (may contain real ledger and workspace data)
+.local-backups/
+
+# Supabase CLI link and connection cache
+supabase/.temp/

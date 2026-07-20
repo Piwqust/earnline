@@ -24,14 +24,29 @@ struct SettingsView: View {
     @State private var isFetchingRate = false
     @State private var rateFetchFailed = false
     @State private var rateFetchNote: String?
+    /// The rate field edits this draft, not `appModel.rate`. Binding the field
+    /// straight to the model published every keystroke through the observation
+    /// graph — the whole ledger re-derived its rows and every money label
+    /// reformatted per character, which made typing here visibly lag on a
+    /// large ledger. `nil` means "not editing": the field shows the model.
+    @State private var rateDraft: Double?
+    @FocusState private var rateFieldFocused: Bool
     @State private var pendingSyncRecoveryAction: SyncRecoveryAction?
     @State private var isResettingLocalData = false
-    @State private var isDeveloperModeEnabled = false
+    @State private var stressSeedNote: String?
+    @State private var showingPairingCode = false
+    #if DEBUGMENU
+    @State private var showingDebugMenu = false
+    #endif
     private let currencies = AppModel.supportedCurrencyCodes
 
     var body: some View {
         @Bindable var app = appModel
         Form {
+            if app.workspaceEnvironment == .production, app.isAccountReady {
+                AccountDevicesSection(showingPairingCode: $showingPairingCode)
+            }
+
             Section("Appearance") {
                 Picker(selection: $app.appearanceMode) {
                     ForEach(AppModel.AppearanceMode.allCases) { mode in
@@ -57,16 +72,46 @@ struct SettingsView: View {
                 )) {
                     SettingsRowLabel(verbatim: AppLockAuth.settingTitle, glyph: "faceid")
                 }
+                if let privacyPolicyURL = PrivacyPolicyURL.current {
+                    Link(destination: privacyPolicyURL) {
+                        SettingsRowLabel("Privacy policy", glyph: "hand.raised")
+                    }
+                    .accessibilityIdentifier("settings.privacyPolicy")
+                }
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Locks the ledger when the app goes to the background. Unlock with biometrics or your passcode.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Locks the ledger when the app goes to the background. Unlock with biometrics or your passcode.")
+                    if let notice = appModel.appLockNotice {
+                        Label(notice, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.statusProgress)
+                            .accessibilityIdentifier("settings.appLockNotice")
+                    }
+                    if let notice = appModel.accountSecurityNotice {
+                        Label(notice, systemImage: "exclamationmark.shield.fill")
+                            .foregroundStyle(Theme.statusProgress)
+                            .accessibilityIdentifier("settings.accountSecurityNotice")
+                    }
+                }
             }
 
             Section {
-                currencyPicker("Primary", glyph: "banknote",
+                NavigationLink {
+                    ProjectIconsSettingsView()
+                } label: {
+                    SettingsRowLabel("Project icons", glyph: "folder")
+                }
+            } header: {
+                Text("Projects")
+            } footer: {
+                Text("Choose a familiar SF Symbol for every project already used in the ledger.")
+            }
+
+            Section {
+                currencyPicker("Primary",
                                selection: $app.baseCurrencyCode, options: currencies)
-                currencyPicker("Secondary", glyph: "arrow.left.arrow.right",
+                currencyPicker("Secondary",
                                selection: $app.secondaryCurrencyCode,
                                options: currencies.filter { $0 != app.baseCurrencyCode })
             } header: {
@@ -87,10 +132,18 @@ struct SettingsView: View {
                     SettingsRowLabel(verbatim: "1 \(app.baseCurrencyCode)",
                                      glyph: "chart.line.uptrend.xyaxis")
                     Spacer()
-                    TextField("Rate", value: $app.rate, format: .number)
+                    // The decimal pad has no return key, so the draft commits
+                    // when focus leaves the field (tap elsewhere, keyboard
+                    // drag-dismiss) and when the sheet goes away.
+                    TextField("Rate", value: rateFieldBinding, format: .number)
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 110)
+                        .focused($rateFieldFocused)
+                        .onChange(of: rateFieldFocused) { _, focused in
+                            if !focused { commitRateDraft() }
+                        }
+                        .onDisappear(perform: commitRateDraft)
                     Text(app.secondaryCurrencyCode)
                         .foregroundStyle(.secondary)
                 }
@@ -116,19 +169,83 @@ struct SettingsView: View {
                 }
             }
 
+            #if DEBUGMENU
             Section {
-                Toggle(isOn: $isDeveloperModeEnabled) {
+                Button {
+                    showingDebugMenu = true
+                } label: {
+                    SettingsRowLabel("Debug menu", glyph: "ladybug")
+                }
+                .accessibilityIdentifier("settings.debugMenu")
+            } footer: {
+                Text(verbatim: "Dev build only — this section does not exist in the App Store version.")
+            }
+            #endif
+
+            Section {
+                Toggle(isOn: $app.developerModeEnabled) {
                     SettingsRowLabel("Developer Mode", glyph: "wrench.and.screwdriver")
                 }
-                if isDeveloperModeEnabled {
-                    developerModeContent
-                }
             } footer: {
-                VStack(alignment: .leading, spacing: 6) {
+                Text("Sync controls, workspace diagnostics, and data-recovery tools stay out of the everyday settings path.")
+            }
+
+            if app.developerModeEnabled {
+                Section {
+                    Toggle(isOn: $app.clientBadgesEnabled) {
+                        SettingsRowLabel("Client badges", glyph: "medal")
+                    }
+                    .accessibilityIdentifier("settings.clientBadges")
+                } header: {
+                    Text("Experimental")
+                } footer: {
+                    Text("Experimental features may change or be removed in a future version.")
+                }
+
+                #if DEBUG
+                Section {
+                    NavigationLink {
+                        SupabaseConnectionSettingsView()
+                    } label: {
+                        HStack {
+                            SettingsRowLabel("Personal Supabase database", glyph: "cylinder.split.1x2")
+                            Spacer()
+                            Text(app.isUsingCustomSupabaseConnection ? "Personal" : "Built-in")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.supabaseConnection")
+                } header: {
+                    Text("Connection")
+                } footer: {
+                    Text("Connect a Supabase project you administer only when you intentionally need a separate database.")
+                }
+                #endif
+
+                Section {
+                    developerSyncContent
+                } header: {
+                    Text("Sync")
+                } footer: {
                     if let syncError = app.syncError, !syncError.isEmpty {
                         Text(syncError).foregroundStyle(Theme.statusCanceled)
                     }
-                    Text("Sync controls, workspace diagnostics, and data-recovery tools stay out of the everyday settings path.")
+                }
+
+                #if DEBUG
+                Section {
+                    developerDataContent
+                } header: {
+                    Text("Data")
+                } footer: {
+                    if let stressSeedNote {
+                        Text(stressSeedNote)
+                    }
+                }
+                #endif
+
+                Section("About") {
+                    developerAboutContent
                 }
             }
         }
@@ -138,17 +255,31 @@ struct SettingsView: View {
         .sheetHeader("Settings", onClose: { dismiss() })
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.background)
+        .sheet(isPresented: $showingPairingCode) {
+            PairingCodeDisplaySheet()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        #if DEBUGMENU
+        .sheet(isPresented: $showingDebugMenu) {
+            DebugMenuView()
+        }
+        #endif
         .task { refreshCounts() }
         // The sheet outlives a workspace switch (it's presented by the host),
         // so re-read the counts from whatever store is now underneath.
-        .onChange(of: appModel.workspaceEnvironment) { refreshCounts() }
+        .onChange(of: appModel.workspaceEnvironment) {
+            rateDraft = nil
+            rateFetchNote = nil
+            refreshCounts()
+        }
         .onChange(of: appModel.baseCurrencyCode) { refreshCounts(); rateFetchNote = nil }
         .onChange(of: appModel.secondaryCurrencyCode) { refreshCounts(); rateFetchNote = nil }
         .onChange(of: appModel.isSyncing) { _, syncing in
             if !syncing { refreshCounts() }
         }
         .onChange(of: appModel.syncConflictCount) { _, count in
-            if count > 0 { isDeveloperModeEnabled = true }
+            if count > 0 { appModel.developerModeEnabled = true }
         }
         .confirmationDialog(syncRecoveryConfirmationTitle,
                             isPresented: syncRecoveryConfirmationBinding,
@@ -168,31 +299,7 @@ struct SettingsView: View {
     // MARK: Building blocks
 
     @ViewBuilder
-    private var developerModeContent: some View {
-        #if DEBUG
-        HStack(spacing: 12) {
-            SettingsRowGlyph(glyph: "network")
-            TextField("Project URL", text: Bindable(appModel).supabaseURLString)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-        }
-        HStack(spacing: 12) {
-            SettingsRowGlyph(glyph: "key.horizontal")
-            TextField("Publishable key", text: Bindable(appModel).supabaseKey)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-        }
-        Picker(selection: Bindable(appModel).workspaceEnvironment) {
-            ForEach(AppModel.WorkspaceEnvironment.allCases) { environment in
-                Text(environment.title).tag(environment)
-            }
-        } label: {
-            SettingsRowLabel("Workspace", glyph: "externaldrive")
-        }
-        .tint(valueGray)
-        #endif
-
+    private var developerSyncContent: some View {
         valueRow("Status", value: appModel.syncMessage)
         valueRow("Pending", value: "\(pendingSyncCount)")
         if let lastSyncAt = appModel.lastSyncAt {
@@ -225,8 +332,10 @@ struct SettingsView: View {
             }
             .disabled(appModel.isSyncing || isResettingLocalData)
         }
+    }
 
-        #if DEBUG
+    @ViewBuilder
+    private var developerDataContent: some View {
         developerButton(title: "Reset and pull",
                         glyph: "arrow.counterclockwise",
                         value: appModel.workspaceDisplayName,
@@ -235,8 +344,14 @@ struct SettingsView: View {
             SettingsRowLabel("Import sample ledger", glyph: "square.and.arrow.down")
         }
         .disabled(isResettingLocalData)
-        #endif
+        Button(action: seedStressDataset) {
+            SettingsRowLabel("Seed stress dataset", glyph: "speedometer")
+        }
+        .disabled(isResettingLocalData)
+    }
 
+    @ViewBuilder
+    private var developerAboutContent: some View {
         valueRow("Version", value: appVersion)
         NavigationLink {
             ChangelogView()
@@ -261,7 +376,6 @@ struct SettingsView: View {
     /// than an SF Symbol glyph, so the trailing text is one consistent
     /// typographic unit.
     private func currencyPicker(_ title: LocalizedStringKey,
-                                glyph: String,
                                 selection: Binding<String>,
                                 options: [String]) -> some View {
         Picker(selection: selection) {
@@ -269,17 +383,16 @@ struct SettingsView: View {
                 Text(verbatim: "\(CurrencyFormatter.symbol(for: code)) \(code)").tag(code)
             }
         } label: {
-            SettingsRowLabel(title, glyph: glyph)
+            Text(title)
         }
         .pickerStyle(.menu)
         .tint(valueGray)
     }
 
-    /// Collapsed picker values read as *state*, in the same gray as every
-    /// other trailing value (`valueRow`, the accent row) and as iOS Settings —
-    /// not in the accent, which the untinted system picker would use and which
-    /// this form reserves for actual action buttons ("Sync now", "Fetch…").
-    private var valueGray: Color { Theme.label(0.45) }
+    /// Settings picker values use the standard secondary-label gray while the
+    /// controls themselves remain native Pickers with the system popup and
+    /// selection behavior.
+    private var valueGray: Color { Theme.secondaryLabel }
 
     /// Accent picker — ChatGPT's "Accent color" row: the collapsed value is a
     /// colored dot + name; the menu rows keep their original-color dots (via
@@ -303,7 +416,7 @@ struct SettingsView: View {
                     .fill(selection.wrappedValue.color)
                     .frame(width: 10, height: 10)
                 Text(selection.wrappedValue.title)
-                    .foregroundStyle(Theme.label(0.45))
+                    .foregroundStyle(.secondary)
             }
         }
         .buttonStyle(.plain)
@@ -389,21 +502,51 @@ struct SettingsView: View {
         let dirtyClients = FetchDescriptor<Client>(predicate: #Predicate { $0.syncStateRaw != synced })
         let dirtyEntries = FetchDescriptor<Entry>(predicate: #Predicate { $0.syncStateRaw != synced })
         let dirtyHeadings = FetchDescriptor<Heading>(predicate: #Predicate { $0.syncStateRaw != synced })
+        let dirtyProjectIcons = FetchDescriptor<ProjectIconPreference>(
+            predicate: #Predicate { $0.syncStateRaw != synced }
+        )
         let tombstones = FetchDescriptor<SyncTombstone>()
         unsupportedCurrencyCount = (try? context.fetchCount(unsupported)) ?? 0
         pendingSyncCount = ((try? context.fetchCount(dirtyClients)) ?? 0)
             + ((try? context.fetchCount(dirtyEntries)) ?? 0)
             + ((try? context.fetchCount(dirtyHeadings)) ?? 0)
+            + ((try? context.fetchCount(dirtyProjectIcons)) ?? 0)
             + ((try? context.fetchCount(tombstones)) ?? 0)
     }
 
     private func setAppLock(_ enable: Bool) {
         guard enable != appModel.requireAppLock else { return }
         Task { @MainActor in
-            if await AppLockAuth.evaluate(reason: String(localized: "Confirm to change the app lock")) {
+            switch await AppLockAuth.evaluate(reason: String(localized: "Confirm to change the app lock")) {
+            case .authenticated:
                 appModel.requireAppLock = enable
+                appModel.appLockNotice = nil
+            case .unavailable:
+                if enable {
+                    appModel.appLockNotice = AppLockAuth.unavailableMessage
+                }
+            case .denied:
+                break
             }
         }
+    }
+
+    /// Shows the model's rate until the user edits, then their draft.
+    private var rateFieldBinding: Binding<Double> {
+        Binding(
+            get: { rateDraft ?? appModel.rate },
+            set: { rateDraft = $0 }
+        )
+    }
+
+    /// Push the finished edit into the model in one write — the same
+    /// commit-on-leave contract as the client rename in `ClientDetailView`.
+    private func commitRateDraft() {
+        guard let draft = rateDraft else { return }
+        rateDraft = nil
+        let normalized = AppModel.validExchangeRate(draft, fallback: appModel.rate)
+        guard normalized != appModel.rate else { return }
+        appModel.rate = normalized
     }
 
     /// One-tap rate refresh. Fetch only ever runs on this explicit tap — the
@@ -417,6 +560,9 @@ struct SettingsView: View {
         Task { @MainActor in
             do {
                 appModel.rate = try await ExchangeRateService.fetch(base: base, secondary: secondary)
+                // The fetched value replaces whatever was mid-edit; keeping a
+                // stale draft would visually override the fetch result.
+                rateDraft = nil
                 rateFetchFailed = false
                 rateFetchNote = String(localized: "Rate updated")
             } catch {
@@ -425,6 +571,17 @@ struct SettingsView: View {
             }
             isFetchingRate = false
         }
+    }
+
+    /// DEBUG-only profiling aid: thousands of local-only lines (pre-marked
+    /// synced, so nothing ever pushes to a workspace). "Reset and pull"
+    /// removes them again.
+    private func seedStressDataset() {
+        let inserted = SampleData.seedStress(context)
+        stressSeedNote = inserted > 0
+            ? String(localized: "Inserted \(inserted) local-only stress rows. Reset and pull removes them.")
+            : String(localized: "Stress rows already present. Reset and pull removes them.")
+        refreshCounts()
     }
 
     private func importSampleLedger() {

@@ -1,54 +1,157 @@
-// Sync orchestration — the web analog of AppModel's sync methods.
-// Drives syncNow / debounced queueSync, wires triggers (load, focus, online),
-// and subscribes to Supabase Realtime so remote edits pull in live.
+// Resilient sync orchestration: validated transport, scoped IndexedDB,
+// cancellation on reconfigure, exponential retry, multi-tab exclusion and
+// coordination, Realtime status in direct dev mode, polling in proxy mode.
 
 import { useSyncExternalStore } from "react";
-import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
-import { getSupabase } from "../sync/supabaseClient";
-import { sync } from "../sync/syncCoordinator";
-import { getSettings, isSupabaseConfigured, setSettings, subscribeSettings } from "./settings";
+import {
+  activateDatabase,
+  getDatabase,
+  requestPersistentStorage,
+  type EarnlineDB,
+} from "../data/db";
+import { ProxyRemote } from "../sync/proxyRemote";
+import type { RemoteConnectionStatus, SyncRemote } from "../sync/remoteClient";
+import { SyncConflictError, sync, syncWorkspaceProfile, type ConflictResolution } from "../sync/syncCoordinator";
+import { SyncGenerationGuard } from "../sync/syncGeneration";
+import {
+  connectionDraft,
+  getSettings,
+  isSyncConfigured,
+  setSettings,
+  subscribeSettings,
+  type ConnectionDraft,
+  type Settings,
+} from "./settings";
 
 export interface SyncStatus {
   isSyncing: boolean;
   message: string;
   error: string | null;
   lastSyncAt: number | null;
+  retryAt: number | null;
+  conflictCount: number;
+  connection: RemoteConnectionStatus;
+  storagePersistent: boolean | null;
 }
 
-const REALTIME_TABLES = [
-  "earnline_clients",
-  "earnline_entries",
-  "earnline_headings",
-  "earnline_tombstones",
-];
+interface SyncBroadcast {
+  type: "complete" | "error";
+  scope: string;
+  at: number;
+  error?: string;
+}
 
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  if (e && typeof e === "object" && "message" in e) return String((e as { message: unknown }).message);
+// Local edits still queue immediately. This slower remote-change poll, paired
+// with request batching, keeps the personal app responsive without burning
+// the free Edge Function quota while an idle tab remains visible.
+const POLL_INTERVAL_MS = 120_000;
+const MAX_RETRY_MS = 60_000;
+const LEASE_MS = 45_000;
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
   return "Sync failed.";
 }
 
+function configKey(settings: Settings): string {
+  return settings.syncMode === "proxy"
+    ? `proxy|${settings.syncEndpoint}|${settings.connectionScope}`
+    : `direct|${settings.directSupabaseUrl}|${settings.directWorkspaceId}|${settings.connectionScope}|${settings.directSupabaseKey}`;
+}
+
+async function remoteFromDraft(draft: ConnectionDraft): Promise<SyncRemote> {
+  if (draft.mode === "proxy") return new ProxyRemote(draft.endpoint);
+  if (!import.meta.env.DEV) throw new Error("Direct Supabase mode is available only during local development.");
+  const { DirectSupabaseRemote } = await import("../sync/directSupabaseRemote");
+  return new DirectSupabaseRemote(draft.directUrl, draft.directKey, draft.directWorkspaceId);
+}
+
+async function remoteFromSettings(settings: Settings): Promise<SyncRemote> {
+  return remoteFromDraft(connectionDraft(settings));
+}
+
+async function withDatabaseLease<T>(database: EarnlineDB, task: () => Promise<T>): Promise<{ ran: boolean; value?: T }> {
+  const token = crypto.randomUUID();
+  const now = Date.now();
+  let acquired = false;
+  try {
+    await database.transaction("rw", database.syncLeases, async () => {
+      const current = await database.syncLeases.get("sync");
+      if (current && current.expiresAt > now) return;
+      await database.syncLeases.put({ id: "sync", token, expiresAt: now + LEASE_MS });
+      acquired = true;
+    });
+  } catch {
+    // A closed/reconfigured database cannot safely start another sync pass.
+    return { ran: false };
+  }
+  if (!acquired) return { ran: false };
+  const heartbeat = setInterval(() => {
+    void database.transaction("rw", database.syncLeases, async () => {
+      const current = await database.syncLeases.get("sync");
+      if (current?.token === token) {
+        await database.syncLeases.put({ ...current, expiresAt: Date.now() + LEASE_MS });
+      }
+    }).catch(() => { /* A closed database leaves an expiring lease. */ });
+  }, Math.floor(LEASE_MS / 3));
+  try {
+    return { ran: true, value: await task() };
+  } finally {
+    clearInterval(heartbeat);
+    try {
+      await database.transaction("rw", database.syncLeases, async () => {
+        const current = await database.syncLeases.get("sync");
+        if (current?.token === token) await database.syncLeases.delete("sync");
+      });
+    } catch {
+      // Lease expires by itself.
+    }
+  }
+}
+
+async function withSyncLock<T>(
+  scope: string,
+  database: EarnlineDB,
+  task: () => Promise<T>,
+): Promise<{ ran: boolean; value?: T }> {
+  if (navigator.locks?.request) {
+    let output: { ran: boolean; value?: T } = { ran: false };
+    await navigator.locks.request(`earnline-sync:${scope}`, { mode: "exclusive", ifAvailable: true }, async (lock) => {
+      if (lock) output = { ran: true, value: await task() };
+    });
+    return output;
+  }
+  return withDatabaseLease(database, task);
+}
+
 class SyncController {
-  private status: SyncStatus;
+  private status: SyncStatus = {
+    isSyncing: false,
+    message: isSyncConfigured() ? "Ready" : "Offline",
+    error: null,
+    lastSyncAt: null,
+    retryAt: null,
+    conflictCount: 0,
+    connection: "disconnected",
+    storagePersistent: null,
+  };
   private listeners = new Set<() => void>();
   private queueTimer: ReturnType<typeof setTimeout> | undefined;
-  private realtimeTimer: ReturnType<typeof setTimeout> | undefined;
-  private channel: RealtimeChannel | undefined;
-  private channelSupabase: SupabaseClient | undefined;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private pollTimer: ReturnType<typeof setInterval> | undefined;
+  private remoteUnsubscribe: (() => void) | undefined;
+  private settingsUnsubscribe: (() => void) | undefined;
+  private broadcast: BroadcastChannel | undefined;
   private started = false;
   private lastConfigKey = "";
+  private attempts = new SyncGenerationGuard<EarnlineDB>();
   private followUpRequested = false;
-
-  constructor() {
-    const s = getSettings();
-    this.status = {
-      isSyncing: false,
-      message: isSupabaseConfigured(s) ? "Ready" : "Offline",
-      error: null,
-      lastSyncAt: s.lastSyncAt,
-    };
-  }
+  private retryAttempt = 0;
+  private applyingConnection = false;
 
   getStatus = (): SyncStatus => this.status;
 
@@ -59,40 +162,212 @@ class SyncController {
 
   private set(patch: Partial<SyncStatus>): void {
     this.status = { ...this.status, ...patch };
-    for (const l of this.listeners) l();
+    for (const listener of this.listeners) listener();
   }
 
-  async syncNow(): Promise<void> {
-    const s = getSettings();
-    if (!isSupabaseConfigured(s)) {
-      this.set({ message: "Offline" });
+  async validateConnection(draft: ConnectionDraft): Promise<{ scope: string; transport: "proxy" | "direct" }> {
+    this.set({ connection: "connecting", message: "Checking connection…", error: null });
+    try {
+      const remote = await remoteFromDraft(draft);
+      const validation = await remote.validate();
+      this.set({ connection: remote.transport === "proxy" ? "polling" : "connected", message: "Connection verified" });
+      return validation;
+    } catch (error) {
+      this.set({ connection: "error", message: "Connection failed", error: errorMessage(error) });
+      throw error;
+    }
+  }
+
+  async validateAndApplyConnection(draft: ConnectionDraft): Promise<void> {
+    const validation = await this.validateConnection(draft);
+    const previousScope = getSettings().connectionScope;
+    this.applyingConnection = true;
+    try {
+      const database = await activateDatabase(validation.scope, { migrateLegacy: previousScope === "" });
+      if (database.scope !== validation.scope) throw new DOMException("Connection changed", "AbortError");
+      const saved = setSettings({
+        syncMode: draft.mode,
+        syncEndpoint: draft.endpoint,
+        syncCapability: "",
+        directSupabaseUrl: draft.directUrl,
+        directSupabaseKey: draft.directKey,
+        directWorkspaceId: draft.directWorkspaceId,
+        connectionScope: validation.scope,
+        profileNeedsSync: false,
+      });
+      if (!saved) throw new Error("The connection was verified but could not be saved in this browser.");
+    } finally {
+      this.applyingConnection = false;
+    }
+    await this.reconfigure(true);
+  }
+
+  /**
+   * Resolves a fresh, server-derived scope after Supabase authentication. The
+   * first authenticated account may migrate the old unscoped IndexedDB cache;
+   * a different account always receives a separate database.
+   */
+  async activateAuthenticatedSession(): Promise<void> {
+    const settings = getSettings();
+    if (!settings.syncEndpoint) {
+      this.set({ message: "Sync setup is incomplete", connection: "error", error: "This deployment is missing its sync endpoint." });
+      return;
+    }
+    this.set({ connection: "connecting", message: "Opening private workspace…", error: null });
+    this.applyingConnection = true;
+    try {
+      const remote = new ProxyRemote(settings.syncEndpoint);
+      const validation = await remote.validate();
+      const previousScope = getSettings().connectionScope;
+      const database = await activateDatabase(validation.scope, { migrateLegacy: previousScope === "" });
+      if (database.scope !== validation.scope) throw new DOMException("Connection changed", "AbortError");
+      const saved = setSettings({
+        syncMode: "proxy",
+        syncEndpoint: settings.syncEndpoint,
+        syncCapability: "",
+        connectionScope: validation.scope,
+        profileNeedsSync: false,
+      });
+      if (!saved) throw new Error("The workspace was verified but could not be saved in this browser.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      this.set({ connection: "error", message: "Workspace unavailable", error: errorMessage(error) });
+      return;
+    } finally {
+      this.applyingConnection = false;
+    }
+    if (!this.started) this.start();
+    else await this.reconfigure(true);
+  }
+
+  private async performSync(conflictResolution: ConflictResolution = "requireUserChoice"): Promise<void> {
+    const settings = getSettings();
+    if (!isSyncConfigured(settings)) {
+      this.set({ message: "Offline", connection: "disconnected" });
+      return;
+    }
+    if (!navigator.onLine) {
+      this.set({ message: "Offline", connection: "disconnected" });
+      this.scheduleRetry();
       return;
     }
     if (this.status.isSyncing) {
-      // A pass is already on the wire — run another when it finishes so edits
-      // made mid-flight are pushed rather than dropped.
       this.followUpRequested = true;
       return;
     }
-    this.set({ isSyncing: true, message: "Syncing…", error: null });
-    try {
-      const supabase = getSupabase(s.supabaseUrl, s.supabaseKey);
-      const nextCursor = await sync(supabase, s.workspaceId, s.syncCursorMs);
+
+    const generation = this.attempts.generation;
+    const scope = settings.connectionScope;
+    const database = getDatabase();
+    this.set({ isSyncing: true, message: "Syncing…", error: null, retryAt: null });
+    const result = await withSyncLock(scope, database, async () => {
+      const attempt = this.attempts.begin(database);
+      const remote = await remoteFromSettings(settings);
+      const metadata = await database.syncMetadata.get("sync");
+      const profileSignature = `${settings.baseCurrencyCode}|${settings.secondaryCurrencyCode}|${settings.rate}`;
+      const remoteProfile = await syncWorkspaceProfile(
+        remote,
+        {
+          workspace_id: remote.rowWorkspace,
+          base_currency_code: settings.baseCurrencyCode,
+          secondary_currency_code: settings.secondaryCurrencyCode,
+          exchange_rate: String(settings.rate),
+        },
+        settings.profileNeedsSync,
+        attempt.signal,
+      );
+      if (!this.attempts.isCurrent(attempt, getDatabase())) throw new DOMException("Connection changed", "AbortError");
+      const current = getSettings();
+      const currentProfileSignature = `${current.baseCurrencyCode}|${current.secondaryCurrencyCode}|${current.rate}`;
+      if (currentProfileSignature === profileSignature) {
+        setSettings({
+          baseCurrencyCode: remoteProfile.base_currency_code,
+          secondaryCurrencyCode: remoteProfile.secondary_currency_code,
+          rate: Number(remoteProfile.exchange_rate),
+          profileNeedsSync: false,
+        });
+      } else {
+        this.followUpRequested = true;
+      }
+
+      const nextCursor = await sync(remote, metadata?.rowCursorMs ?? null, {
+        database,
+        signal: attempt.signal,
+        conflictResolution,
+      });
+      if (!this.attempts.isCurrent(attempt, getDatabase())) {
+        throw new DOMException("Connection changed", "AbortError");
+      }
       const completedAt = Date.now();
-      setSettings({ syncCursorMs: nextCursor, lastSyncAt: completedAt });
-      this.set({ isSyncing: false, message: "Synced", lastSyncAt: completedAt });
-    } catch (e) {
-      this.set({ isSyncing: false, message: "Needs sync", error: errorMessage(e) });
+      await database.syncMetadata.put({ id: "sync", rowCursorMs: nextCursor, lastSyncAt: completedAt });
+      this.attempts.finish(attempt);
+      return completedAt;
+    });
+
+    if (!result.ran) {
+      this.set({ isSyncing: false, message: "Syncing in another tab…" });
+      this.queueSync(1200);
+      return;
     }
-    if (this.followUpRequested) {
+    const completedAt = result.value;
+    if (completedAt != null && generation === this.attempts.generation) {
+      this.retryAttempt = 0;
+      clearTimeout(this.retryTimer);
+      this.set({
+        isSyncing: false,
+        message: "Synced",
+        lastSyncAt: completedAt,
+        retryAt: null,
+        conflictCount: 0,
+        connection: settings.syncMode === "proxy" ? "polling" : "connected",
+      });
+      this.broadcast?.postMessage({ type: "complete", scope, at: completedAt } satisfies SyncBroadcast);
+    }
+    if (this.followUpRequested && generation === this.attempts.generation) {
       this.followUpRequested = false;
-      await this.syncNow();
+      await this.performSync();
     }
+  }
+
+  private async runSync(conflictResolution: ConflictResolution = "requireUserChoice"): Promise<void> {
+    try {
+      await this.performSync(conflictResolution);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        this.set({ isSyncing: false });
+        return;
+      }
+      const conflictCount = error instanceof SyncConflictError ? error.count : 0;
+      const message = errorMessage(error);
+      this.set({
+        isSyncing: false,
+        message: conflictCount > 0 ? "Resolve conflict" : "Needs sync",
+        error: message,
+        conflictCount,
+        connection: conflictCount > 0 ? this.status.connection : "error",
+      });
+      this.broadcast?.postMessage({ type: "error", scope: getSettings().connectionScope, at: Date.now(), error: message } satisfies SyncBroadcast);
+      if (conflictCount === 0) this.scheduleRetry();
+    }
+  }
+
+  async keepLocalConflictChanges(): Promise<void> {
+    this.set({ conflictCount: 0, error: null });
+    await this.runSync("preferLocal");
+  }
+
+  async useCloudConflictChanges(): Promise<void> {
+    this.set({ conflictCount: 0, error: null });
+    await this.runSync("preferRemote");
+  }
+
+  async syncNow(): Promise<void> {
+    await this.runSync();
   }
 
   queueSync(delayMs = 1500): void {
     clearTimeout(this.queueTimer);
-    this.queueTimer = setTimeout(() => void this.syncNow(), delayMs);
+    this.queueTimer = setTimeout(() => void this.runSync(), delayMs);
   }
 
   start(): void {
@@ -100,62 +375,119 @@ class SyncController {
     this.started = true;
     window.addEventListener("focus", this.onWake);
     window.addEventListener("online", this.onWake);
+    window.addEventListener("offline", this.onOffline);
     document.addEventListener("visibilitychange", this.onVisibility);
-    subscribeSettings(() => this.reconfigure());
-    this.reconfigure();
+    this.settingsUnsubscribe = subscribeSettings(() => {
+      if (!this.applyingConnection) void this.reconfigure();
+      if (getSettings().profileNeedsSync && isSyncConfigured()) this.queueSync();
+    });
+    if (typeof BroadcastChannel !== "undefined") {
+      this.broadcast = new BroadcastChannel("earnline-sync");
+      this.broadcast.addEventListener("message", this.onBroadcast);
+    }
+    void requestPersistentStorage().then((persistent) => this.set({ storagePersistent: persistent }));
+    void this.reconfigure(true);
+  }
+
+  stop(): void {
+    if (!this.started) return;
+    this.started = false;
+    window.removeEventListener("focus", this.onWake);
+    window.removeEventListener("online", this.onWake);
+    window.removeEventListener("offline", this.onOffline);
+    document.removeEventListener("visibilitychange", this.onVisibility);
+    this.settingsUnsubscribe?.();
+    this.settingsUnsubscribe = undefined;
+    this.attempts.invalidate();
+    this.followUpRequested = false;
+    this.teardownRemote();
+    this.broadcast?.close();
+    this.broadcast = undefined;
+    clearTimeout(this.queueTimer);
+    clearTimeout(this.retryTimer);
+    this.set({ isSyncing: false, retryAt: null, message: "Offline", connection: "disconnected" });
   }
 
   private onWake = (): void => {
-    if (isSupabaseConfigured()) void this.syncNow();
+    if (isSyncConfigured()) void this.runSync();
+  };
+
+  private onOffline = (): void => {
+    this.set({ message: "Offline", connection: "disconnected" });
   };
 
   private onVisibility = (): void => {
     if (document.visibilityState === "visible") this.onWake();
   };
 
-  /** (Re)connect after the Supabase config changes; run an immediate sync. */
-  private reconfigure(): void {
-    const s = getSettings();
-    const key = `${s.supabaseUrl}|${s.supabaseKey}|${s.workspaceId}`;
-    if (key === this.lastConfigKey) return;
-    this.lastConfigKey = key;
+  private onBroadcast = (event: MessageEvent<SyncBroadcast>): void => {
+    const message = event.data;
+    if (!message || message.scope !== getSettings().connectionScope) return;
+    if (message.type === "complete") {
+      this.set({ message: "Synced", lastSyncAt: message.at, error: null, retryAt: null });
+    }
+  };
 
-    this.teardownRealtime();
-    if (!isSupabaseConfigured(s)) {
-      this.set({ message: "Offline" });
+  private scheduleRetry(): void {
+    if (!isSyncConfigured()) return;
+    clearTimeout(this.retryTimer);
+    const base = Math.min(MAX_RETRY_MS, 2000 * 2 ** this.retryAttempt);
+    const delay = Math.round(base * (0.85 + Math.random() * 0.3));
+    this.retryAttempt = Math.min(this.retryAttempt + 1, 6);
+    const retryAt = Date.now() + delay;
+    this.set({ retryAt });
+    this.retryTimer = setTimeout(() => void this.runSync(), delay);
+  }
+
+  private async reconfigure(force = false): Promise<void> {
+    const settings = getSettings();
+    const key = configKey(settings);
+    if (!force && key === this.lastConfigKey) return;
+    this.lastConfigKey = key;
+    this.attempts.invalidate();
+    const generation = this.attempts.generation;
+    this.teardownRemote();
+    this.set({ isSyncing: false, conflictCount: 0, retryAt: null });
+    if (!isSyncConfigured(settings)) {
+      this.set({ message: "Offline", connection: "disconnected", lastSyncAt: null });
       return;
     }
-    this.set({ message: "Ready" });
-    void this.syncNow();
-    this.setupRealtime(getSupabase(s.supabaseUrl, s.supabaseKey), s.workspaceId);
-  }
 
-  private setupRealtime(supabase: SupabaseClient, workspaceId: string): void {
-    let channel = supabase.channel(`earnline-sync:${workspaceId}`);
-    for (const table of REALTIME_TABLES) {
-      channel = channel.on(
-        "postgres_changes",
-        { event: "*", schema: "public", table, filter: `workspace_id=eq.${workspaceId}` },
-        () => this.onRemoteChange(),
+    const database = await activateDatabase(settings.connectionScope);
+    if (generation !== this.attempts.generation || database.scope !== settings.connectionScope) return;
+    const metadata = await database.syncMetadata.get("sync");
+    if (generation !== this.attempts.generation) return;
+    const remote = await remoteFromSettings(settings);
+    if (generation !== this.attempts.generation) return;
+    if (remote.subscribe) {
+      this.set({ connection: "connecting", message: "Connecting…", lastSyncAt: metadata?.lastSyncAt ?? null });
+      this.remoteUnsubscribe = remote.subscribe(
+        () => this.queueSync(600),
+        (connection, error) => this.onRemoteStatus(connection, error),
       );
+    } else {
+      this.set({ connection: "polling", message: "Ready", lastSyncAt: metadata?.lastSyncAt ?? null });
+      this.pollTimer = setInterval(() => {
+        if (document.visibilityState === "visible") void this.runSync();
+      }, POLL_INTERVAL_MS);
     }
-    channel.subscribe();
-    this.channel = channel;
-    this.channelSupabase = supabase;
+    void this.runSync();
   }
 
-  private teardownRealtime(): void {
-    if (this.channel && this.channelSupabase) {
-      void this.channelSupabase.removeChannel(this.channel);
-    }
-    this.channel = undefined;
-    this.channelSupabase = undefined;
+  private onRemoteStatus(status: RemoteConnectionStatus, error?: string): void {
+    this.set({
+      connection: status,
+      message: status === "connected" ? "Ready" : status === "connecting" ? "Connecting…" : this.status.message,
+      error: error ?? this.status.error,
+    });
+    if (status === "error") this.scheduleRetry();
   }
 
-  /** Coalesce bursts of remote changes into a single follow-up sync. */
-  private onRemoteChange(): void {
-    clearTimeout(this.realtimeTimer);
-    this.realtimeTimer = setTimeout(() => void this.syncNow(), 600);
+  private teardownRemote(): void {
+    this.remoteUnsubscribe?.();
+    this.remoteUnsubscribe = undefined;
+    clearInterval(this.pollTimer);
+    this.pollTimer = undefined;
   }
 }
 

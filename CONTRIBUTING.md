@@ -1,16 +1,19 @@
 # Contributing to earn›line
 
-earn›line is a **monorepo** holding two client apps that are peers of the same
-Supabase project. The most important rule is to keep them in lock-step.
+earn›line is an **iPhone-first monorepo**. The native SwiftUI app is the
+primary product surface; the web client is an optional desktop companion, and
+Supabase supports private sync between them. The most important technical rule
+is to keep the shared contract in lock-step without turning the companion into
+a parallel product direction.
 
 ## Layout & ownership
 
 | Path | What | Stack |
 | --- | --- | --- |
-| [`ios-app/`](ios-app) | iOS app | SwiftUI (iOS 26) · SwiftData · Supabase Swift |
-| [`web/`](web) | Web app | React · Vite · TypeScript · Dexie · supabase-js |
-| [`supabase/`](supabase) | Shared backend contract | Postgres schema + migrations |
-| [`docs/`](docs) | Screenshots & assets | — |
+| [`ios-app/`](ios-app) | **Primary iPhone app** | SwiftUI (iOS 26) · SwiftData · Supabase Swift |
+| [`web/`](web) | Optional desktop companion | React · Vite · TypeScript · Dexie · supabase-js |
+| [`supabase/`](supabase) | Private sync contract | Postgres schema + migrations |
+| [`docs/`](docs) | Screenshots and operator documentation | — |
 
 Review ownership is declared in [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
@@ -30,7 +33,7 @@ A change to any of these — or to anything in [`supabase/`](supabase) — must 
 made in **both** apps and covered by the mirrored test cases, or the two clients
 will drift out of sync.
 
-## Working on the iOS app
+## Working on the primary iOS app
 
 ```bash
 cd ios-app
@@ -38,7 +41,7 @@ xcodegen generate        # regenerate earnline.xcodeproj
 open earnline.xcodeproj
 ```
 
-## Working on the web app
+## Working on the optional web companion
 
 ```bash
 cd web
@@ -53,4 +56,6 @@ npm run build
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs both apps on every
 pull request: the **iOS** job (XcodeGen + `xcodebuild test`) and the **web** job
-(Vitest + production build). Please keep CI green before merging.
+(Vitest + production build). Keep CI green before merging. A web-only change
+still needs to preserve the iPhone-led product model; a shared sync change needs
+matching coverage in both clients.

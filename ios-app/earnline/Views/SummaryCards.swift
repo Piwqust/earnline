@@ -17,9 +17,11 @@ struct SummaryCards: View {
     @State private var previousTotal: Decimal = 0
 
     var body: some View {
-        HStack(spacing: 12) {
-            earnedCard
-            statsCard
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 12) {
+                earnedCard
+                statsCard
+            }
         }
         .frame(height: 112)
         .animation(.snappy(duration: 0.34), value: total)
@@ -40,7 +42,7 @@ struct SummaryCards: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Theme.Radius.summary))
     }
 
     /// "Earned in July" where only the month animates as the displayed month
@@ -58,7 +60,7 @@ struct SummaryCards: View {
             if !parts.suffix.isEmpty { Text(parts.suffix) }
         }
         .appFont(14, .medium)
-        .foregroundStyle(Theme.label(0.6))
+        .foregroundStyle(.secondary)
         .accessibilityElement(children: .combine)
     }
 
@@ -92,7 +94,7 @@ struct SummaryCards: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Stats")
                         .appFont(14, .medium)
-                        .foregroundStyle(Theme.label(0.6))
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Spacer(minLength: 12)
                     Text(growthText)
@@ -105,7 +107,7 @@ struct SummaryCards: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(16)
-            .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Theme.Radius.summary))
             .contentShape(.rect(cornerRadius: Theme.Radius.summary))
         }
         .buttonStyle(.plain)

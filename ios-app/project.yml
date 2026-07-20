@@ -14,29 +14,114 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "6.0"
-    CODE_SIGNING_ALLOWED: "NO"
-    CODE_SIGNING_REQUIRED: "NO"
+  configs:
+    Debug:
+      CODE_SIGNING_ALLOWED: "NO"
+      CODE_SIGNING_REQUIRED: "NO"
+    Release:
+      CODE_SIGNING_ALLOWED: "YES"
+      CODE_SIGNING_REQUIRED: "YES"
+      CODE_SIGN_STYLE: Automatic
 targets:
   earnline:
     type: application
     platform: iOS
     deploymentTarget: "26.0"
+    configFiles:
+      Debug: Config/Local.xcconfig
     sources:
       - path: earnline
+    preBuildScripts:
+      - name: Reset Dev companion build marker
+        script: |
+          rm -f "${PROJECT_TEMP_DIR}/earnline-dev-ready-to-install"
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+      # Production settings are injected by the signed archive/CI environment
+      # and must never fall back to the literal Info.plist placeholders. Fail
+      # the Release build before it can produce an unusable authenticated app.
+      - name: Validate Release Supabase configuration
+        script: |
+          if [ "${CONFIGURATION}" = "Release" ]; then
+            case "${EARNLINE_SUPABASE_PRODUCTION_URL}" in
+              https://*) ;;
+              *)
+                echo "error: Release requires EARNLINE_SUPABASE_PRODUCTION_URL (HTTPS)."
+                exit 1
+                ;;
+            esac
+            if [ -z "${EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY}" ]; then
+              echo "error: Release requires EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY."
+              exit 1
+            fi
+            case "${EARNLINE_PRIVACY_POLICY_URL}" in
+              https://*) ;;
+              *)
+                echo "error: Release requires EARNLINE_PRIVACY_POLICY_URL (HTTPS)."
+                exit 1
+                ;;
+            esac
+          fi
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
     dependencies:
       - package: Supabase
         product: Supabase
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app
-        GENERATE_INFOPLIST_FILE: "YES"
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        PRODUCT_DISPLAY_NAME: earnline
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: earnline/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_ASSET_PATHS: ""
+      configs:
+        Release:
+          CODE_SIGN_ENTITLEMENTS: earnline/Resources/earnline.entitlements
+  # A separate, side-by-side installable build for testing: same sources, its
+  # own bundle ID and home-screen name, and the full in-app debug menu
+  # compiled in via the DEBUGMENU condition. The App Store target never
+  # contains any DEBUGMENU code.
+  earnline-dev:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    configFiles:
+      Debug: Config/Local.xcconfig
+    sources:
+      - path: earnline
+    dependencies:
+      # Keep the marker ordering deterministic: the production target clears
+      # it first, then the Dev target sets it only when this build action
+      # actually included the companion.
+      - target: earnline
+        link: false
+      - package: Supabase
+        product: Supabase
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app.dev
+        PRODUCT_NAME: earnline-dev
+        PRODUCT_DISPLAY_NAME: earnline Dev
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: earnline/Resources/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: earnline Dev
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDev
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_ASSET_PATHS: ""
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUGMENU"
+      configs:
+        Release:
+          CODE_SIGN_ENTITLEMENTS: earnline/Resources/earnline.entitlements
+    postBuildScripts:
+      - name: Mark Dev companion ready to install
+        script: |
+          : > "${PROJECT_TEMP_DIR}/earnline-dev-ready-to-install"
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
   earnlineTests:
     type: bundle.unit-test
     platform: iOS
@@ -63,14 +148,52 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.earnline.uitests
         GENERATE_INFOPLIST_FILE: "YES"
+  earnlineDevUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: earnlineDevUITests
+    dependencies:
+      - target: earnline-dev
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.earnline.devuitests
+        GENERATE_INFOPLIST_FILE: "YES"
 schemes:
+  # Local physical-device workflow. It builds only the primary app so a
+  # personal signing team can provision the connected phone without also
+  # provisioning the side-by-side Dev companion.
+  earnline-device:
+    build:
+      targets:
+        earnline: all
+    run:
+      config: Debug
   earnline:
     build:
       targets:
         earnline: all
+        # Build the companion only for local Debug build/run actions. It is
+        # deliberately absent from test, archive, and CI actions.
+        earnline-dev: [run]
         earnlineTests: [test]
         earnlineUITests: [test]
+      postActions:
+        - name: Install earnline Dev companion
+          settingsTarget: earnline-dev
+          script: |
+            "${PROJECT_DIR}/Scripts/install-dev-companion.sh"
     test:
       targets:
         - earnlineTests
         - earnlineUITests
+  earnline-dev:
+    build:
+      targets:
+        earnline-dev: all
+    run:
+      config: Debug
+    test:
+      targets:
+        - earnlineDevUITests

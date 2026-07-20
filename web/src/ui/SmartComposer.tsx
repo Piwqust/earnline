@@ -2,7 +2,7 @@
 // "+240 Acme: 2 screens hold 25.07" and press Return. Status, income date and
 // currency live behind a single unobtrusive options icon on the right; the note
 // itself is parsed with the shared LineParser so web and iOS read alike.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Client, EntryStatus } from "../domain/types";
 import { STATUS_ORDER, statusTitle } from "../domain/types";
 import { parseLine } from "../domain/lineParser";
@@ -36,8 +36,16 @@ export function SmartComposer({
   const [entryDateMs, setEntryDateMs] = useState(todayDayMs());
   const [statusPick, setStatusPick] = useState<EntryStatus>("paid");
   const [currencyPick, setCurrencyPick] = useState(settings.baseCurrencyCode);
+  const [showValidation, setShowValidation] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [isCommitting, setIsCommitting] = useState(false);
 
   const noteRef = useRef<HTMLInputElement>(null);
+  const statusRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const validationId = useId();
+  const statusLabelId = useId();
+  const dateId = useId();
+  const currencyId = useId();
   const currentClient = clients.find((c) => c.id === clientId) ?? clients[0] ?? null;
 
   // Focus the note when the target client changes (e.g. via a client's "+ Line").
@@ -52,9 +60,16 @@ export function SmartComposer({
   const code = parsed.currencyCode;
   const cleanTask = trimmed(parsed.task, Limits.maxTaskLength);
   const status: EntryStatus = parsed.status ?? statusPick;
-  const canCommit = amount != null && amount > 0 && cleanTask !== "";
   const optionsSet =
     status !== "paid" || entryDateMs !== todayDayMs() || code !== settings.baseCurrencyCode;
+  const validationMessage =
+    amount == null
+      ? "Start the line with a positive amount."
+      : amount <= 0
+        ? "Amount must be greater than zero."
+        : cleanTask === ""
+          ? "Add a short description after the amount."
+          : null;
 
   if (!currentClient) {
     return (
@@ -72,6 +87,7 @@ export function SmartComposer({
 
   async function commit() {
     if (!currentClient || amount == null || amount <= 0 || cleanTask === "") {
+      setShowValidation(true);
       noteRef.current?.focus();
       return;
     }
@@ -79,24 +95,39 @@ export function SmartComposer({
     const clientEntries = allEntries.filter((e) => e.clientId === currentClient.id);
     const minIndex = clientEntries.length ? Math.min(...clientEntries.map((e) => e.sortIndex)) : 0;
 
-    await createEntry({
-      clientId: currentClient.id,
-      amountCents: centsFromNumber(amount),
-      currencyCode: code,
-      project: cleanProject === "" ? null : cleanProject,
-      task: cleanTask,
-      date: entryDateMs,
-      holdUntil: parsed.holdUntil ?? null,
-      status,
-      sortIndex: minIndex - 1,
-    });
-    queueSync();
+    setIsCommitting(true);
+    setCommitError(null);
+    try {
+      await createEntry({
+        clientId: currentClient.id,
+        amountCents: centsFromNumber(amount),
+        currencyCode: code,
+        project: cleanProject === "" ? null : cleanProject,
+        task: cleanTask,
+        date: entryDateMs,
+        holdUntil: parsed.holdUntil ?? null,
+        status,
+        sortIndex: minIndex - 1,
+      });
+      queueSync();
 
-    setNoteText("");
-    setStatusPick("paid");
-    setCurrencyPick(settings.baseCurrencyCode);
-    setEntryDateMs(todayDayMs());
-    noteRef.current?.focus();
+      setNoteText("");
+      setStatusPick("paid");
+      setCurrencyPick(settings.baseCurrencyCode);
+      setEntryDateMs(todayDayMs());
+      setShowValidation(false);
+      noteRef.current?.focus();
+    } catch {
+      setCommitError("The line could not be saved. Your text is still here; try again.");
+    } finally {
+      setIsCommitting(false);
+    }
+  }
+
+  function moveStatus(from: number, delta: number) {
+    const next = (from + delta + STATUS_ORDER.length) % STATUS_ORDER.length;
+    setStatusPick(STATUS_ORDER[next]);
+    requestAnimationFrame(() => statusRefs.current[next]?.focus());
   }
 
   return (
@@ -134,9 +165,15 @@ export function SmartComposer({
         placeholder="+240 Acme : 2 screens"
         value={noteText}
         aria-label="Write an income line"
+        aria-invalid={showValidation && validationMessage != null}
+        aria-describedby={showValidation || commitError ? validationId : undefined}
         autoComplete="off"
         spellCheck={false}
-        onChange={(e) => setNoteText(e.target.value.slice(0, 240))}
+        onChange={(e) => {
+          setNoteText(e.target.value.slice(0, 240));
+          setShowValidation(false);
+          setCommitError(null);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
@@ -146,7 +183,9 @@ export function SmartComposer({
       />
 
       <Dropdown
-        ariaLabel="Line options — status, date, currency"
+        ariaLabel="Line options: status, date, and currency"
+        mode="dialog"
+        popoverTitle="Line options"
         triggerClassName={"composer__opts-btn" + (optionsSet ? " is-set" : "")}
         trigger={
           <>
@@ -157,17 +196,34 @@ export function SmartComposer({
       >
         <div className="composer-opts">
           <div className="composer-opts__row">
-            <span className="composer-opts__label">Status</span>
-            <div className="composer-opts__seg" role="group" aria-label="Status">
-              {STATUS_ORDER.map((s) => (
+            <span className="composer-opts__label" id={statusLabelId}>
+              Status
+            </span>
+            <div className="composer-opts__seg" role="radiogroup" aria-labelledby={statusLabelId}>
+              {STATUS_ORDER.map((s, index) => (
                 <button
                   key={s}
+                  ref={(node) => {
+                    statusRefs.current[index] = node;
+                  }}
                   type="button"
+                  role="radio"
                   className={"composer-opts__seg-opt" + (status === s ? " is-active" : "")}
-                  aria-pressed={status === s}
+                  aria-checked={status === s}
                   aria-label={statusTitle(s)}
                   title={statusTitle(s)}
+                  tabIndex={status === s ? 0 : -1}
+                  data-popover-autofocus={status === s ? "" : undefined}
                   onClick={() => setStatusPick(s)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                      event.preventDefault();
+                      moveStatus(index, 1);
+                    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      moveStatus(index, -1);
+                    }
+                  }}
                 >
                   <StatusIcon status={s} size={15} />
                 </button>
@@ -176,8 +232,11 @@ export function SmartComposer({
           </div>
 
           <div className="composer-opts__row">
-            <span className="composer-opts__label">Date</span>
+            <label className="composer-opts__label" htmlFor={dateId}>
+              Date
+            </label>
             <input
+              id={dateId}
               type="date"
               className="composer-opts__date"
               aria-label="Income date"
@@ -190,8 +249,10 @@ export function SmartComposer({
           </div>
 
           <div className="composer-opts__row">
-            <span className="composer-opts__label">Currency</span>
-            <Select value={code} onChange={(e) => setCurrencyPick(e.target.value)}>
+            <label className="composer-opts__label" htmlFor={currencyId}>
+              Currency
+            </label>
+            <Select id={currencyId} value={code} onChange={(e) => setCurrencyPick(e.target.value)}>
               {SUPPORTED_CURRENCY_CODES.map((c) => (
                 <option key={c} value={c}>
                   {currencySymbol(c)} · {c}
@@ -201,7 +262,7 @@ export function SmartComposer({
           </div>
 
           <p className="composer-opts__tip">
-            <b>+240 Acme : 2 screens</b> — amount, project : task. Add <b>hold 25.07</b>, or lead with
+            <b>+240 Acme : 2 screens</b>: amount, project : task. Add <b>hold 25.07</b>, or lead with
             ✅ ⌛ ❌ to set status.
           </p>
         </div>
@@ -210,12 +271,17 @@ export function SmartComposer({
       <button
         type="button"
         className="composer__submit"
-        disabled={!canCommit}
+        disabled={noteText.trim() === "" || isCommitting}
         onClick={() => void commit()}
-        aria-label="Add line"
+        aria-label={isCommitting ? "Saving line" : "Add line"}
       >
         <ArrowUpIcon size={16} />
       </button>
+      {(showValidation || commitError) && (
+        <p id={validationId} className="composer__validation" role="alert">
+          {commitError ?? validationMessage}
+        </p>
+      )}
     </div>
   );
 }

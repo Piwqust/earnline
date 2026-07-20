@@ -12,6 +12,14 @@ An independent creative professional uses Earnline to record income, review curr
 
 Earnline is a personal income ledger. Its interface should make recording work and reviewing earnings feel direct, calm, and trustworthy. Settings should expose everyday preferences while keeping operational configuration out of the normal path.
 
+## Platform Priority
+
+Earnline is iPhone-first. The native SwiftUI app is the primary product
+experience and the source of truth for everyday product decisions, interaction
+quality, and release priority. The web client is an optional desktop companion
+for people who specifically want a browser view of the same private ledger; it
+must support the iPhone workflow rather than becoming a parallel product.
+
 ## Brand Personality
 
 Calm, precise, contemporary.

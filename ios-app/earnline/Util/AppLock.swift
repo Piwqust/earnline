@@ -5,18 +5,50 @@ import LocalAuthentication
 /// includes the passcode fallback, so enabling the lock can never strand the
 /// user on a device without (working) Face ID.
 enum AppLockAuth {
-    static func evaluate(reason: String) async -> Bool {
+    enum Evaluation: Equatable {
+        case authenticated
+        case unavailable
+        case denied
+    }
+
+    /// A device passcode is the required fallback for the optional app lock.
+    /// Never treat a missing passcode as a successful authentication: doing so
+    /// would let the lock look enabled while offering no protection at all.
+    static var isAuthenticationAvailable: Bool {
+        let context = LAContext()
+        return context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
+    }
+
+    static let unavailableMessage = String(localized: "Set a device passcode before turning on App Lock.")
+
+    /// Kept separate from LocalAuthentication so the security invariant is
+    /// regression-testable without trying to mutate a simulator's passcode.
+    static func evaluation(
+        policyAvailable: Bool,
+        authenticationSucceeded: Bool
+    ) -> Evaluation {
+        guard policyAvailable else { return .unavailable }
+        return authenticationSucceeded ? .authenticated : .denied
+    }
+
+    static func evaluate(reason: String) async -> Evaluation {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            // No passcode and no biometrics enrolled — there is nothing to
-            // authenticate against, so a hard lock would strand the user on
-            // the cover screen forever. Unlock: a device without a passcode
-            // offers no OS-level data protection for the lock to extend.
-            return error?.code == LAError.passcodeNotSet.rawValue
+            return evaluation(policyAvailable: false, authenticationSucceeded: false)
         }
-        return (try? await context.evaluatePolicy(.deviceOwnerAuthentication,
-                                                  localizedReason: reason)) ?? false
+        do {
+            let authenticated = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: reason
+            )
+            return evaluation(policyAvailable: true, authenticationSucceeded: authenticated)
+        } catch {
+            // Cancellation, lockout, and a failed passcode are all normal
+            // denial states. The caller keeps the cover in place and lets the
+            // user retry through LocalAuthentication's native path.
+            return .denied
+        }
     }
 
     /// Settings toggle title matching what the device actually offers —
@@ -46,7 +78,7 @@ struct LockScreenView: View {
             VStack(spacing: 20) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 34, weight: .light))
-                    .foregroundStyle(Theme.label(0.35))
+                    .foregroundStyle(.tertiary)
                     .frame(width: 72, height: 72)
                     .glassEffect(.regular, in: .circle)
                 Text("earnline is locked")

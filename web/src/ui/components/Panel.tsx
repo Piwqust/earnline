@@ -1,6 +1,6 @@
 // Right slide-in inspector panel — the web-native replacement for bottom sheets.
 // Non-blocking-feeling editor that keeps the ledger visible behind a light scrim.
-import { useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { IconButton } from "./Button";
 import { useOverlay } from "./useOverlay";
@@ -20,6 +20,8 @@ export function Panel({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const titleId = useId();
+  const subtitleId = useId();
   useOverlay(onClose, ref);
 
   return createPortal(
@@ -29,14 +31,21 @@ export function Panel({
         className="panel"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        aria-describedby={subtitle ? subtitleId : undefined}
         tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="panel__head">
           <div className="panel__heading">
-            <h2 className="panel__title">{title}</h2>
-            {subtitle && <p className="panel__subtitle">{subtitle}</p>}
+            <h2 id={titleId} className="panel__title">
+              {title}
+            </h2>
+            {subtitle && (
+              <p id={subtitleId} className="panel__subtitle">
+                {subtitle}
+              </p>
+            )}
           </div>
           <IconButton label="Close" onClick={onClose}>
             <CloseIcon size={18} />

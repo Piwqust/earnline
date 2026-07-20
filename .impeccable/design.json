@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-10T10:04:43+03:00",
+  "title": "Design System: earn›line",
+  "extensions": {
+    "colorMeta": {
+      "accent-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "#0088FF",
+        "tonalRamp": ["#00213D", "#003866", "#00528F", "#006DB8", "#0088FF", "#4AA9FF", "#94CBFF", "#E5F5FF"]
+      },
+      "canvas-light": {
+        "role": "neutral",
+        "displayName": "Quiet Canvas",
+        "canonical": "oklch(0.972 0.005 262)",
+        "tonalRamp": ["#202126", "#393A40", "#55565D", "#73747C", "#92939B", "#B3B4BB", "#D6D7DC", "#F2F2F7"]
+      },
+      "surface-light": {
+        "role": "neutral",
+        "displayName": "Paper Surface",
+        "canonical": "oklch(0.999 0.0012 262)",
+        "tonalRamp": ["#25262A", "#414247", "#606166", "#808187", "#A1A2A7", "#C3C4C8", "#E6E7E9", "#FFFFFF"]
+      },
+      "ink-light": {
+        "role": "neutral",
+        "displayName": "Cool Ink",
+        "canonical": "oklch(0.25 0.014 262)",
+        "tonalRamp": ["#111216", "#1A1A1A", "#34353A", "#515258", "#707177", "#919299", "#B5B6BC", "#ECECEF"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Ledger Display",
+        "purpose": "A single high-value total or insight."
+      },
+      "body": {
+        "displayName": "Working Text",
+        "purpose": "Rows, forms, settings, and explanatory content."
+      },
+      "label": {
+        "displayName": "Quiet Metadata",
+        "purpose": "Dates, statuses, field labels, and compact supporting information."
+      }
+    },
+    "shadows": [
+      {
+        "name": "low-ambient",
+        "value": "0 1px 2px oklch(0.45 0.03 262 / 0.07), 0 1px 1px oklch(0.45 0.03 262 / 0.05)",
+        "purpose": "Resting web composer and truly floating controls only."
+      },
+      {
+        "name": "overlay-lift",
+        "value": "0 18px 44px oklch(0.4 0.04 262 / 0.16), 0 6px 14px oklch(0.4 0.04 262 / 0.07)",
+        "purpose": "Dialogs, dropdowns, and inspectors only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Default state feedback and reveal easing."
+      },
+      {
+        "name": "fast",
+        "value": "120ms",
+        "purpose": "Hover, press, and focus feedback."
+      },
+      {
+        "name": "standard",
+        "value": "200ms",
+        "purpose": "Menus, dialogs, and local state transitions."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "760px"
+      },
+      {
+        "name": "desktop-shell",
+        "value": "1080px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single primary action in a local decision area.",
+      "html": "<button class=\"ds-btn-primary\">Add line</button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 12px 18px; border: 0; border-radius: 12px; background: #0088ff; color: #fff; font: 600 16px/1.25 Inter, system-ui, sans-serif; transition: background 120ms cubic-bezier(0.22,1,0.36,1), transform 120ms cubic-bezier(0.22,1,0.36,1); } .ds-btn-primary:hover { background: #0072e0; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 3px solid color-mix(in oklab, #0088ff 55%, transparent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A neutral secondary action that does not compete with the primary.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { min-height: 44px; padding: 12px 18px; border: 1px solid #dedfe4; border-radius: 12px; background: #fff; color: #1a1a1a; font: 600 16px/1.25 Inter, system-ui, sans-serif; transition: background 120ms cubic-bezier(0.22,1,0.36,1), border-color 120ms cubic-bezier(0.22,1,0.36,1); } .ds-btn-secondary:hover { background: #f2f2f7; border-color: #cfd0d6; } .ds-btn-secondary:focus-visible { outline: 3px solid color-mix(in oklab, #0088ff 55%, transparent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "icon-button",
+      "description": "A monochrome utility action with a full 44-pixel target.",
+      "html": "<button class=\"ds-icon-button\" aria-label=\"More actions\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"12\" r=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><circle cx=\"19\" cy=\"12\" r=\"2\"/></svg></button>",
+      "css": ".ds-icon-button { width: 44px; height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: 999px; background: transparent; color: #1a1a1a; transition: background 120ms cubic-bezier(0.22,1,0.36,1); } .ds-icon-button:hover { background: color-mix(in oklab, #1a1a1a 6%, transparent); } .ds-icon-button:focus-visible { outline: 3px solid color-mix(in oklab, #0088ff 55%, transparent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "A solid, legible field with explicit focus and no decorative glass.",
+      "html": "<input class=\"ds-field\" value=\"+240 Acme: Two screens\" aria-label=\"Income line\" />",
+      "css": ".ds-field { min-height: 44px; box-sizing: border-box; width: 100%; padding: 12px 14px; border: 1px solid #dedfe4; border-radius: 12px; background: #fff; color: #1a1a1a; font: 400 16px/1.4 Inter, system-ui, sans-serif; transition: border-color 120ms cubic-bezier(0.22,1,0.36,1), box-shadow 120ms cubic-bezier(0.22,1,0.36,1); } .ds-field:hover { border-color: #cfd0d6; } .ds-field:focus { border-color: #0088ff; outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, #0088ff 35%, transparent); }"
+    },
+    {
+      "name": "Client Chip",
+      "kind": "chip",
+      "refersTo": "client-chip",
+      "description": "A compact identity marker; color belongs to the client, not utility chrome.",
+      "html": "<button class=\"ds-client-chip\">Acme Studio</button>",
+      "css": ".ds-client-chip { min-height: 32px; padding: 6px 12px; border: 0; border-radius: 999px; background: #0088ff; color: #fff; font: 600 13px/1.25 Inter, system-ui, sans-serif; transition: filter 120ms cubic-bezier(0.22,1,0.36,1), transform 120ms cubic-bezier(0.22,1,0.36,1); } .ds-client-chip:hover { filter: brightness(0.94); } .ds-client-chip:active { transform: translateY(1px); } .ds-client-chip:focus-visible { outline: 3px solid color-mix(in oklab, #0088ff 45%, transparent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ledger Row",
+      "kind": "custom",
+      "refersTo": "ledger-row",
+      "description": "Amount-led, description-second, with quiet date metadata and explicit status.",
+      "html": "<div class=\"ds-ledger-row\"><strong class=\"ds-ledger-amount\">+$240</strong><span class=\"ds-ledger-work\">Launch Kit · Two screens</span><time class=\"ds-ledger-date\">29.06</time><span class=\"ds-ledger-status\" aria-label=\"In progress\"></span></div>",
+      "css": ".ds-ledger-row { min-height: 52px; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid #e7e7eb; color: #1a1a1a; font: 400 16px/1.35 Inter, system-ui, sans-serif; } .ds-ledger-amount { font-variant-numeric: tabular-nums; font-weight: 650; } .ds-ledger-work { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-ledger-date { color: #74757d; font-size: 13px; } .ds-ledger-status { width: 10px; height: 10px; border-radius: 999px; background: #ff8a00; } .ds-ledger-row:focus-within { outline: 3px solid color-mix(in oklab, #0088ff 35%, transparent); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Quiet Ledger",
+    "overview": "Earnline feels like a carefully kept working notebook. The interface serves the ledger, keeps platform behavior familiar, and lets numbers, client names, work descriptions, and status carry the hierarchy.",
+    "keyCharacteristics": [
+      "Calm, precise, contemporary, and trustworthy.",
+      "Restrained color with one blue interaction accent.",
+      "Dense but breathable ledger rows, not dashboard tiles.",
+      "Familiar platform controls with explicit states and generous targets.",
+      "Motion limited to state feedback, reveal, and spatial continuity."
+    ],
+    "rules": [
+      {
+        "name": "The Content-First Rule",
+        "body": "Every decorative decision must make the ledger easier to scan or operate. If it does neither, remove it.",
+        "section": "overview"
+      },
+      {
+        "name": "The Ten-Percent Accent Rule",
+        "body": "Signal Blue occupies no more than roughly 10% of a screen. Its scarcity makes actions legible.",
+        "section": "colors"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "A resting content surface has no decorative shadow. If every region appears elevated, hierarchy has failed.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Functional Glass Rule",
+        "body": "Liquid Glass belongs to toolbars, navigation, menus, and transient controls. It is prohibited on summary cards, ledger rows, and content containers.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put everyday actions within immediate reach and keep advanced controls intentionally recessed.",
+      "Do use one coherent monochrome icon language for utility actions.",
+      "Do compare before/after screenshots at the same simulator or viewport for every visual change."
+    ],
+    "donts": [
+      "Don't use generic colored settings glyphs.",
+      "Don't turn settings or the ledger into a dense developer dashboard or enterprise admin console.",
+      "Don't use tiny floating controls or unexplained toolbar actions.",
+      "Don't use Liquid Glass, blur, or glassmorphism as a decorative content-card treatment."
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 // Uses the same deterministic IDs as iOS so importing the sample on both clients
 // merges (no duplicates) rather than colliding.
 
-import { db } from "./db";
+import { getDatabase } from "./db";
 import type { Client, Entry } from "../domain/types";
 import { parseLine } from "../domain/lineParser";
 import { centsFromNumber } from "../domain/money";
@@ -109,6 +109,7 @@ export function parseLedger(raw: string, year: number): ParsedRecord[] {
 }
 
 export async function importBundledLedger(year = new Date().getFullYear()): Promise<number> {
+  const db = getDatabase();
   const parsed = parseLedger(bundledLedger, year);
   if (parsed.length === 0) return 0;
   let inserted = 0;

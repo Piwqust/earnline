@@ -92,6 +92,8 @@ export interface Tombstone {
   recordId: string;
   deletedAt: number;
   createdAt: number;
+  /** Server timestamp of the deleted local copy, used to detect delete/edit conflicts. */
+  lastSyncedAt?: number | null;
 }
 
 /** Structured result of understanding a freeform income line (mirrors ParsedLine). */

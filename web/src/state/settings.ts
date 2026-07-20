@@ -1,5 +1,5 @@
-// App settings — the web analog of AppModel's UserDefaults-backed state.
-// Persisted in localStorage, exposed as a tiny reactive store (useSyncExternalStore).
+// Persisted app settings with an explicit, validated sync connection. Editing a
+// draft in Settings does not mutate the live transport or cursor.
 
 import { useSyncExternalStore } from "react";
 import {
@@ -13,59 +13,91 @@ import {
 } from "../domain/currency";
 
 export type ThemePref = "auto" | "light" | "dark";
+export type SyncMode = "proxy" | "direct";
+
+export interface ConnectionDraft {
+  mode: SyncMode;
+  endpoint: string;
+  capability: string;
+  directUrl: string;
+  directKey: string;
+  directWorkspaceId: string;
+}
 
 export interface Settings {
   baseCurrencyCode: string;
   secondaryCurrencyCode: string;
   rate: number;
-  supabaseUrl: string;
-  supabaseKey: string;
-  workspaceId: string;
-  /** When the last sync completed — display only ("Last sync" in Settings). */
-  lastSyncAt: number | null;
-  /** Incremental pull cursor: the newest server `updated_at`/`deleted_at` seen.
-   *  Kept distinct from `lastSyncAt` so a client clock can't skew the cursor. */
-  syncCursorMs: number | null;
+  profileNeedsSync: boolean;
+  syncMode: SyncMode;
+  syncEndpoint: string;
+  syncCapability: string;
+  directSupabaseUrl: string;
+  directSupabaseKey: string;
+  directWorkspaceId: string;
+  /** Opaque value returned only after the connection is validated. */
+  connectionScope: string;
   theme: ThemePref;
 }
 
 const STORAGE_KEY = "earnline.settings";
 const RATE_MIGRATION_KEY = "earnline.didApplyDefaultRate83";
-
-function envDefault(key: keyof ImportMetaEnv): string {
-  return (import.meta.env[key] ?? "").toString().trim();
-}
+let persistenceError: string | null = null;
 
 function defaults(): Settings {
   return {
     baseCurrencyCode: DEFAULT_BASE_CURRENCY,
     secondaryCurrencyCode: DEFAULT_SECONDARY_CURRENCY,
     rate: DEFAULT_EXCHANGE_RATE,
-    supabaseUrl: envDefault("VITE_SUPABASE_URL"),
-    supabaseKey: envDefault("VITE_SUPABASE_ANON_KEY"),
-    workspaceId: envDefault("VITE_WORKSPACE_ID"),
-    lastSyncAt: null,
-    syncCursorMs: null,
+    profileNeedsSync: false,
+    syncMode: "proxy",
+    syncEndpoint: (import.meta.env.VITE_EARNLINE_SYNC_ENDPOINT ?? "").toString().trim(),
+    syncCapability: "",
+    directSupabaseUrl: "",
+    directSupabaseKey: "",
+    directWorkspaceId: "",
+    connectionScope: "",
     theme: "auto",
   };
 }
 
-/** Apply the same normalization rules AppModel enforces in its didSet observers. */
-function normalize(s: Settings): Settings {
-  const base = normalizedCurrencyCode(s.baseCurrencyCode, DEFAULT_BASE_CURRENCY);
-  let secondary = normalizedCurrencyCode(s.secondaryCurrencyCode, DEFAULT_SECONDARY_CURRENCY);
+function normalize(settings: Settings): Settings {
+  const base = normalizedCurrencyCode(settings.baseCurrencyCode, DEFAULT_BASE_CURRENCY);
+  let secondary = normalizedCurrencyCode(settings.secondaryCurrencyCode, DEFAULT_SECONDARY_CURRENCY);
   if (secondary === base) secondary = replacementCurrencyCode(base);
   return {
     baseCurrencyCode: base,
     secondaryCurrencyCode: secondary,
-    rate: validExchangeRate(s.rate),
-    supabaseUrl: s.supabaseUrl.trim(),
-    supabaseKey: s.supabaseKey.trim(),
-    workspaceId: s.workspaceId.trim(),
-    lastSyncAt: s.lastSyncAt ?? null,
-    syncCursorMs: s.syncCursorMs ?? null,
-    theme: s.theme === "light" || s.theme === "dark" ? s.theme : "auto",
+    rate: validExchangeRate(settings.rate),
+    profileNeedsSync: settings.profileNeedsSync === true,
+    syncMode: settings.syncMode === "direct" && import.meta.env.DEV ? "direct" : "proxy",
+    syncEndpoint: settings.syncEndpoint.trim(),
+    // Retire old per-browser capabilities on first read. Browser sessions now
+    // carry a Supabase JWT and the Edge Function resolves membership itself.
+    syncCapability: "",
+    // Never retain legacy direct database credentials in a production browser.
+    directSupabaseUrl: import.meta.env.DEV ? settings.directSupabaseUrl.trim() : "",
+    directSupabaseKey: import.meta.env.DEV ? settings.directSupabaseKey.trim() : "",
+    directWorkspaceId: import.meta.env.DEV ? settings.directWorkspaceId.trim() : "",
+    connectionScope: settings.connectionScope.trim(),
+    theme: settings.theme === "light" || settings.theme === "dark" ? settings.theme : "auto",
   };
+}
+
+function migrate(raw: Partial<Settings> & Record<string, unknown>): Settings {
+  const legacyUrl = typeof raw.supabaseUrl === "string" ? raw.supabaseUrl : "";
+  const legacyKey = typeof raw.supabaseKey === "string" ? raw.supabaseKey : "";
+  const legacyWorkspace = typeof raw.workspaceId === "string" ? raw.workspaceId : "";
+  const merged: Settings = {
+    ...defaults(),
+    ...raw,
+    // A legacy direct connection is deliberately not enabled in production.
+    syncMode: raw.syncMode === "direct" && import.meta.env.DEV ? "direct" : "proxy",
+    directSupabaseUrl: raw.directSupabaseUrl ?? legacyUrl,
+    directSupabaseKey: raw.directSupabaseKey ?? legacyKey,
+    directWorkspaceId: raw.directWorkspaceId ?? legacyWorkspace,
+  } as Settings;
+  return normalize(merged);
 }
 
 function load(): Settings {
@@ -75,23 +107,16 @@ function load(): Settings {
       localStorage.setItem(RATE_MIGRATION_KEY, "1");
       return normalize(defaults());
     }
-    const rawObj = JSON.parse(raw) as Partial<Settings>;
-    const parsed = normalize({ ...defaults(), ...rawObj });
-    // Migrate installs from before the cursor/display split: their `lastSyncAt`
-    // doubled as the pull cursor, so seed `syncCursorMs` from it once.
-    if (!("syncCursorMs" in rawObj)) {
-      parsed.syncCursorMs = parsed.lastSyncAt;
-    }
-    // One-time reset to the current shipped rate (mirrors AppModel.init):
-    // values carried over from older builds move to the new default on first
-    // load; afterwards whatever the user types always wins.
+    const parsed = migrate(JSON.parse(raw) as Partial<Settings> & Record<string, unknown>);
     if (localStorage.getItem(RATE_MIGRATION_KEY) === null) {
       parsed.rate = DEFAULT_EXCHANGE_RATE;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
       localStorage.setItem(RATE_MIGRATION_KEY, "1");
     }
+    const serialized = JSON.stringify(parsed);
+    if (serialized !== raw) localStorage.setItem(STORAGE_KEY, serialized);
     return parsed;
   } catch {
+    persistenceError = "Settings could not be loaded or migrated in this browser. Keep this tab open and export a backup.";
     return normalize(defaults());
   }
 }
@@ -99,31 +124,59 @@ function load(): Settings {
 let current = load();
 const listeners = new Set<() => void>();
 
-function emit() {
-  for (const l of listeners) l();
+function emit(): void {
+  for (const listener of listeners) listener();
 }
 
 export function getSettings(): Settings {
   return current;
 }
 
-export function setSettings(patch: Partial<Settings>): void {
-  const prev = current;
+export function getSettingsPersistenceError(): string | null {
+  return persistenceError;
+}
+
+export function clearSettingsPersistenceError(): void {
+  persistenceError = null;
+  emit();
+}
+
+export function setSettings(patch: Partial<Settings>): boolean {
+  const previous = current;
   const next = normalize({ ...current, ...patch });
-  // A different workspace invalidates the incremental pull cursor (mirrors
-  // AppModel.workspaceID.didSet on iOS): otherwise a non-empty local DB keeps
-  // the old workspace's cursor and never pulls the new workspace's older rows.
-  if (next.workspaceId !== prev.workspaceId) {
-    next.lastSyncAt = null;
-    next.syncCursorMs = null;
-  }
+  const changesProfile =
+    (patch.baseCurrencyCode !== undefined && next.baseCurrencyCode !== previous.baseCurrencyCode) ||
+    (patch.secondaryCurrencyCode !== undefined && next.secondaryCurrencyCode !== previous.secondaryCurrencyCode) ||
+    (patch.rate !== undefined && next.rate !== previous.rate);
+  if (changesProfile && patch.profileNeedsSync === undefined) next.profileNeedsSync = true;
+  const changesConnection =
+    (patch.syncMode !== undefined && next.syncMode !== previous.syncMode) ||
+    (patch.syncEndpoint !== undefined && next.syncEndpoint !== previous.syncEndpoint) ||
+    (patch.syncCapability !== undefined && next.syncCapability !== previous.syncCapability) ||
+    (patch.directSupabaseUrl !== undefined && next.directSupabaseUrl !== previous.directSupabaseUrl) ||
+    (patch.directSupabaseKey !== undefined && next.directSupabaseKey !== previous.directSupabaseKey) ||
+    (patch.directWorkspaceId !== undefined && next.directWorkspaceId !== previous.directWorkspaceId);
+  if (changesConnection && patch.connectionScope === undefined) next.connectionScope = "";
   current = next;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    persistenceError = null;
   } catch {
-    // best-effort persistence
+    persistenceError = "Settings could not be saved in this browser. Keep this tab open and export a backup.";
   }
   emit();
+  return persistenceError == null;
+}
+
+export function connectionDraft(settings: Settings = current): ConnectionDraft {
+  return {
+    mode: settings.syncMode,
+    endpoint: settings.syncEndpoint,
+    capability: settings.syncCapability,
+    directUrl: settings.directSupabaseUrl,
+    directKey: settings.directSupabaseKey,
+    directWorkspaceId: settings.directWorkspaceId,
+  };
 }
 
 export function subscribeSettings(listener: () => void): () => void {
@@ -135,20 +188,48 @@ export function useSettings(): Settings {
   return useSyncExternalStore(subscribeSettings, getSettings, getSettings);
 }
 
-export function currencySettings(s: Settings = current): CurrencySettings {
+export function useSettingsPersistenceError(): string | null {
+  return useSyncExternalStore(subscribeSettings, getSettingsPersistenceError, getSettingsPersistenceError);
+}
+
+export function currencySettings(settings: Settings = current): CurrencySettings {
   return {
-    baseCurrencyCode: s.baseCurrencyCode,
-    secondaryCurrencyCode: s.secondaryCurrencyCode,
-    rate: s.rate,
+    baseCurrencyCode: settings.baseCurrencyCode,
+    secondaryCurrencyCode: settings.secondaryCurrencyCode,
+    rate: settings.rate,
   };
 }
 
-export function isSupabaseConfigured(s: Settings = current): boolean {
-  if (s.supabaseKey.trim() === "" || s.workspaceId.trim() === "") return false;
+function validHttpsUrl(value: string): boolean {
   try {
-    new URL(s.supabaseUrl.trim());
-    return true;
+    const parsed = new URL(value);
+    const supportedProtocol = parsed.protocol === "https:" || (import.meta.env.DEV && parsed.protocol === "http:");
+    return supportedProtocol && parsed.username === "" && parsed.password === "";
   } catch {
     return false;
   }
+}
+
+export function isSyncConfigured(settings: Settings = current): boolean {
+  if (!/^[a-f0-9]{32}$/.test(settings.connectionScope)) return false;
+  if (settings.syncMode === "proxy") {
+    return validHttpsUrl(settings.syncEndpoint);
+  }
+  return import.meta.env.DEV && validHttpsUrl(settings.directSupabaseUrl) &&
+    settings.directSupabaseKey !== "" && settings.directWorkspaceId !== "";
+}
+
+/** Backward-compatible name for existing call sites. */
+export const isSupabaseConfigured = isSyncConfigured;
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== STORAGE_KEY || event.newValue == null) return;
+    try {
+      current = migrate(JSON.parse(event.newValue) as Partial<Settings> & Record<string, unknown>);
+      emit();
+    } catch {
+      // Ignore malformed writes from another tab; this tab keeps its valid copy.
+    }
+  });
 }

@@ -142,7 +142,7 @@ struct CardHeader: View {
     var body: some View {
         text
             .appFont(15, .medium)
-            .foregroundStyle(Theme.label(0.5))
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
             .padding(.bottom, 7)
             .accessibilityAddTraits(.isHeader)
@@ -156,7 +156,7 @@ struct CardFootnote<Content: View>: View {
     var body: some View {
         content
             .appFont(13)
-            .foregroundStyle(Theme.label(0.45))
+            .foregroundStyle(.tertiary)
             .padding(.horizontal, 4)
             .padding(.top, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -177,7 +177,7 @@ struct ChromeRow<Content: View>: View {
             if let icon {
                 Image(systemName: icon)
                     .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(Theme.label(0.9))
+                    .foregroundStyle(.primary)
                     .frame(width: 24)
                     .padding(.top, alignTop ? 15 : 0)
             }
@@ -200,6 +200,71 @@ struct ChromeDivider: View {
             .fill(Theme.hairline)
             .frame(height: 0.5)
             .padding(.leading, inset)
+    }
+}
+
+// MARK: - Client color picker
+
+/// The client swatch grid shared by the New- and Edit-client sheets: the ten
+/// `Theme.clientPalette` dots laid out in rows of five, justified edge to edge,
+/// with a 2 pt white ring that springs between picks (matched geometry) exactly
+/// as the Figma color card draws its selection.
+struct ClientColorGrid: View {
+    @Binding var selection: String
+    /// Dots per row — the Figma lays the ten swatches out five and five.
+    var perRow = 5
+
+    @Namespace private var ring
+
+    private var rows: [[String]] {
+        stride(from: 0, to: Theme.clientPalette.count, by: perRow).map { start in
+            Array(Theme.clientPalette[start..<min(start + perRow, Theme.clientPalette.count)])
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.element) { index, hex in
+                        swatch(hex)
+                        if index < row.count - 1 { Spacer(minLength: 0) }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private func swatch(_ hex: String) -> some View {
+        let selected = hex == selection
+        // A real Button, not a tap gesture, so each swatch is a native control:
+        // system press feedback, focus-engine reachability, and the button
+        // accessibility trait come for free.
+        return Button {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
+                selection = hex
+            }
+        } label: {
+            Circle()
+                .fill(Color(hex: hex))
+                .frame(width: 30, height: 30)
+                .overlay {
+                    if selected {
+                        // The Figma "selection ring": a 2 pt white ring inset
+                        // inside the dot (22 pt across the 30 pt swatch).
+                        Circle()
+                            .strokeBorder(.white, lineWidth: 2)
+                            .padding(4)
+                            .matchedGeometryEffect(id: "clientSwatchRing", in: ring)
+                    }
+                }
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Color"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -229,13 +294,13 @@ struct PillCTA: View {
         Button(action: action) {
             Text(title)
                 .appFont(17, .semibold)
-                .foregroundStyle(isEnabled ? .white : Theme.label(0.35))
+                .foregroundStyle(isEnabled ? .white : Theme.tertiaryLabel)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.glassProminent)
         .controlSize(.large)
         .buttonBorderShape(.capsule)
-        .tint(isEnabled ? app.accentColor : Theme.label(0.08))
+        .tint(isEnabled ? app.accentColor : Theme.quaternaryLabel)
         .disabled(!isEnabled)
         .animation(.snappy(duration: 0.2), value: isEnabled)
     }

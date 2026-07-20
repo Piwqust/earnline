@@ -1,5 +1,5 @@
 // Edit an existing line in a right slide-in panel. Replaces EditEntrySheet.
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { Client, Entry, EntryStatus } from "../domain/types";
 import { toBase, secondaryValue } from "../domain/currency";
 import {
@@ -42,6 +42,10 @@ export function EntryInspector({
   const [holdMs, setHoldMs] = useState(entry.holdUntil ?? entry.date);
   const [status, setStatus] = useState<EntryStatus>(entry.status);
   const [clientId, setClientId] = useState(entry.clientId);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const amountHintId = useId();
+  const holdDateId = useId();
 
   const amountCents = useMemo(() => {
     const d = parseDecimalString(amountText);
@@ -61,18 +65,26 @@ export function EntryInspector({
   async function save() {
     if (amountCents == null) return;
     const p = trimmed(project, Limits.maxProjectLength);
-    await updateEntry(entry.id, {
-      amountCents,
-      currencyCode,
-      project: p === "" ? null : p,
-      task: trimmed(task, Limits.maxTaskLength),
-      date: dateMs,
-      holdUntil: hasHold ? holdMs : null,
-      status,
-      clientId,
-    });
-    queueSync();
-    onClose();
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await updateEntry(entry.id, {
+        amountCents,
+        currencyCode,
+        project: p === "" ? null : p,
+        task: trimmed(task, Limits.maxTaskLength),
+        date: dateMs,
+        holdUntil: hasHold ? holdMs : null,
+        status,
+        clientId,
+      });
+      queueSync();
+      onClose();
+    } catch {
+      setSaveError("The line could not be saved. Your changes are still here.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -81,16 +93,16 @@ export function EntryInspector({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn--secondary btn--md" onClick={onClose}>
+          <button type="button" className="btn btn--secondary btn--md" disabled={isSaving} onClick={onClose}>
             <span>Cancel</span>
           </button>
           <button
             type="button"
             className="btn btn--primary btn--md"
-            disabled={!canSave}
+            disabled={!canSave || isSaving}
             onClick={() => void save()}
           >
-            <span>Save changes</span>
+            <span>{isSaving ? "Saving…" : "Save changes"}</span>
           </button>
         </>
       }
@@ -118,6 +130,9 @@ export function EntryInspector({
           <span className="inspector-amount__sym">{currencySymbol(currencyCode)}</span>
           <input
             className="inspector-amount__input tabular"
+            aria-label="Amount"
+            aria-invalid={amountText !== "" && amountCents == null}
+            aria-describedby={amountHintId}
             inputMode="decimal"
             placeholder="0"
             data-autofocus
@@ -126,7 +141,9 @@ export function EntryInspector({
             style={{ width: `${Math.max(1, amountText.length || 1)}ch` }}
           />
         </div>
-        <span className="inspector-amount__hint tabular">{secondaryHint}</span>
+        <span id={amountHintId} className="inspector-amount__hint tabular">
+          {secondaryHint}
+        </span>
       </div>
 
       <Field label="Status">
@@ -146,6 +163,7 @@ export function EntryInspector({
         <textarea
           className="textarea"
           placeholder="What was it?"
+          required
           value={task}
           onChange={(e) => setTask(capped(e.target.value, Limits.maxTaskLength))}
         />
@@ -182,18 +200,29 @@ export function EntryInspector({
           <span>Hold until a date</span>
         </label>
         {hasHold && (
-          <input
-            className="input"
-            type="date"
-            value={inputValueFromDayMs(holdMs)}
-            min={inputValueFromDayMs(dateMs)}
-            onChange={(e) => {
-              const ms = dayMsFromInputValue(e.target.value);
-              if (ms != null) setHoldMs(Math.max(ms, dateMs));
-            }}
-          />
+          <>
+            <label className="u-sr" htmlFor={holdDateId}>
+              Hold until
+            </label>
+            <input
+              id={holdDateId}
+              className="input"
+              type="date"
+              value={inputValueFromDayMs(holdMs)}
+              min={inputValueFromDayMs(dateMs)}
+              onChange={(e) => {
+                const ms = dayMsFromInputValue(e.target.value);
+                if (ms != null) setHoldMs(Math.max(ms, dateMs));
+              }}
+            />
+          </>
         )}
       </div>
+      {saveError && (
+        <p className="field__error" role="alert">
+          {saveError}
+        </p>
+      )}
     </Panel>
   );
 }

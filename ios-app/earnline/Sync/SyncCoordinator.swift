@@ -40,6 +40,34 @@ enum SyncCoordinator {
         let rowUpdatedAt: Date?
     }
 
+    /// Synchronize the single workspace profile. A locally edited currency
+    /// tuple wins on the next pass; otherwise the cloud copy is applied. When
+    /// the row does not exist yet, the current device seeds it.
+    static func syncWorkspaceProfile(client: SupabaseClient,
+                                     workspaceID: String,
+                                     local: WorkspaceProfilePayload,
+                                     pushLocal: Bool) async throws -> RemoteWorkspaceProfile {
+        let remote: [RemoteWorkspaceProfile] = try await client
+            .from("earnline_profiles")
+            .select()
+            .eq("workspace_id", value: workspaceID)
+            .limit(1)
+            .execute()
+            .value
+
+        if !pushLocal, let existing = remote.first {
+            return existing
+        }
+
+        return try await client
+            .from("earnline_profiles")
+            .upsert(local, onConflict: "workspace_id")
+            .select()
+            .single()
+            .execute()
+            .value
+    }
+
     /// Runs a full sync pass and returns the server-managed row cursor.
     /// Tombstones are paged and reapplied on every pass so a skewed device clock
     /// can never hide a remote deletion. `gte` makes row cursor boundaries
@@ -125,9 +153,20 @@ enum SyncCoordinator {
     private static func pushLocalRows(context: ModelContext,
                                       client: SupabaseClient,
                                       workspaceID: String) async throws {
-        let clients = try context.fetch(FetchDescriptor<Client>())
-        let headings = try context.fetch(FetchDescriptor<Heading>())
-        let entries = try context.fetch(FetchDescriptor<Entry>())
+        // Fetch only rows that can need a push — the steady state is zero,
+        // and this runs on the main actor right after launch, where
+        // materializing the whole Entry table stalled the UI on large
+        // ledgers. `syncStateRaw == nil` is matched explicitly: `needsSync`
+        // treats it as dirty, but in SQL `NULL != 'synced'` is not true.
+        let synced = SyncState.synced.rawValue
+        let clients = try context.fetch(FetchDescriptor<Client>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
+        let headings = try context.fetch(FetchDescriptor<Heading>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
+        let entries = try context.fetch(FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
+        let projectIcons = try context.fetch(FetchDescriptor<ProjectIconPreference>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
 
         // Snapshot the dirty rows *and their edit stamps* before each upsert:
         // the UI stays live while the request is on the wire, so only the rows
@@ -150,6 +189,14 @@ enum SyncCoordinator {
             markPushed(dirtyHeadings, stamps: stamps)
         }
 
+        let dirtyProjectIcons = projectIcons.filter(\.needsSync)
+        if !dirtyProjectIcons.isEmpty {
+            let payload = dirtyProjectIcons.map { RemoteProjectIcon($0, workspaceID: workspaceID) }
+            let stamps = dirtyProjectIcons.map(\.syncUpdatedAt)
+            try await client.from("earnline_project_icons").upsert(payload).execute()
+            markPushed(dirtyProjectIcons, stamps: stamps)
+        }
+
         var dirtyEntries: [Entry] = []
         var entryPayload: [RemoteEntry] = []
         for entry in entries where entry.needsSync {
@@ -162,6 +209,42 @@ enum SyncCoordinator {
             try await client.from("earnline_entries").upsert(entryPayload).execute()
             markPushed(dirtyEntries, stamps: stamps)
         }
+    }
+
+    /// SQLite caps bound variables; batches past this size fall back to one
+    /// full-table fetch, which is also the cheapest plan for a first pull
+    /// into an empty or nearly-empty store.
+    private static let idPredicateLimit = 300
+
+    private static func localEntries(ids: [UUID], context: ModelContext) throws -> [Entry] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else { return try context.fetch(FetchDescriptor<Entry>()) }
+        return try context.fetch(FetchDescriptor<Entry>(predicate: #Predicate { ids.contains($0.id) }))
+    }
+
+    private static func localHeadings(ids: [UUID], context: ModelContext) throws -> [Heading] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else { return try context.fetch(FetchDescriptor<Heading>()) }
+        return try context.fetch(FetchDescriptor<Heading>(predicate: #Predicate { ids.contains($0.id) }))
+    }
+
+    private static func localClients(ids: [UUID], context: ModelContext) throws -> [Client] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else { return try context.fetch(FetchDescriptor<Client>()) }
+        return try context.fetch(FetchDescriptor<Client>(predicate: #Predicate { ids.contains($0.id) }))
+    }
+
+    private static func localProjectIcons(
+        ids: [UUID],
+        context: ModelContext
+    ) throws -> [ProjectIconPreference] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else {
+            return try context.fetch(FetchDescriptor<ProjectIconPreference>())
+        }
+        return try context.fetch(FetchDescriptor<ProjectIconPreference>(
+            predicate: #Predicate { ids.contains($0.id) }
+        ))
     }
 
     /// Mark exactly the pushed rows synced — skipping any that were edited or
@@ -181,21 +264,41 @@ enum SyncCoordinator {
                                        workspaceID: String,
                                        lastPulledAt: Date?,
                                        conflictResolution: ConflictResolution) async throws -> Date? {
+        // Clients stay a full fetch: there are few, and every remote entry
+        // needs its owner resolvable even when that client wasn't in this
+        // pull. Headings and entries are indexed only to merge the pulled
+        // batch, so they're fetched by the batch's ids below — an incremental
+        // pull touches a handful of rows, not the whole table.
         let localClients = try context.fetch(FetchDescriptor<Client>())
-        let localHeadings = try context.fetch(FetchDescriptor<Heading>())
-        let localEntries = try context.fetch(FetchDescriptor<Entry>())
 
         let clientSince = localClients.isEmpty ? nil : lastPulledAt
-        let headingSince = localHeadings.isEmpty ? nil : lastPulledAt
-        let entrySince = localEntries.isEmpty ? nil : lastPulledAt
+        let headingSince = try context.fetchCount(FetchDescriptor<Heading>()) == 0 ? nil : lastPulledAt
+        let entrySince = try context.fetchCount(FetchDescriptor<Entry>()) == 0 ? nil : lastPulledAt
+        let projectIconSince = try context.fetchCount(FetchDescriptor<ProjectIconPreference>()) == 0
+            ? nil
+            : lastPulledAt
 
         let remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
         let remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
         let remoteEntries = try await fetchEntries(client: client, workspaceID: workspaceID, updatedAfter: entrySince)
+        let remoteProjectIcons = try await fetchProjectIcons(
+            client: client,
+            workspaceID: workspaceID,
+            updatedAfter: projectIconSince
+        )
+
+        let localHeadings = try localHeadings(ids: remoteHeadings.map(\.id), context: context)
+        let localEntries = try localEntries(ids: remoteEntries.map(\.id), context: context)
+        let localProjectIcons = try localProjectIcons(ids: remoteProjectIcons.map(\.id), context: context)
 
         let maxUpdatedAt = (remoteClients.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
             + remoteHeadings.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
-            + remoteEntries.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }).max()
+            + remoteEntries.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
+            + remoteProjectIcons.compactMap {
+                ProjectIconResolver.normalizedKey(for: $0.projectKey).isEmpty
+                    ? nil
+                    : SyncDateCodec.parseTimestamp($0.updatedAt)
+            }).max()
 
         var clientsByID = Dictionary(uniqueKeysWithValues: localClients.map { ($0.id, $0) })
         var conflictCount = 0
@@ -232,6 +335,42 @@ enum SyncCoordinator {
                                        lastSyncedAt: remoteUpdatedAt)
                 context.insert(newClient)
                 clientsByID[record.id] = newClient
+            }
+        }
+
+        var projectIconsByID = Dictionary(uniqueKeysWithValues: localProjectIcons.map { ($0.id, $0) })
+
+        for record in remoteProjectIcons {
+            let projectKey = ProjectIconResolver.normalizedKey(for: record.projectKey)
+            guard !projectKey.isEmpty,
+                  let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
+            let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
+            let symbol = ProjectSymbol.resolved(record.symbolName)
+            if let local = projectIconsByID[record.id] {
+                if conflictsWithDirtyLocal(remoteUpdatedAt: remoteUpdatedAt,
+                                           localLastSyncedAt: local.lastSyncedAt,
+                                           localState: local.syncState) {
+                    if conflictResolution == .requireUserChoice { conflictCount += 1 }
+                    continue
+                }
+                guard shouldApplyRemote(localState: local.syncState) else { continue }
+                local.projectKey = projectKey
+                local.symbol = symbol
+                local.createdAt = createdAt
+                local.updatedAt = remoteUpdatedAt
+                local.markSynced(at: remoteUpdatedAt)
+            } else {
+                let preference = ProjectIconPreference(
+                    id: record.id,
+                    projectKey: projectKey,
+                    symbol: symbol,
+                    createdAt: createdAt,
+                    updatedAt: remoteUpdatedAt,
+                    syncState: .synced,
+                    lastSyncedAt: remoteUpdatedAt
+                )
+                context.insert(preference)
+                projectIconsByID[record.id] = preference
             }
         }
 
@@ -326,9 +465,17 @@ enum SyncCoordinator {
                                               context: ModelContext,
                                               conflictResolution: ConflictResolution) throws {
         guard !records.isEmpty else { return }
-        let clientsByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Client>()).map { ($0.id, $0) })
-        let headingsByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Heading>()).map { ($0.id, $0) })
-        let entriesByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<Entry>()).map { ($0.id, $0) })
+        // Only rows named by a tombstone can be deleted, so index just those
+        // instead of materializing three whole tables on every pass.
+        func ids(_ entity: SyncEntity) -> [UUID] {
+            records.filter { $0.entity == entity.rawValue }.map(\.recordID)
+        }
+        let clientsByID = Dictionary(uniqueKeysWithValues:
+            try localClients(ids: ids(.client), context: context).map { ($0.id, $0) })
+        let headingsByID = Dictionary(uniqueKeysWithValues:
+            try localHeadings(ids: ids(.heading), context: context).map { ($0.id, $0) })
+        let entriesByID = Dictionary(uniqueKeysWithValues:
+            try localEntries(ids: ids(.entry), context: context).map { ($0.id, $0) })
         var conflictCount = 0
         for record in records {
             guard let entity = SyncEntity(rawValue: record.entity) else { continue }
@@ -443,6 +590,21 @@ enum SyncCoordinator {
                                      updatedAfter: Date?) async throws -> [RemoteEntry] {
         try await fetchPaged(RemoteEntry.self, client: client, table: "earnline_entries",
                              workspaceID: workspaceID, cursorColumn: "updated_at", since: updatedAfter)
+    }
+
+    private static func fetchProjectIcons(
+        client: SupabaseClient,
+        workspaceID: String,
+        updatedAfter: Date?
+    ) async throws -> [RemoteProjectIcon] {
+        try await fetchPaged(
+            RemoteProjectIcon.self,
+            client: client,
+            table: "earnline_project_icons",
+            workspaceID: workspaceID,
+            cursorColumn: "updated_at",
+            since: updatedAfter
+        )
     }
 
     private static func fetchTombstones(client: SupabaseClient,

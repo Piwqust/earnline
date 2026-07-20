@@ -7,6 +7,8 @@ enum SampleData {
     private static let bundledLedgerImportKey = "bundledIncomeLedgerImportVersion"
     private static let legacyDemoCleanupVersion = 1
     private static let legacyDemoCleanupKey = "legacyDemoCleanupVersion"
+    private static let leakedProductionFixtureCleanupVersion = 1
+    private static let leakedProductionFixtureCleanupKey = "leakedProductionFixtureCleanupVersion"
     static let autoSeededDemoKey = "bundledLedgerAutoSeeded"
 
     static func seedIfNeeded(_ context: ModelContext) {
@@ -31,9 +33,8 @@ enum SampleData {
     /// before the first configured sync. Demo rows the user already synced (or
     /// clients they hung real lines on) are left alone.
     @discardableResult
-    static func purgeAutoSeededDemoIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+    static func purgeAutoSeededDemoIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) throws -> Int {
         guard defaults.bool(forKey: autoSeededDemoKey) else { return 0 }
-        defaults.set(false, forKey: autoSeededDemoKey)
 
         // Regenerate the demo ledger's deterministic IDs so we drop exactly the
         // rows we auto-seeded (and no real ones the user later added).
@@ -42,12 +43,12 @@ enum SampleData {
         let demoClientIDs = Set(seed.clients.map(\.id))
 
         var removed = 0
-        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        let entries = try context.fetch(FetchDescriptor<Entry>())
         for entry in entries where demoEntryIDs.contains(entry.id) && entry.lastSyncedAt == nil {
             context.delete(entry)
             removed += 1
         }
-        let clients = (try? context.fetch(FetchDescriptor<Client>())) ?? []
+        let clients = try context.fetch(FetchDescriptor<Client>())
         for client in clients where demoClientIDs.contains(client.id) && client.lastSyncedAt == nil {
             let hasRealEntries = client.entries.contains { !demoEntryIDs.contains($0.id) }
             if !hasRealEntries {
@@ -55,14 +56,18 @@ enum SampleData {
                 removed += 1
             }
         }
-        if removed > 0 { try? context.save() }
+        if removed > 0 { try context.save() }
+        // Mark this one-shot cleanup complete only after every deletion has
+        // persisted. Otherwise a later sync could upload demo rows that a
+        // failed cleanup merely appeared to remove.
+        defaults.set(false, forKey: autoSeededDemoKey)
         return removed
     }
 
     @discardableResult
-    static func cleanupLegacyDemoEntriesIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
+    static func cleanupLegacyDemoEntriesIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) throws -> Int {
         guard defaults.integer(forKey: legacyDemoCleanupKey) < legacyDemoCleanupVersion else { return 0 }
-        let entries = (try? context.fetch(FetchDescriptor<Entry>())) ?? []
+        let entries = try context.fetch(FetchDescriptor<Entry>())
         var deleted = 0
 
         // Fingerprint matching alone is too blunt: a real line that happens to
@@ -75,13 +80,58 @@ enum SampleData {
             deleted += 1
         }
 
+        try context.save()
         defaults.set(legacyDemoCleanupVersion, forKey: legacyDemoCleanupKey)
-        do {
-            try context.save()
-            return deleted
-        } catch {
-            return 0
+        return deleted
+    }
+
+    /// Older UI tests used the selected workspace's persistent store. Demo and
+    /// stress fixtures could therefore survive the test process and appear in
+    /// Production on the next normal launch. Remove only deterministic fixture
+    /// IDs; preserve any real entry the user attached to a fixture client.
+    @discardableResult
+    static func cleanupLeakedProductionFixturesIfNeeded(
+        _ context: ModelContext,
+        defaults: UserDefaults = .standard
+    ) throws -> Int {
+        guard defaults.integer(forKey: leakedProductionFixtureCleanupKey)
+                < leakedProductionFixtureCleanupVersion else { return 0 }
+
+        let demo = generate()
+        let demoClientIDs = Set(demo.clients.map(\.id))
+        let demoEntryIDs = Set(demo.entries.map(\.id))
+        let stressClientIDs = Set((0..<8).map {
+            DeterministicID.uuid("earnline-stress-client:\($0)")
+        })
+        let fixtureClientIDs = demoClientIDs.union(stressClientIDs)
+
+        let entries = try context.fetch(FetchDescriptor<Entry>())
+        let protectedClientIDs = Set(entries.compactMap { entry -> UUID? in
+            guard let ownerID = entry.client?.id, fixtureClientIDs.contains(ownerID) else { return nil }
+            let isFixture = demoEntryIDs.contains(entry.id) || stressClientIDs.contains(ownerID)
+            return isFixture ? nil : ownerID
+        })
+
+        var removed = 0
+        for entry in entries {
+            guard let ownerID = entry.client?.id else { continue }
+            if demoEntryIDs.contains(entry.id) || stressClientIDs.contains(ownerID) {
+                context.delete(entry)
+                removed += 1
+            }
         }
+
+        let clients = try context.fetch(FetchDescriptor<Client>())
+        for client in clients
+        where fixtureClientIDs.contains(client.id) && !protectedClientIDs.contains(client.id) {
+            context.delete(client)
+            removed += 1
+        }
+
+        try context.save()
+        defaults.set(leakedProductionFixtureCleanupVersion,
+                     forKey: leakedProductionFixtureCleanupKey)
+        return removed
     }
 
     static func seed(_ context: ModelContext) {
@@ -295,6 +345,68 @@ enum SampleData {
             entry.client = client
             context.insert(entry)
             inserted += 1
+        }
+        try? context.save()
+        return inserted
+    }
+
+    // MARK: - Stress dataset (developer tool)
+
+    /// ~48 months × ~120 lines across 8 clients ≈ 5,800 entries — enough to
+    /// make row-model and aggregation costs visible while profiling the
+    /// ledger. Rows are inserted already `.synced` so the sync layer never
+    /// pushes them to a workspace; "Reset and pull" clears them. Deterministic
+    /// IDs make the button idempotent.
+    @discardableResult
+    static func seedStress(_ context: ModelContext) -> Int {
+        let cal = Calendar.current
+        let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: .now)) ?? .now
+
+        let palette = ["#0088FF", "#7B00FF", "#FF7A45", "#16B364", "#0FB5BA", "#FF3B30", "#8E8E93", "#FF8A00"]
+        let stressClients = (0..<8).map { index in
+            SeedClient(id: DeterministicID.uuid("earnline-stress-client:\(index)"),
+                       name: "Stress Client \(index + 1)",
+                       colorHex: palette[index % palette.count],
+                       sortIndex: 100 + index)
+        }
+
+        let existingClients = (try? context.fetch(FetchDescriptor<Client>())) ?? []
+        var clientsByID = Dictionary(existingClients.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let existingEntryIDs = Set(((try? context.fetch(FetchDescriptor<Entry>())) ?? []).map(\.id))
+        var inserted = 0
+
+        for seedClient in stressClients where clientsByID[seedClient.id] == nil {
+            let client = Client(id: seedClient.id, name: seedClient.name, colorHex: seedClient.colorHex,
+                                sortIndex: seedClient.sortIndex, syncState: .synced, lastSyncedAt: .now)
+            context.insert(client)
+            clientsByID[seedClient.id] = client
+            inserted += 1
+        }
+
+        for offset in 0..<48 {
+            guard let monthStart = cal.date(byAdding: .month, value: -offset, to: thisMonthStart) else { continue }
+            let comps = cal.dateComponents([.year, .month], from: monthStart)
+            guard let year = comps.year, let month = comps.month else { continue }
+            let daysInMonth = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
+
+            let count = 110 + Int(noise(year, month, 21) * 20)
+            for i in 0..<count {
+                let id = DeterministicID.uuid("earnline-stress-entry:\(year)-\(month)-\(i)")
+                guard !existingEntryIDs.contains(id) else { continue }
+                let day = min(daysInMonth, 1 + Int(noise(year, month, i, 22) * Double(daysInMonth)))
+                guard let date = cal.date(from: DateComponents(year: year, month: month, day: day)) else { continue }
+                let client = clientsByID[stressClients[Int(noise(year, month, i, 23) * 8) % 8].id]
+                let amount = Decimal(max(1, Int(noise(year, month, i, 24) * 90) * 10))
+                let entry = Entry(id: id, amount: amount, currencyCode: "USD",
+                                  project: pick(seedProjects, noise(year, month, i, 25)),
+                                  task: pick(seedTasks, noise(year, month, i, 26)),
+                                  date: date, status: .paid, sortIndex: i,
+                                  createdAt: date, updatedAt: date,
+                                  syncState: .synced, lastSyncedAt: date)
+                entry.client = client
+                context.insert(entry)
+                inserted += 1
+            }
         }
         try? context.save()
         return inserted

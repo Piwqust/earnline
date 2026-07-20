@@ -1,27 +1,25 @@
 // Button + IconButton — the workhorse web-native controls.
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
 
-export function Button({
-  variant = "secondary",
-  size = "md",
-  full,
-  leading,
-  trailing,
-  className,
-  children,
-  ...rest
-}: {
-  variant?: Variant;
-  size?: Size;
-  full?: boolean;
-  leading?: ReactNode;
-  trailing?: ReactNode;
-} & ButtonHTMLAttributes<HTMLButtonElement>) {
+export const Button = forwardRef<
+  HTMLButtonElement,
+  {
+    variant?: Variant;
+    size?: Size;
+    full?: boolean;
+    leading?: ReactNode;
+    trailing?: ReactNode;
+  } & ButtonHTMLAttributes<HTMLButtonElement>
+>(function Button(
+  { variant = "secondary", size = "md", full, leading, trailing, className, children, ...rest },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       className={
         `btn btn--${variant} btn--${size}` + (full ? " btn--full" : "") + (className ? " " + className : "")
@@ -33,22 +31,19 @@ export function Button({
       {trailing && <span className="btn__icon">{trailing}</span>}
     </button>
   );
-}
+});
 
-export function IconButton({
-  label,
-  variant = "ghost",
-  size = "md",
-  className,
-  children,
-  ...rest
-}: {
-  label: string;
-  variant?: "ghost" | "secondary" | "danger";
-  size?: Size;
-} & ButtonHTMLAttributes<HTMLButtonElement>) {
+export const IconButton = forwardRef<
+  HTMLButtonElement,
+  {
+    label: string;
+    variant?: "ghost" | "secondary" | "danger";
+    size?: Size;
+  } & ButtonHTMLAttributes<HTMLButtonElement>
+>(function IconButton({ label, variant = "ghost", size = "md", className, children, ...rest }, ref) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       title={label}
@@ -58,4 +53,4 @@ export function IconButton({
       {children}
     </button>
   );
-}
+});

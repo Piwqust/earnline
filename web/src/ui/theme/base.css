@@ -13,6 +13,38 @@ body,
   margin: 0;
 }
 
+.route-loading {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  gap: var(--s-3);
+  color: var(--ink-3);
+  font-size: 14px;
+  text-align: center;
+}
+.route-loading__bar {
+  width: 120px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--ink-wash);
+}
+.route-loading__bar::after {
+  content: "";
+  display: block;
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+  animation: loading-slide 900ms var(--ease-in-out) infinite alternate;
+}
+
+@keyframes loading-slide {
+  to {
+    transform: translateX(122%);
+  }
+}
+
 body {
   background: var(--canvas);
   color: var(--ink);
@@ -71,14 +103,30 @@ p {
   font-feature-settings: "tnum" 1, "cv05" 1;
 }
 
-/* keyboard focus only — never on mouse */
+/* A solid outline survives component shadows and remains visible in both themes. */
 :focus {
   outline: none;
 }
 :focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-  border-radius: var(--r-xs);
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  inset-block-start: var(--s-3);
+  inset-inline-start: var(--s-3);
+  z-index: calc(var(--z-dialog) + 20);
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(calc(-100% - var(--s-6)));
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.skip-link:focus-visible {
+  transform: none;
 }
 
 ::selection {
@@ -122,7 +170,16 @@ input[type="number"] {
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 2px !important;
   }
 }
 

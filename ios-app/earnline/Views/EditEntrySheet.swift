@@ -6,11 +6,30 @@ import SwiftData
 /// it, a segmented status control, then icon-led grouped cards for the
 /// project, task, client, and schedule.
 struct EditEntrySheet: View {
+    /// Fixed values for the noninteractive, in-memory account-preview story.
+    /// Production call sites leave this as `nil`, so the editor continues to
+    /// load and save the live SwiftData model exactly as before.
+    struct PreviewValues {
+        let amount: Decimal
+        let currencyCode: String
+        let project: String
+        let task: String
+        let status: EntryStatus
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
     @Bindable var entry: Entry
     let clients: [Client]
+    /// The decorative account-preview story can animate this picker while the
+    /// production editor keeps its existing data and interaction behavior.
+    var previewStatus: EntryStatus? = nil
+    /// Internal-only timing for the account tour's status confirmation.
+    /// Production callers leave this nil and retain the native picker motion.
+    var previewStatusAnimationDuration: TimeInterval? = nil
+    var previewValues: PreviewValues? = nil
 
     @State private var amountText: String = ""
     @State private var project: String = ""
@@ -22,6 +41,7 @@ struct EditEntrySheet: View {
     @State private var status: EntryStatus = .paid
     @State private var selectedClient: Client?
     @State private var saveError: String?
+    @State private var saveFeedback = 0
     @FocusState private var amountFocused: Bool
 
     private var amountDecimal: Decimal? {
@@ -42,6 +62,10 @@ struct EditEntrySheet: View {
                     .padding(.bottom, 2)
 
                 statusSegmented
+                    .animation(
+                        previewStatusAnimationDuration.map { .easeInOut(duration: $0) },
+                        value: previewStatus
+                    )
 
                 section("Details") {
                     VStack(spacing: 10) {
@@ -65,6 +89,9 @@ struct EditEntrySheet: View {
                            onCancel: { dismiss() },
                            onSave: save)
         .onAppear(perform: load)
+        .onChange(of: previewStatus) { _, newStatus in
+            if let newStatus { status = newStatus }
+        }
         .onChange(of: date) { _, newValue in
             if holdDate < newValue { holdDate = newValue }
         }
@@ -72,6 +99,8 @@ struct EditEntrySheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.background)
+        .sensoryFeedback(.selection, trigger: status)
+        .sensoryFeedback(.impact(weight: .light), trigger: saveFeedback)
     }
 
     private func section(_ title: LocalizedStringKey,
@@ -100,7 +129,7 @@ struct EditEntrySheet: View {
             }
             .appFont(56, .bold, design: .rounded, relativeTo: .largeTitle)
             .monospacedDigit()
-            .foregroundStyle(amountDecimal == nil ? Theme.label(0.35) : Theme.label)
+            .foregroundStyle(amountDecimal == nil ? Theme.tertiaryLabel : Theme.label)
             .lineLimit(1)
             .frame(maxWidth: .infinity)
             .contentShape(.rect)
@@ -126,10 +155,10 @@ struct EditEntrySheet: View {
             HStack(spacing: 6) {
                 Text("\(symbol) \(currencyCode)")
                     .appFont(17)
-                    .foregroundStyle(Theme.label(0.5))
+                    .foregroundStyle(.secondary)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Theme.label(0.4))
+                    .foregroundStyle(.tertiary)
             }
         }
         .buttonStyle(.plain)
@@ -147,16 +176,13 @@ struct EditEntrySheet: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .onChange(of: status) { _, _ in
-            UISelectionFeedbackGenerator().selectionChanged()
-        }
     }
 
     // MARK: Details (icon-led editable rows)
 
     private var detailsCard: some View {
         ChromeCard {
-            ChromeRow(icon: "folder") {
+            ChromeRow(icon: ProjectIconResolver.symbol(for: project, in: projectIconPreferences).systemImageName) {
                 TextField("Project", text: $project)
                     .foregroundStyle(Theme.label)
                     .onChange(of: project) { _, v in project = Validation.capped(v, max: Limits.maxProjectLength) }
@@ -198,12 +224,12 @@ struct EditEntrySheet: View {
         } label: {
             HStack(spacing: 6) {
                 Text(selectedClient?.name ?? String(localized: "Choose"))
-                    .foregroundStyle(Theme.label(0.5))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Theme.label(0.4))
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: 190, alignment: .trailing)
         }
@@ -243,6 +269,15 @@ struct EditEntrySheet: View {
     // MARK: Data
 
     private func load() {
+        if let previewValues {
+            amountText = NSDecimalNumber(decimal: previewValues.amount).stringValue
+            currencyCode = previewValues.currencyCode
+            project = previewValues.project
+            task = previewValues.task
+            status = previewStatus ?? previewValues.status
+            selectedClient = clients.first
+            return
+        }
         guard !entry.isInvalidated else { return }
         amountText = NSDecimalNumber(decimal: entry.amount).stringValue
         currencyCode = entry.currencyCode
@@ -276,7 +311,7 @@ struct EditEntrySheet: View {
         if let error = app.save(context) {
             saveError = error
         } else {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            saveFeedback += 1
             dismiss()
         }
     }

@@ -44,6 +44,36 @@ struct SyncMoney: Codable, Equatable {
     }
 }
 
+/// Precision-safe exchange-rate value. PostgREST may return `numeric` as a
+/// JSON number, so decode through `Decimal` and only convert to `Double` at the
+/// AppModel boundary. Encoding as a decimal string avoids binary floating-point
+/// dust on writes.
+struct SyncRate: Codable, Equatable {
+    let decimal: Decimal
+
+    init(_ value: Double) {
+        decimal = Decimal(string: String(value), locale: Locale(identifier: "en_US_POSIX"))
+            ?? Decimal(value)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let raw = try? container.decode(String.self),
+           let value = Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX")) {
+            decimal = value
+        } else {
+            decimal = try container.decode(Decimal.self).rounded(8)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(NSDecimalNumber(decimal: decimal).stringValue)
+    }
+
+    var doubleValue: Double { NSDecimalNumber(decimal: decimal).doubleValue }
+}
+
 enum SyncError: LocalizedError {
     case missingConfiguration
 
@@ -141,6 +171,33 @@ struct RemoteClient: Codable, Identifiable {
     }
 }
 
+struct RemoteProjectIcon: Codable, Identifiable {
+    let id: UUID
+    let workspaceID: String
+    let projectKey: String
+    let symbolName: String
+    let createdAt: String
+    let updatedAt: String
+
+    init(_ preference: ProjectIconPreference, workspaceID: String) {
+        id = preference.id
+        self.workspaceID = workspaceID
+        projectKey = preference.projectKey
+        symbolName = preference.symbol.rawValue
+        createdAt = SyncDateCodec.timestampString(preference.createdAt)
+        updatedAt = SyncDateCodec.timestampString(preference.syncUpdatedAt)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case workspaceID = "workspace_id"
+        case projectKey = "project_key"
+        case symbolName = "symbol_name"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
 struct RemoteEntry: Codable, Identifiable {
     let id: UUID
     let workspaceID: String
@@ -216,6 +273,46 @@ struct RemoteHeading: Codable, Identifiable {
         case date
         case sortIndex = "sort_index"
         case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+struct WorkspaceProfilePayload: Codable, Equatable {
+    let workspaceID: String
+    let baseCurrencyCode: String
+    let secondaryCurrencyCode: String
+    let exchangeRate: SyncRate
+
+    init(workspaceID: String,
+         baseCurrencyCode: String,
+         secondaryCurrencyCode: String,
+         exchangeRate: Double) {
+        self.workspaceID = workspaceID
+        self.baseCurrencyCode = baseCurrencyCode
+        self.secondaryCurrencyCode = secondaryCurrencyCode
+        self.exchangeRate = SyncRate(exchangeRate)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case workspaceID = "workspace_id"
+        case baseCurrencyCode = "base_currency_code"
+        case secondaryCurrencyCode = "secondary_currency_code"
+        case exchangeRate = "exchange_rate"
+    }
+}
+
+struct RemoteWorkspaceProfile: Codable, Equatable {
+    let workspaceID: String
+    let baseCurrencyCode: String
+    let secondaryCurrencyCode: String
+    let exchangeRate: SyncRate
+    let updatedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case workspaceID = "workspace_id"
+        case baseCurrencyCode = "base_currency_code"
+        case secondaryCurrencyCode = "secondary_currency_code"
+        case exchangeRate = "exchange_rate"
         case updatedAt = "updated_at"
     }
 }

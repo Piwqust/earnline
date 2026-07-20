@@ -1,67 +1,71 @@
-# earn›line — iOS app
+# earn›line for iPhone
 
-Native iOS 26 client for earn›line, built in SwiftUI with Apple's **Liquid Glass**
-design system and SwiftData for offline‑first persistence. It syncs to the shared
-Supabase backend described in the [repo root README](../README.md).
+**The primary Earnline experience.** This native SwiftUI app is a calm place
+to capture independent work, understand the month, and keep a personal ledger
+close at hand.
 
-## ✦ Highlights
+[Back to the project overview](../README.md) · [Run locally](#run-locally) · [Optional web companion](../web/README.md)
 
-- 💬 **Smart composer** — build a line token by token: type the amount, **Return** → project, **Return** → task, **Return** commits. Pick an existing project or type a new one; date and hold‑until open as anchored popover tooltips.
-- 🟢 **Three calm statuses** — **Paid** (gray, the default), **In progress** (orange), **Canceled** (red, excluded from totals).
-- 🔢 **Rolling totals** — the summary total animates with an odometer‑style numeric roll as the displayed month changes under your scroll.
-- 📐 **Responsive client rows** — the running total keeps the main currency full‑size; when space is tight it drops the secondary currency, then collapses **+ Line** to a single **+**.
-- 💱 **Dual currency** — write in a primary currency, see a secondary converted value at an editable rate.
-- ☁️ **No‑login cloud sync** — personal Supabase workspace sync with dirty‑row push, pull, and offline delete tombstones.
+## A small screen tour
 
-## ✦ Tech stack
+<table>
+  <tr>
+    <td align="center" width="33.33%">
+      <img src="../docs/screenshots/readme/ios-ledger.png" alt="Earnline iPhone ledger with fictional sample data" width="220" />
+      <br /><sub><b>Ledger</b><br />A readable month, not a dashboard.</sub>
+    </td>
+    <td align="center" width="33.33%">
+      <img src="../docs/screenshots/readme/ios-composer.png" alt="Earnline iPhone income composer with fictional sample data" width="220" />
+      <br /><sub><b>Composer</b><br />Add a line without breaking focus.</sub>
+    </td>
+    <td align="center" width="33.33%">
+      <img src="../docs/screenshots/readme/ios-filters.png" alt="Earnline iPhone search with native Filters control" width="220" />
+      <br /><sub><b>Search</b><br />Find work with words and native filter tokens.</sub>
+    </td>
+  </tr>
+</table>
 
-| Layer | What |
-| --- | --- |
-| **UI** | SwiftUI (iOS 26) · Liquid Glass APIs |
-| **Persistence** | SwiftData (`Client`, `Entry`, `Heading`) + sync tombstones |
-| **State** | `@Observable` `AppModel` · `UserDefaults` currency settings |
-| **Parsing** | custom, unit‑tested `LineParser` (amounts, currencies, hold dates, status marks) |
-| **Sync** | Supabase Swift · personal no‑login workspace · pinned via XcodeGen |
-| **Project** | generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
+## What the iPhone app is for
 
-## ✦ Project structure
+- Capture income with amount, client, project, task, date, and payment state in
+  one focused composer.
+- See the important hierarchy at a glance: amount first, work second, and
+  dates and status as quieter context.
+- Keep working offline. The ledger lives in SwiftData on the device first.
+- Search text, then refine it with the bottom `Filters` menu for Date, Client,
+  Project, and Status. Selected choices remain visible as search tokens.
+- Use the app fully locally, or sign in to a private workspace and pair your
+  own devices when sync is useful.
 
-```
-ios-app/
-  earnline/
-    Models/      Client, Entry, EntryStatus, Heading, SyncState   (SwiftData)
-    Parsing/     LineParser, ParsedLine
-    Theme/       Theme tokens, Color+Hex, CurrencyFormatter, DateFormat
-    Sync/        SyncCoordinator, RemoteRecords, SupabaseProjectDefaults
-    ViewModels/  AppModel  (state, currency, grouping & totals)
-    Views/       LedgerView · SummaryPill · ClientChip · EntryRow · SmartComposer
-                 MonthDivider · NewClientSheet · ClientDetailView · EditEntrySheet
-                 SettingsView · EmptyStateView · GlassButtons · MoneyAmountText
-    Util/        SampleData, IncomeLedgerImporter, Validation, DeterministicID, FlowLayout
-  earnlineTests/ LineParserTests, ValidationTests, SyncModelTests
-  project.yml
-```
-
-## ✦ Build & run
-
-Run all commands from the `ios-app/` directory:
+## Run locally
 
 ```bash
 cd ios-app
-xcodegen generate                                   # regenerate earnline.xcodeproj from project.yml
-xcodebuild -scheme earnline \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' build
-xcodebuild -scheme earnline \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' test
+xcodegen generate
+open earnline.xcodeproj
 ```
 
-Open `ios-app/earnline.xcodeproj` in **Xcode 26** and run on an **iOS 26** simulator.
-Launch arg `-demoComposer` opens the composer pre‑filled for the first client (handy for screenshots).
+Select the `earnline` scheme and run it on an iPhone simulator or a connected
+iPhone. `project.yml` is the Xcode project source of truth, so regenerate after
+adding files or changing build settings.
 
-## ✦ Supabase
+For a regression check, use Xcode's Test action or run the scheme's tests:
 
-Settings stores a Supabase project URL, publishable key, and workspace ID locally in
-`UserDefaults`. The tracked source contains placeholders only
-([`Sync/SupabaseProjectDefaults.swift`](earnline/Sync/SupabaseProjectDefaults.swift)).
-Never paste a `service_role` key into the app. The SQL schema lives in the shared
-[`../supabase`](../supabase) directory.
+```bash
+xcodebuild \
+  -project earnline.xcodeproj \
+  -scheme earnline \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  test
+```
+
+## Development companion
+
+For local Debug runs, Xcode can also install the separate `earnline Dev`
+companion on the same destination. It has its own blue Dev icon and bundle
+identifier (`com.earnline.app.dev`) and stays local-only; it is not a
+production-sync app.
+
+The production app keeps `com.earnline.app` and the standard app icon. See
+[`project.yml`](project.yml) for the target configuration and
+[`../docs/README.md`](../docs/README.md) for private sync operations.

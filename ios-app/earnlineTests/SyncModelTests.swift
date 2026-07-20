@@ -4,6 +4,135 @@ import Testing
 @testable import earnline
 
 struct SyncModelTests {
+    @Test @MainActor func workspaceCurrencyProfilesStaySeparateAndMigrationPullsCloudFirst() {
+        let suite = "earnline-workspace-profile-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Legacy builds stored one tuple globally and could leave either
+        // workspace marked dirty. The migration keeps an offline Production
+        // cache but clears both dirty flags so the cloud wins first.
+        defaults.set("EUR", forKey: "baseCurrencyCode")
+        defaults.set("GBP", forKey: "secondaryCurrencyCode")
+        defaults.set(77.25, forKey: "rate")
+        defaults.set(true, forKey: "profileNeedsSync.production")
+        defaults.set(true, forKey: "profileNeedsSync.test")
+
+        let app = AppModel(defaults: defaults)
+
+        #expect(app.workspaceEnvironment == .production)
+        #expect(app.baseCurrencyCode == "EUR")
+        #expect(app.secondaryCurrencyCode == "GBP")
+        #expect(app.rate == 77.25)
+        #expect(defaults.bool(forKey: "profileNeedsSync.production") == false)
+        #expect(defaults.bool(forKey: "profileNeedsSync.test") == false)
+
+        app.rate = 91.5
+        #expect(defaults.double(forKey: "rate.production") == 91.5)
+
+        app.workspaceEnvironment = .test
+        #expect(app.baseCurrencyCode == AppModel.defaultBaseCurrencyCode)
+        #expect(app.secondaryCurrencyCode == AppModel.defaultSecondaryCurrencyCode)
+        #expect(app.rate == AppModel.defaultExchangeRate)
+
+        app.rate = 72.0
+        #expect(defaults.double(forKey: "rate.test") == 72.0)
+
+        app.workspaceEnvironment = .production
+        #expect(app.baseCurrencyCode == "EUR")
+        #expect(app.secondaryCurrencyCode == "GBP")
+        #expect(app.rate == 91.5)
+        #expect(defaults.double(forKey: "rate") == 77.25)
+    }
+
+    @Test @MainActor func v1StoreLightweightMigratesToProjectIconSchema() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "earnline-project-icons-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appending(path: "migration.store")
+
+        do {
+            let schema = Schema(versionedSchema: EarnlineSchemaV1.self)
+            let configuration = ModelConfiguration("MigrationV1", schema: schema, url: storeURL)
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            container.mainContext.insert(Client(name: "Preserved Client"))
+            try container.mainContext.save()
+        }
+
+        do {
+            let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
+            let configuration = ModelConfiguration("MigrationV2", schema: schema, url: storeURL)
+            let container = try ModelContainer(
+                for: schema,
+                migrationPlan: EarnlineMigrationPlan.self,
+                configurations: configuration
+            )
+            #expect(try container.mainContext.fetch(FetchDescriptor<Client>()).first?.name == "Preserved Client")
+            #expect(try container.mainContext.fetch(FetchDescriptor<ProjectIconPreference>()).isEmpty)
+        }
+    }
+
+    @Test @MainActor func projectIconPreferenceNormalizesAndUpdatesInPlace() throws {
+        let container = try ModelContainer(
+            for: ProjectIconPreference.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+
+        let preference = try ProjectIconPreferenceStore.set(
+            .camera,
+            for: "  Café   Site\n",
+            in: context
+        )
+        try context.save()
+
+        #expect(preference.projectKey == "cafe site")
+        #expect(preference.id == ProjectIconResolver.preferenceID(for: "CAFE SITE"))
+        #expect(preference.symbol == .camera)
+
+        let updated = try ProjectIconPreferenceStore.set(.video, for: "Cafe Site", in: context)
+        #expect(updated === preference)
+        #expect(updated.symbol == .video)
+        #expect(updated.syncState == .dirty)
+
+        updated.symbolNameRaw = "not.a.real.symbol"
+        #expect(updated.symbol == .folder)
+        #expect(throws: ProjectIconPreferenceError.emptyProjectName) {
+            try ProjectIconPreferenceStore.set(.briefcase, for: "  \n", in: context)
+        }
+    }
+
+    @Test func remoteProjectIconEncodesAllowlistedSymbol() throws {
+        let id = try #require(ProjectIconResolver.preferenceID(for: "Launch Kit"))
+        let preference = ProjectIconPreference(
+            id: id,
+            projectKey: ProjectIconResolver.normalizedKey(for: "Launch Kit"),
+            symbol: .paintpalette
+        )
+
+        let data = try JSONEncoder().encode(RemoteProjectIcon(preference, workspaceID: "test-workspace"))
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["project_key"] as? String == "launch kit")
+        #expect(object["symbol_name"] as? String == "paintpalette")
+        #expect(object["workspace_id"] as? String == "test-workspace")
+    }
+
+    @Test func workspaceProfileRateEncodesAsDecimalString() throws {
+        let payload = WorkspaceProfilePayload(workspaceID: "test-workspace",
+                                              baseCurrencyCode: "USD",
+                                              secondaryCurrencyCode: "RUB",
+                                              exchangeRate: 89.125)
+        let data = try JSONEncoder().encode(payload)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["exchange_rate"] as? String == "89.125")
+        #expect(object["base_currency_code"] as? String == "USD")
+        #expect(object["secondary_currency_code"] as? String == "RUB")
+    }
+
     @Test func remoteEntryEncodesMoneyAsDecimalString() throws {
         let client = Client(name: "Acme Studio")
         let entry = Entry(amount: Decimal(string: "99.50")!,
@@ -83,7 +212,7 @@ struct SyncModelTests {
         #expect(AppModel.validExchangeRate(.infinity, fallback: 42) == 42)
     }
 
-    @Test @MainActor func identicalCurrenciesAreSeparatedAndSecondaryKeepsCents() {
+    @Test @MainActor func identicalCurrenciesAreSeparatedAndSecondaryDisplaysRoundedWholeAmount() {
         let app = AppModel()
         app.baseCurrencyCode = "EUR"
         app.secondaryCurrencyCode = "EUR"
@@ -93,10 +222,7 @@ struct SyncModelTests {
         app.baseCurrencyCode = "USD"
         app.secondaryCurrencyCode = "RUB"
         app.rate = 89.125
-        // The decimal separator follows the run locale (the formatter is
-        // locale-aware); grouping is always the app's no-break space.
-        let separator = Locale.autoupdatingCurrent.decimalSeparator ?? "."
-        #expect(app.secondaryString(Decimal(string: "99.50")!) == "8\u{00A0}867\(separator)94 ₽")
+        #expect(app.secondaryString(Decimal(string: "99.50")!) == "8\u{00A0}868 ₽")
     }
 
     @Test func dayStringsRoundTripAsCalendarDays() throws {
@@ -130,7 +256,7 @@ struct SyncModelTests {
 
     @Test @MainActor func autoSeededDemoPurgesBeforeFirstConfiguredSync() throws {
         let container = try ModelContainer(
-            for: Client.self, Entry.self, Heading.self, SyncTombstone.self,
+            for: Client.self, Entry.self, Heading.self, SyncTombstone.self, ProjectIconPreference.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let context = container.mainContext
@@ -142,13 +268,55 @@ struct SyncModelTests {
         #expect(inserted > 0)
         #expect(defaults.bool(forKey: SampleData.autoSeededDemoKey))
 
-        let removed = SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults)
+        let removed = try SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults)
         #expect(removed == inserted)
         #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
         #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
         // One-shot: a second call must be a no-op.
-        #expect(SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults) == 0)
+        #expect(try SampleData.purgeAutoSeededDemoIfNeeded(context, defaults: defaults) == 0)
         defaults.removePersistentDomain(forName: suite)
+    }
+
+    @Test @MainActor func leakedProductionFixturesAreRemovedWithoutDeletingRealRows() throws {
+        let container = try ModelContainer(
+            for: Client.self, Entry.self, Heading.self, SyncTombstone.self, ProjectIconPreference.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let suite = "earnline-tests-fixture-cleanup-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        #expect(SampleData.seedGenerated(context) > 0)
+        #expect(SampleData.seedStress(context) > 0)
+
+        let demoClientID = DeterministicID.uuid("earnline-seed-client:Acme Studio")
+        let demoClient = try #require(
+            context.fetch(FetchDescriptor<Client>()).first { $0.id == demoClientID }
+        )
+        let preservedEntry = Entry(amount: 42, task: "Real work kept", status: .paid)
+        preservedEntry.client = demoClient
+        context.insert(preservedEntry)
+
+        let realClient = Client(name: "Real client")
+        let realEntry = Entry(amount: 100, task: "Real line", status: .paid)
+        realEntry.client = realClient
+        context.insert(realClient)
+        context.insert(realEntry)
+        try context.save()
+
+        #expect(try SampleData.cleanupLeakedProductionFixturesIfNeeded(context, defaults: defaults) > 0)
+
+        let clients = try context.fetch(FetchDescriptor<Client>())
+        let entries = try context.fetch(FetchDescriptor<Entry>())
+        #expect(clients.contains { $0.id == demoClientID })
+        #expect(clients.contains { $0.id == realClient.id })
+        #expect(clients.allSatisfy { !$0.name.hasPrefix("Stress Client ") })
+        #expect(entries.map(\.id).contains(preservedEntry.id))
+        #expect(entries.map(\.id).contains(realEntry.id))
+        #expect(entries.count == 2)
+        #expect(try SampleData.cleanupLeakedProductionFixturesIfNeeded(context, defaults: defaults) == 0)
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {

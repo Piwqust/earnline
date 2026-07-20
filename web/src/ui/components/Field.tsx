@@ -1,6 +1,13 @@
 // Labeled field wrapper + a styled native <select>. Plain inputs use the
 // `.input` / `.textarea` classes directly.
-import { useId, type ReactNode, type SelectHTMLAttributes } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useId,
+  type ReactElement,
+  type ReactNode,
+  type SelectHTMLAttributes,
+} from "react";
 import { ChevronDownIcon } from "../icons";
 
 export function Field({
@@ -14,14 +21,25 @@ export function Field({
   htmlFor?: string;
   children: ReactNode;
 }) {
+  const generatedId = useId();
+  const controlId = htmlFor ?? generatedId;
+  const canReceiveId =
+    isValidElement(children) &&
+    (children.type === "input" || children.type === "textarea" || children.type === "select" || children.type === Select);
+  const control = canReceiveId
+    ? cloneElement(children as ReactElement<{ id?: string }>, { id: children.props.id ?? controlId })
+    : children;
+  const labelIsForControl = htmlFor != null || canReceiveId;
+
   return (
     <div className="field">
-      {label && (
-        <label className="field__label" htmlFor={htmlFor}>
+      {label && labelIsForControl && (
+        <label className="field__label" htmlFor={controlId}>
           {label}
         </label>
       )}
-      {children}
+      {label && !labelIsForControl && <span className="field__label">{label}</span>}
+      {control}
       {hint && <p className="field__hint">{hint}</p>}
     </div>
   );

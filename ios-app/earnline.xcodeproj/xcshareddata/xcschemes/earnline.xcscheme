@@ -6,6 +6,24 @@
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
       runPostActionsOnFailure = "NO">
+      <PostActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Install earnline Dev companion"
+               scriptText = "&quot;${PROJECT_DIR}/Scripts/install-dev-companion.sh&quot;&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "38CA04C708B209CC19037885"
+                     BuildableName = "earnline-dev.app"
+                     BlueprintName = "earnline-dev"
+                     ReferencedContainer = "container:earnline.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PostActions>
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -18,6 +36,20 @@
                BlueprintIdentifier = "3C808029FA63CFF3B263CB5F"
                BuildableName = "earnline.app"
                BlueprintName = "earnline"
+               ReferencedContainer = "container:earnline.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "NO"
+            buildForRunning = "YES"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "38CA04C708B209CC19037885"
+               BuildableName = "earnline-dev.app"
+               BlueprintName = "earnline-dev"
                ReferencedContainer = "container:earnline.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

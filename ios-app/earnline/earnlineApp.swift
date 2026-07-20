@@ -6,7 +6,15 @@ struct earnlineApp: App {
     @State private var app: AppModel
 
     init() {
-        let model = AppModel()
+        let defaults: UserDefaults
+        if (AppModel.isRunningUIAutomation || AppModel.isRunningUnitTests),
+           let isolatedDefaults = UserDefaults(suiteName: AppModel.uiAutomationDefaultsSuite) {
+            isolatedDefaults.removePersistentDomain(forName: AppModel.uiAutomationDefaultsSuite)
+            defaults = isolatedDefaults
+        } else {
+            defaults = .standard
+        }
+        let model = AppModel(defaults: defaults)
         _app = State(initialValue: model)
     }
 
@@ -27,37 +35,67 @@ private struct WorkspaceContainerHost: View {
     /// with a deallocated container — any `EntryRow` that redrew during the
     /// transition then trapped in a model getter (the "switch twice and it
     /// crashes" bug). Caching also makes switching back instant.
-    @State private var stores: [AppModel.WorkspaceEnvironment: WorkspaceStore]
-    @State private var activeEnvironment: AppModel.WorkspaceEnvironment
+    @State private var stores: [WorkspaceStore.Key: WorkspaceStore]
+    @State private var activeStoreKey: WorkspaceStore.Key
+    /// A store-open failure must never take the whole application down. The
+    /// original SQLite files stay untouched while the owner chooses whether to
+    /// retry or, after authentication, start an isolated cloud-backed cache.
+    @State private var storeOpenError: String?
 
     init(app: AppModel) {
         self.app = app
-        let environment = app.workspaceEnvironment
+        let key = WorkspaceStore.Key(environment: app.workspaceEnvironment, workspaceID: app.workspaceID, mode: app.accountStoreMode)
         do {
-            _stores = State(initialValue: [environment: try WorkspaceStore(environment: environment)])
+            _stores = State(initialValue: [key: try WorkspaceStore(key: key)])
+            _storeOpenError = State(initialValue: nil)
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            _stores = State(initialValue: [:])
+            _storeOpenError = State(initialValue: error.localizedDescription)
         }
-        _activeEnvironment = State(initialValue: environment)
+        _activeStoreKey = State(initialValue: key)
     }
 
-    private var store: WorkspaceStore {
-        guard let store = stores[activeEnvironment] else {
-            fatalError("No store for \(activeEnvironment)")
-        }
-        return store
-    }
+    private var store: WorkspaceStore? { stores[activeStoreKey] }
 
     var body: some View {
         @Bindable var app = app
-        LedgerView()
-            .id(store.environment)
-            // Settings is presented here, outside the `.id` boundary, so a
-            // workspace switch made *from inside Settings* swaps the ledger
-            // underneath without dismissing the sheet the user is touching.
-            .sheet(isPresented: $app.showSettings) { SettingsView() }
+        Group {
+            if let store {
+                ZStack {
+                    if app.isAccountReady {
+                        LedgerView()
+                            .id(store.key)
+                            .transition(.opacity)
+                    } else {
+                        AuthGateView()
+                            .transition(.opacity)
+                    }
+                }
+                    .animation(.easeInOut(duration: 0.22), value: app.isAccountReady)
+                    // Settings is presented here, outside the `.id` boundary, so a
+                    // workspace switch made *from inside Settings* swaps the ledger
+                    // underneath without dismissing the sheet the user is touching.
+                    .sheet(isPresented: $app.showSettings) { SettingsView() }
+                    .modelContainer(store.container)
+                    .task(id: activeStoreKey) {
+                        #if DEBUGMENU
+                        // Keep the anywhere-accessible debug overlay pointed at the
+                        // container the app is actually rendering.
+                        DebugMenuOverlay.install(app: app, container: store.container)
+                        #endif
+                        await bootstrapCurrentStore(store: store)
+                    }
+                    .onChange(of: scenePhase) { _, phase in
+                        handleScenePhase(phase, store: store)
+                    }
+            } else {
+                unavailableStoreContent
+                    .task(id: activeStoreKey) {
+                        await app.bootstrapAuthentication()
+                    }
+            }
+        }
             .environment(app)
-            .modelContainer(store.container)
             .tint(app.accentColor)
             // Honor Reduce Motion app-wide: every explicit `.animation` /
             // `withAnimation` in the tree routes its transaction through here,
@@ -71,77 +109,220 @@ private struct WorkspaceContainerHost: View {
             // .preferredColorScheme, which pins already-presented sheets to
             // the scheme captured when they were presented.
             .onAppear(perform: app.applyAppearance)
-            .task(id: store.environment) {
-                await bootstrapCurrentStore()
-            }
             .onChange(of: app.workspaceEnvironment) { _, environment in
-                switchStore(to: environment)
+                switchStore(to: environment, workspaceID: app.workspaceID, mode: app.accountStoreMode)
             }
-            .onChange(of: scenePhase) { _, phase in
-                guard !AppModel.isRunningUIAutomation else { return }
-                // Cover on `.inactive` (before the app-switcher snapshot),
-                // commit the lock only on `.background`.
-                if phase == .inactive { app.coverIfNeeded() }
-                if phase == .background { app.lockIfNeeded() }
-                guard phase == .active else { return }
-                // A window created while backgrounded starts on the system
-                // scheme; re-assert the in-app choice on every activation.
-                app.applyAppearance()
-                app.uncoverIfNeeded()
-                app.attemptUnlockIfNeeded()
-                // Returning to the foreground pulls whatever happened while
-                // the socket was suspended.
-                guard !app.isSyncing else { return }
-                Task { await app.syncNow(context: store.container.mainContext) }
+            .onChange(of: app.workspaceStoreIdentity) {
+                switchStore(to: app.workspaceEnvironment, workspaceID: app.workspaceID, mode: app.accountStoreMode)
+            }
+            .onOpenURL { url in
+                Task { await app.handleAuthCallback(url) }
             }
     }
 
+    @ViewBuilder
+    private var unavailableStoreContent: some View {
+        if app.isAccountReady {
+            StoreRecoveryView(
+                canCreateFreshAccountStore: app.canCreateFreshAccountStoreAfterRecovery,
+                retry: retryActiveStore,
+                createFreshAccountStore: {
+                    app.createFreshAccountStoreAfterRecovery()
+                }
+            )
+        } else {
+            AuthGateView()
+        }
+    }
+
     @MainActor
-    private func bootstrapCurrentStore() async {
+    private func bootstrapCurrentStore(store: WorkspaceStore) async {
         let context = store.container.mainContext
         if AppModel.isRunningUIAutomation {
+            if AppModel.isAuthGatePreview {
+                await app.bootstrapAuthentication()
+                return
+            }
             // Keep smoke tests deterministic and isolated from the user's
-            // personal Supabase workspace. The test only verifies navigation
-            // and visible controls, so it does not need a live sync.
+            // personal Supabase workspace. Insights visual/UI tests explicitly
+            // request the deterministic generated ledger; other tests remain
+            // empty and fast.
+            if AppModel.hasUIAutomationLaunchFlag("-demoInsights") {
+                SampleData.seedGenerated(context)
+            } else if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile") {
+                SampleData.seedStress(context)
+            } else if AppModel.hasUIAutomationLaunchFlag("-demoComposer") {
+                SampleData.seed(context)
+            }
             return
         }
         app.lockOnLaunchIfNeeded()
-        // Demo data exists so an unconfigured first launch feels alive; a
-        // device pointed at a real workspace must start from the remote truth.
-        if !app.isSupabaseConfigured {
+        let initialStoreIdentity = app.workspaceStoreIdentity
+        await app.bootstrapAuthentication()
+        // Resolving an account can switch from the legacy container to a
+        // private, account-scoped one. Let the new container's task own the
+        // first sync; never push the old container under the new membership.
+        guard initialStoreIdentity == app.workspaceStoreIdentity, app.isAccountReady else { return }
+        if store.environment == .production {
+            do {
+                try SampleData.cleanupLeakedProductionFixturesIfNeeded(context)
+            } catch {
+                app.syncMessage = String(localized: "Needs sync")
+                app.syncError = "Could not remove leaked test fixtures: \(error.localizedDescription)"
+                return
+            }
+        }
+        // Test is deliberately local-only. Production does not seed into a
+        // signed-out account gate, so demo rows can never leak through OAuth.
+        // The production guest store also starts empty: it is a real ledger,
+        // not a demo, and must never hold rows the user didn't write.
+        if !app.isSupabaseConfigured, app.accountSession?.isLocalOnly != true {
             SampleData.seedIfNeeded(context)
             SampleData.importBundledLedgerIfNeeded(context)
         }
-        SampleData.cleanupLegacyDemoEntriesIfNeeded(context)
-        await app.refreshSupabaseSession()
+        do {
+            try SampleData.cleanupLegacyDemoEntriesIfNeeded(context)
+        } catch {
+            app.syncMessage = String(localized: "Needs sync")
+            app.syncError = String(localized: "Earnline could not safely finish local ledger cleanup. Nothing was uploaded. Restart the app and try again.")
+            return
+        }
         await app.syncNow(context: context)
         app.refreshPendingReminders(context: context)
         app.startRealtime(context: context)
     }
 
-    private func switchStore(to environment: AppModel.WorkspaceEnvironment) {
+    private func switchStore(to environment: AppModel.WorkspaceEnvironment,
+                             workspaceID: String,
+                             mode: AppModel.AccountStoreMode) {
+        let key = WorkspaceStore.Key(environment: environment, workspaceID: workspaceID, mode: mode)
         app.detachWorkspaceStore()
-        if stores[environment] == nil {
+        if stores[key] == nil {
             do {
-                stores[environment] = try WorkspaceStore(environment: environment)
+                stores[key] = try WorkspaceStore(key: key)
+                storeOpenError = nil
             } catch {
-                fatalError("Failed to create ModelContainer: \(error)")
+                activeStoreKey = key
+                storeOpenError = error.localizedDescription
+                return
             }
         }
-        activeEnvironment = environment
+        activeStoreKey = key
+        storeOpenError = nil
+    }
+
+    private func retryActiveStore() {
+        guard stores[activeStoreKey] == nil else { return }
+        do {
+            stores[activeStoreKey] = try WorkspaceStore(key: activeStoreKey)
+            storeOpenError = nil
+        } catch {
+            storeOpenError = error.localizedDescription
+        }
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase, store: WorkspaceStore) {
+        guard !AppModel.isRunningUIAutomation else { return }
+        // Cover on `.inactive` (before the app-switcher snapshot), commit the
+        // lock only on `.background`.
+        if phase == .inactive { app.coverIfNeeded() }
+        if phase == .background { app.lockIfNeeded() }
+        guard phase == .active else { return }
+        // A window created while backgrounded starts on the system scheme;
+        // re-assert the in-app choice on every activation.
+        app.applyAppearance()
+        app.uncoverIfNeeded()
+        app.attemptUnlockIfNeeded()
+        // Returning to the foreground pulls whatever happened while the socket
+        // was suspended.
+        guard app.isAccountReady, !app.isSyncing else { return }
+        Task { await app.syncNow(context: store.container.mainContext) }
+    }
+}
+
+/// A failed SwiftData migration used to terminate the process before the
+/// account gate could appear. This recovery surface intentionally offers no
+/// deletion: the old SQLite files remain in place until a later, explicit
+/// import or support-led migration.
+private struct StoreRecoveryView: View {
+    let canCreateFreshAccountStore: Bool
+    let retry: () -> Void
+    let createFreshAccountStore: () -> Void
+
+    @State private var isConfirmingFreshStore = false
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Your local ledger needs recovery", systemImage: "externaldrive.badge.exclamationmark")
+        } description: {
+            Text("Earnline could not open this older local copy. Its files have not been changed or deleted.")
+        } actions: {
+            VStack(spacing: 12) {
+                Button("Try again", action: retry)
+                    .buttonStyle(.bordered)
+
+                if canCreateFreshAccountStore {
+                    Button("Create a new local cache") {
+                        isConfirmingFreshStore = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding()
+        .accessibilityIdentifier("store.recovery")
+        .confirmationDialog(
+            "Create a new local cache?",
+            isPresented: $isConfirmingFreshStore,
+            titleVisibility: .visible
+        ) {
+            Button("Create new cache") {
+                createFreshAccountStore()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your older local ledger will stay on this device untouched. Earnline will use a separate cache for your signed-in workspace, which you can populate by syncing or importing later.")
+        }
     }
 }
 
 private struct WorkspaceStore {
-    let environment: AppModel.WorkspaceEnvironment
+    struct Key: Hashable {
+        let environment: AppModel.WorkspaceEnvironment
+        let workspaceID: String
+        let mode: AppModel.AccountStoreMode
+    }
+
+    let key: Key
     let container: ModelContainer
 
-    init(environment: AppModel.WorkspaceEnvironment) throws {
-        self.environment = environment
-        let schema = Schema(versionedSchema: EarnlineSchemaV1.self)
-        let configuration = ModelConfiguration(environment.storeName, schema: schema)
+    var environment: AppModel.WorkspaceEnvironment { key.environment }
+
+    init(key: Key) throws {
+        self.key = key
+        let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
+        // UI and unit tests must never open a person's old simulator store.
+        // UI automation also seeds deterministic demo/stress fixtures. An
+        // in-memory container keeps both test surfaces isolated and prevents
+        // stale migration errors from polluting otherwise unrelated tests.
+        let configuration = ModelConfiguration(
+            Self.localStoreName(for: key),
+            schema: schema,
+            isStoredInMemoryOnly: AppModel.isRunningUIAutomation || AppModel.isRunningUnitTests
+        )
         container = try ModelContainer(for: schema,
                                        migrationPlan: EarnlineMigrationPlan.self,
                                        configurations: configuration)
+    }
+
+    private static func localStoreName(for key: Key) -> String {
+        // Preserve the existing production file for the approved legacy
+        // handoff. Any other resolved workspace gets a different SwiftData
+        // container, so switching accounts on one device cannot reuse data.
+        if key.mode == .legacy { return key.environment.storeName }
+        let safeWorkspaceID = key.workspaceID.unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "-"
+        }
+        return "\(key.environment.storeName)-\(String(safeWorkspaceID))"
     }
 }

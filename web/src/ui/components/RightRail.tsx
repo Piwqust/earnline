@@ -4,10 +4,9 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { STATUS_ORDER, statusTitle, isIncludedInEarnedTotals } from "../../domain/types";
-import { toBase } from "../../domain/currency";
+import { convertToBase } from "../../domain/currency";
 import { numberFromCents, formatMoney } from "../../domain/money";
-import { sameMonthDay, monthNameOfDay } from "../../domain/dateFormat";
-import { clientsWithEntries, clientTotalAll, monthTotal, monthsWithData, totalOf } from "../../domain/totals";
+import { monthNameOfDay, monthStartDayMs, sameMonthDay, todayDayMs } from "../../domain/dateFormat";
 import { useClients, useEntries } from "../../state/data";
 import { useSettings, currencySettings } from "../../state/settings";
 import { STATUS_COLOR } from "../theme/theme";
@@ -20,36 +19,70 @@ export function RightRail({ monthMs }: { monthMs: number }) {
   const cs = currencySettings(settings);
   const base = settings.baseCurrencyCode;
 
-  // Month-independent anchor: all-time earned + the last six months as bars.
-  const { allTime, trend } = useMemo(() => {
-    const allTime = clients.reduce((a, c) => a + clientTotalAll(c.id, entries, cs), 0);
-    const recent = monthsWithData(entries).slice(0, 6).reverse();
-    const trend = recent.map((m) => ({ month: m, value: monthTotal(clients, entries, m, cs) }));
-    return { allTime, trend };
-  }, [clients, entries, cs]);
-  const trendMax = Math.max(1, ...trend.map((t) => t.value));
+  const { allTime, allTimeUnsupported, trend, rows, grand, earned, hasMonthData, monthUnsupported, topClients } =
+    useMemo(() => {
+      const monthTotals = new Map<number, number>();
+      const months = new Set<number>();
+      months.add(monthStartDayMs(todayDayMs()));
+      const statusRows = new Map(STATUS_ORDER.map((status) => [status, { status, count: 0, sum: 0 }]));
+      const clientTotals = new Map<string, number>();
+      let allTime = 0;
+      let allTimeUnsupported = 0;
+      let monthUnsupported = 0;
+      let hasMonthData = false;
 
-  const { rows, grand, earned, hasMonthData } = useMemo(() => {
-    const monthEntries = entries.filter((e) => sameMonthDay(e.date, monthMs));
-    const rows = STATUS_ORDER.map((s) => {
-      const list = monthEntries.filter((e) => e.status === s);
-      const sum = list.reduce((a, e) => a + toBase(numberFromCents(e.amountCents), e.currencyCode, cs), 0);
-      return { status: s, count: list.length, sum };
-    });
-    const grand = rows.reduce((a, r) => a + r.sum, 0);
-    const earned = rows.filter((r) => isIncludedInEarnedTotals(r.status)).reduce((a, r) => a + r.sum, 0);
-    return { rows, grand, earned, hasMonthData: monthEntries.length > 0 };
-  }, [entries, monthMs, cs]);
+      for (const entry of entries) {
+        const entryMonth = monthStartDayMs(entry.date);
+        months.add(entryMonth);
+        const inMonth = sameMonthDay(entry.date, monthMs);
+        const converted = convertToBase(numberFromCents(entry.amountCents), entry.currencyCode, cs);
+        if (inMonth) {
+          hasMonthData = true;
+          const row = statusRows.get(entry.status)!;
+          row.count += 1;
+          if (converted != null) row.sum += converted;
+        }
+        if (!isIncludedInEarnedTotals(entry.status)) continue;
+        if (converted == null) {
+          allTimeUnsupported += 1;
+          if (inMonth) monthUnsupported += 1;
+          continue;
+        }
+        allTime += converted;
+        monthTotals.set(entryMonth, (monthTotals.get(entryMonth) ?? 0) + converted);
+        if (inMonth) {
+          clientTotals.set(entry.clientId, (clientTotals.get(entry.clientId) ?? 0) + converted);
+        }
+      }
 
-  const topClients = useMemo(
-    () =>
-      clientsWithEntries(clients, entries, monthMs)
-        .map((c) => ({ client: c, total: totalOf(c.id, entries, monthMs, cs) }))
-        .filter((x) => x.total > 0)
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 5),
-    [clients, entries, monthMs, cs],
-  );
+      const trend = [...months]
+        .sort((left, right) => right - left)
+        .slice(0, 6)
+        .reverse()
+        .map((month) => ({ month, value: monthTotals.get(month) ?? 0 }));
+      const rows = STATUS_ORDER.map((status) => statusRows.get(status)!);
+      const grand = rows.reduce((sum, row) => sum + row.sum, 0);
+      const earned = rows
+        .filter((row) => isIncludedInEarnedTotals(row.status))
+        .reduce((sum, row) => sum + row.sum, 0);
+      const topClients = clients
+        .map((client) => ({ client, total: clientTotals.get(client.id) ?? 0 }))
+        .filter((item) => item.total > 0)
+        .sort((left, right) => right.total - left.total)
+        .slice(0, 5);
+      return {
+        allTime,
+        allTimeUnsupported,
+        trend,
+        rows,
+        grand,
+        earned,
+        hasMonthData,
+        monthUnsupported,
+        topClients,
+      };
+    }, [clients, entries, monthMs, settings.baseCurrencyCode, settings.rate, settings.secondaryCurrencyCode]);
+  const trendMax = Math.max(1, ...trend.map((item) => item.value));
 
   const monthLabel = monthNameOfDay(monthMs);
   const visibleRows = rows.filter((r) => r.count > 0);
@@ -57,22 +90,29 @@ export function RightRail({ monthMs }: { monthMs: number }) {
   return (
     <aside className="rail" aria-label="Summary">
       <section className="rail-card rail-trend-card">
-        <h3 className="rail-card__title">Earned, all time</h3>
+        <h2 className="rail-card__title">Earned, all time</h2>
         <div className="rail-trend__figure tabular">{formatMoney(allTime, base)}</div>
-        <div className="rail-trend" aria-hidden>
+        {allTimeUnsupported > 0 && <p className="rail-card__warning">Unsupported currencies excluded</p>}
+        <div className="rail-trend" role="list" aria-label="Recent earnings by month">
           {trend.map((t) => (
             <div
               className="rail-trend__col"
               key={t.month}
+              role="listitem"
               title={`${monthNameOfDay(t.month)} · ${formatMoney(t.value, base)}`}
             >
-              <div className="rail-trend__track">
+              <span className="u-sr">
+                {monthNameOfDay(t.month)}: {formatMoney(t.value, base)}
+              </span>
+              <div className="rail-trend__track" aria-hidden>
                 <div
                   className={"rail-trend__bar" + (sameMonthDay(t.month, monthMs) ? " is-current" : "")}
-                  style={{ height: `${Math.max(4, (t.value / trendMax) * 100)}%` }}
+                  style={{ ["--bar-scale" as string]: Math.max(0.04, t.value / trendMax) } as React.CSSProperties}
                 />
               </div>
-              <span className="rail-trend__label">{monthNameOfDay(t.month).slice(0, 3)}</span>
+              <span className="rail-trend__label" aria-hidden>
+                {monthNameOfDay(t.month).slice(0, 3)}
+              </span>
             </div>
           ))}
         </div>
@@ -80,7 +120,7 @@ export function RightRail({ monthMs }: { monthMs: number }) {
 
       {hasMonthData ? (
         <section className="rail-card">
-          <h3 className="rail-card__title">{monthLabel} · by status</h3>
+          <h2 className="rail-card__title">{monthLabel} · by status</h2>
           <div className="rail-stats">
             {visibleRows.map((r) => (
               <div className="rail-stat" key={r.status}>
@@ -94,7 +134,7 @@ export function RightRail({ monthMs }: { monthMs: number }) {
                   <span
                     className="rail-stat__fill"
                     style={{
-                      width: `${grand > 0 ? Math.max(2, (Math.abs(r.sum) / grand) * 100) : 0}%`,
+                      ["--fill-scale" as string]: grand > 0 ? Math.max(0.02, Math.abs(r.sum) / grand) : 0,
                       background: STATUS_COLOR[r.status],
                     }}
                   />
@@ -106,6 +146,7 @@ export function RightRail({ monthMs }: { monthMs: number }) {
             <span>Earned</span>
             <strong className="tabular">{formatMoney(earned, base)}</strong>
           </div>
+          {monthUnsupported > 0 && <p className="rail-card__warning">Total incomplete</p>}
         </section>
       ) : (
         <p className="rail__hint">Nothing in {monthLabel} yet — the total above is all-time.</p>
@@ -113,7 +154,7 @@ export function RightRail({ monthMs }: { monthMs: number }) {
 
       {topClients.length > 0 && (
         <section className="rail-card">
-          <h3 className="rail-card__title">{monthLabel} · top clients</h3>
+          <h2 className="rail-card__title">{monthLabel} · top clients</h2>
           <div className="rail-clients">
             {topClients.map(({ client, total }) => (
               <Link key={client.id} to={`/client/${client.id}`} className="rail-client">

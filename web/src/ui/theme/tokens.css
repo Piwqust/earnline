@@ -27,7 +27,9 @@
 
   /* ---- brand + accents (brand-exact hex) ---- */
   --blue: #0088ff;
-  --blue-press: #0072e0;
+  --blue-text: #0068bd;
+  --blue-action: #006fcf;
+  --blue-press: #005eaf;
   --purple: #7b00ff;
   --accent: var(--blue);
   --on-accent: oklch(0.99 0.005 262);
@@ -39,6 +41,12 @@
   --paid: #8e8e93;
   --progress: #ff8a00;
   --canceled: #ff3b30;
+  --canceled-action: #bd211a;
+  --canceled-action-hover: #a91c16;
+  --on-danger: var(--on-accent);
+  --paid-text: #5c5c63;
+  --progress-text: #914800;
+  --canceled-text: #bd211a;
 
   /* ---- state washes (translucent so they sit on any surface) ---- */
   --blue-wash: color-mix(in oklab, var(--blue) 10%, transparent);
@@ -50,7 +58,7 @@
   --progress-wash: color-mix(in oklab, var(--progress) 15%, transparent);
 
   /* ---- focus ---- */
-  --focus: color-mix(in oklab, var(--blue) 55%, transparent);
+  --focus: #0068bd;
   --focus-ring: 0 0 0 3px var(--focus);
 
   /* ---- elevation (cool, soft, never harsh black) ---- */
@@ -141,7 +149,16 @@
   --border-2: oklch(0.92 0.01 262 / 0.2);
 
   --blue: #2b95ff;
-  --blue-press: #4aa6ff;
+  --blue-text: #70b8ff;
+  --blue-action: #006fcf;
+  --blue-press: #005eaf;
+  --focus: #70b8ff;
+  --paid-text: #c0c0c6;
+  --progress-text: #ffb35c;
+  --canceled-text: #ff7b74;
+  --canceled-action: #ff3b30;
+  --canceled-action-hover: #ff6159;
+  --on-danger: #101217;
   --gain: oklch(0.74 0.14 155);
 
   --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4), 0 1px 1px oklch(0 0 0 / 0.3);
@@ -172,7 +189,16 @@
     --border-2: oklch(0.92 0.01 262 / 0.2);
 
     --blue: #2b95ff;
-    --blue-press: #4aa6ff;
+    --blue-text: #70b8ff;
+    --blue-action: #006fcf;
+    --blue-press: #005eaf;
+    --focus: #70b8ff;
+    --paid-text: #c0c0c6;
+    --progress-text: #ffb35c;
+    --canceled-text: #ff7b74;
+    --canceled-action: #ff3b30;
+    --canceled-action-hover: #ff6159;
+    --on-danger: #101217;
     --gain: oklch(0.74 0.14 155);
 
     --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4), 0 1px 1px oklch(0 0 0 / 0.3);

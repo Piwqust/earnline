@@ -1,6 +1,6 @@
 // Minimal inline SVG icons mirroring the SF Symbols used on iOS.
 import type { EntryStatus } from "../domain/types";
-import { STATUS_COLOR } from "./theme/theme";
+import { readableForeground, STATUS_COLOR } from "./theme/theme";
 
 type IconProps = { size?: number; className?: string; strokeWidth?: number };
 
@@ -270,17 +270,18 @@ export function MoonIcon({ size = 16, className, strokeWidth = 1.8 }: IconProps)
 /** Filled status dot (checkmark / clock / xmark), tinted by status. */
 export function StatusIcon({ status, size = 16 }: { status: EntryStatus; size?: number }) {
   const color = STATUS_COLOR[status];
+  const foreground = readableForeground(color);
   return (
     <svg {...svgProps(size)}>
       <circle cx="12" cy="12" r="9" fill={color} />
       {status === "paid" && (
-        <path d="M8 12.3l2.6 2.6L16 9.5" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8 12.3l2.6 2.6L16 9.5" stroke={foreground} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
       )}
       {status === "inProgress" && (
-        <path d="M12 7.6V12l3 1.8" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M12 7.6V12l3 1.8" stroke={foreground} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
       )}
       {status === "canceled" && (
-        <path d="M9 9l6 6M15 9l-6 6" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+        <path d="M9 9l6 6M15 9l-6 6" stroke={foreground} strokeWidth={2} strokeLinecap="round" />
       )}
     </svg>
   );
