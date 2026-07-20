@@ -35,6 +35,13 @@ struct SettingsView: View {
     @State private var isResettingLocalData = false
     @State private var stressSeedNote: String?
     @State private var showingPairingCode = false
+    /// On-device (guest) ledger available to import into the signed-in account.
+    /// Loaded once on appear; `nil` until then, empty when there is nothing to
+    /// bring over. Backs the "Import on-device ledger" action.
+    @State private var guestLedger: GuestLedgerMigration.Summary?
+    @State private var isImportingGuestLedger = false
+    @State private var pendingGuestImport = false
+    @State private var guestImportNote: String?
     #if DEBUGMENU
     @State private var showingDebugMenu = false
     #endif
@@ -45,6 +52,33 @@ struct SettingsView: View {
         Form {
             if app.workspaceEnvironment == .production, app.isAccountReady {
                 AccountDevicesSection(showingPairingCode: $showingPairingCode)
+            }
+
+            if app.isSupabaseConfigured, let guestLedger, !guestLedger.isEmpty {
+                Section {
+                    Button {
+                        pendingGuestImport = true
+                    } label: {
+                        HStack {
+                            SettingsRowLabel("Import on-device ledger",
+                                             glyph: "square.and.arrow.down.on.square")
+                            Spacer()
+                            if isImportingGuestLedger { ProgressView() }
+                        }
+                    }
+                    .disabled(isImportingGuestLedger)
+                    .accessibilityIdentifier("settings.importGuestLedger")
+                } header: {
+                    Text("On-device ledger")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Bring the \(guestLedgerCountText) you saved with “Continue without an account” into this account and sync them. The on-device copy stays on this device.")
+                        if let guestImportNote {
+                            Label(guestImportNote, systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
 
             Section("Appearance") {
@@ -265,7 +299,10 @@ struct SettingsView: View {
             DebugMenuView()
         }
         #endif
-        .task { refreshCounts() }
+        .task {
+            refreshCounts()
+            refreshGuestLedger()
+        }
         // The sheet outlives a workspace switch (it's presented by the host),
         // so re-read the counts from whatever store is now underneath.
         .onChange(of: appModel.workspaceEnvironment) {
@@ -292,6 +329,14 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) { pendingSyncRecoveryAction = nil }
         } message: {
             Text(syncRecoveryConfirmationMessage)
+        }
+        .confirmationDialog("Import your on-device ledger?",
+                            isPresented: $pendingGuestImport,
+                            titleVisibility: .visible) {
+            Button("Import and sync") { importGuestLedger() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The \(guestLedgerCountText) you saved with “Continue without an account” will be added to this account and synced. Your on-device copy is left untouched, and importing again won’t create duplicates.")
         }
         .saveErrorAlert($saveError)
     }
@@ -592,6 +637,45 @@ struct SettingsView: View {
         } catch {
             saveError = error.localizedDescription
         }
+    }
+
+    /// Human-readable size of the on-device (guest) ledger awaiting import.
+    private var guestLedgerCountText: String {
+        let entries = guestLedger?.entries ?? 0
+        if entries == 1 { return String(localized: "1 income line") }
+        if entries > 1 { return String(localized: "\(entries) income lines") }
+        return String(localized: "income lines")
+    }
+
+    /// Load the guest-ledger summary — only when signed into a real syncing
+    /// account, so a signed-out or guest session never opens the guest store.
+    private func refreshGuestLedger() {
+        guard appModel.isSupabaseConfigured else { guestLedger = nil; return }
+        guestLedger = GuestLedgerMigration.guestLedgerSummary()
+    }
+
+    /// Copy the on-device guest ledger into this account and kick a sync. Safe
+    /// to run more than once — rows already present are skipped (see
+    /// `GuestLedgerMigration`), and the on-device store is never modified.
+    private func importGuestLedger() {
+        guard !isImportingGuestLedger else { return }
+        isImportingGuestLedger = true
+        do {
+            let summary = try GuestLedgerMigration.importGuestLedgerFromDisk(into: context)
+            if summary.total > 0 {
+                appModel.queueSync(context: context)
+                guestImportNote = summary.entries == 1
+                    ? String(localized: "Imported 1 line. Syncing to your account.")
+                    : String(localized: "Imported \(summary.entries) lines. Syncing to your account.")
+            } else {
+                guestImportNote = String(localized: "Your on-device ledger is already in this account.")
+            }
+            refreshGuestLedger()
+            refreshCounts()
+        } catch {
+            saveError = error.localizedDescription
+        }
+        isImportingGuestLedger = false
     }
 
     private func runSyncRecoveryAction(_ action: SyncRecoveryAction?) {

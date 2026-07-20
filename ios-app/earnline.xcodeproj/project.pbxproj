@@ -67,6 +67,7 @@
 		5E0E0C46C7103D566E1AA7D7 /* IncomeLedgerImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE4400DE5171E33FDB2EF6B /* IncomeLedgerImporter.swift */; };
 		5F55ADD3889BC2735623B133 /* PendingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8068D7B6E3C172BF0B6CA7D8 /* PendingView.swift */; };
 		604F34F392595E73F376D470 /* EarningsChartCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C208B0EEEE5057AF7A0AF6C8 /* EarningsChartCard.swift */; };
+		636485ED00D6370F12CBD3D5 /* GuestLedgerMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F550D437F320ADD137BD0F /* GuestLedgerMigrationTests.swift */; };
 		654D0F5A442735ECD39C9D84 /* ExchangeRateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED7E74C56315608E534D7118 /* ExchangeRateTests.swift */; };
 		65B4B6D76CB551AA41D7F0C1 /* ClientAchievements.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852C0D2F36395FF7725512FC /* ClientAchievements.swift */; };
 		66F5BD7EE25C37FC65AA6D8C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 524C6C4EE0B534DA47C86894 /* PrivacyInfo.xcprivacy */; };
@@ -118,6 +119,7 @@
 		A329CBD0F3AEB4BD529FC8E2 /* DateFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66929B24A2A4A6387C1094B2 /* DateFormat.swift */; };
 		A51778C22D101C22DD77E74D /* EditEntrySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C8017F6B63E954DAD326C8C /* EditEntrySheet.swift */; };
 		A5E20556908672C771CD7841 /* NewClientSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E03F716060DC11DCBBAD0F /* NewClientSheet.swift */; };
+		A5E4C79ECDCA7E2C04508DBC /* GuestLedgerMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463FB97F39A94236073AE0BF /* GuestLedgerMigration.swift */; };
 		A69113256344C3D544E1DA8F /* PendingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4787CC5972150E1A27609AC /* PendingTests.swift */; };
 		A6DFA36DF5C023551E3ADB92 /* EntryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE94D847BE925A734A98105 /* EntryRow.swift */; };
 		A70EF2D4B5E50EAE24E61229 /* EntryStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09B086E843E8C97A4464BB2 /* EntryStatus.swift */; };
@@ -188,6 +190,7 @@
 		F4493761DFDA8D955C9D41A7 /* earnline-onboarding.mov in Resources */ = {isa = PBXBuildFile; fileRef = 72FF8EB4D3A1C53D4A91F75F /* earnline-onboarding.mov */; };
 		F77E03B5697B567F5BB83E09 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EFB68DE60447EECFE99BD788 /* Assets.xcassets */; };
 		F8BC0CFF5C62F84441E7D4A4 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C9CAB55ED8C73794EC9ABD8 /* UndoToastView.swift */; };
+		F9CD69113355A8669CB53A1F /* GuestLedgerMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463FB97F39A94236073AE0BF /* GuestLedgerMigration.swift */; };
 		FB557B210587320A9F808A37 /* DeterministicID.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFA8FC0B2CD2EC391908D19 /* DeterministicID.swift */; };
 		FE24B7EA4F0265AF5BD76561 /* AppleCredentialIdentifierStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEBDDD73BE469DC8C2BC5E41 /* AppleCredentialIdentifierStore.swift */; };
 		FE99AD6C8129572C7173A04B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A21F1598724878782878E7D1 /* Localizable.xcstrings */; };
@@ -251,6 +254,7 @@
 		3CE94D847BE925A734A98105 /* EntryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryRow.swift; sourceTree = "<group>"; };
 		3EF52DF486BF776CD0284740 /* MoneyAmountText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyAmountText.swift; sourceTree = "<group>"; };
 		40BE6CF16D6301CC214FDF33 /* LineParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineParser.swift; sourceTree = "<group>"; };
+		463FB97F39A94236073AE0BF /* GuestLedgerMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestLedgerMigration.swift; sourceTree = "<group>"; };
 		4BD51A63FE5E79BD54510538 /* ClientOrbChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientOrbChart.swift; sourceTree = "<group>"; };
 		4D89D605AA34D35B69B95F6E /* Validation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Validation.swift; sourceTree = "<group>"; };
 		4DBE6D482970B9C7E0C73790 /* ChangelogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangelogView.swift; sourceTree = "<group>"; };
@@ -271,6 +275,7 @@
 		6BBBE23063859B5481E19B82 /* earnline.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = earnline.entitlements; sourceTree = "<group>"; };
 		6C8017F6B63E954DAD326C8C /* EditEntrySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditEntrySheet.swift; sourceTree = "<group>"; };
 		72FF8EB4D3A1C53D4A91F75F /* earnline-onboarding.mov */ = {isa = PBXFileReference; lastKnownFileType = video.quicktime; path = "earnline-onboarding.mov"; sourceTree = "<group>"; };
+		73F550D437F320ADD137BD0F /* GuestLedgerMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestLedgerMigrationTests.swift; sourceTree = "<group>"; };
 		76D3ADCA4AFDD249B39165A1 /* ClientDetailSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDetailSnapshot.swift; sourceTree = "<group>"; };
 		778C5101198F7EEC774E2E95 /* EarnlineUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarnlineUITests.swift; sourceTree = "<group>"; };
 		79625F3F23FE9A39E4096DD0 /* SmartComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartComposer.swift; sourceTree = "<group>"; };
@@ -402,6 +407,7 @@
 				CCFA8FC0B2CD2EC391908D19 /* DeterministicID.swift */,
 				A2D7BB1BA5D43A868804F33C /* EntrySearch.swift */,
 				51A8BC0CC180A9C4D50DA359 /* ExchangeRateService.swift */,
+				463FB97F39A94236073AE0BF /* GuestLedgerMigration.swift */,
 				3CE4400DE5171E33FDB2EF6B /* IncomeLedgerImporter.swift */,
 				829F8B6CECB0097F1F177CBC /* Insights.swift */,
 				8270CF78D7AB6E931F047188 /* PendingNotifications.swift */,
@@ -550,6 +556,7 @@
 				51C864B07A1C84941939F54F /* CurrencyConverterTests.swift */,
 				8E96F342B74682FCF9C1E0EF /* EntrySearchTests.swift */,
 				ED7E74C56315608E534D7118 /* ExchangeRateTests.swift */,
+				73F550D437F320ADD137BD0F /* GuestLedgerMigrationTests.swift */,
 				FA563EB77A0F241172C91E11 /* InsightsAggregationTests.swift */,
 				32839318AD65467B747F50D7 /* InsightsTests.swift */,
 				59FF5A0C28C3143109F9AE84 /* LineParserTests.swift */,
@@ -854,6 +861,7 @@
 				73F633FDBD20DA2F0CF89EA0 /* CurrencyConverterTests.swift in Sources */,
 				6799B961DA20BF9ED2536CA7 /* EntrySearchTests.swift in Sources */,
 				654D0F5A442735ECD39C9D84 /* ExchangeRateTests.swift in Sources */,
+				636485ED00D6370F12CBD3D5 /* GuestLedgerMigrationTests.swift in Sources */,
 				ED96EE91DD956E5CE0588C10 /* InsightsAggregationTests.swift in Sources */,
 				C9C4CADA0EB366089D8F8482 /* InsightsTests.swift in Sources */,
 				8F5B283CDDF0E5851B1FE1B9 /* LineParserTests.swift in Sources */,
@@ -913,6 +921,7 @@
 				5C995D5318EE64003F5C2314 /* ExchangeRateService.swift in Sources */,
 				AC68FC3059C55FE2D47634BD /* FirstRunTour.swift in Sources */,
 				0CE2F8C503A9D1C602BFCCF0 /* GlassButtons.swift in Sources */,
+				A5E4C79ECDCA7E2C04508DBC /* GuestLedgerMigration.swift in Sources */,
 				B4C1746068B2CDC3E27980E8 /* Heading.swift in Sources */,
 				5E0E0C46C7103D566E1AA7D7 /* IncomeLedgerImporter.swift in Sources */,
 				D217BFB2A345B42DBB3D630F /* Insights.swift in Sources */,
@@ -994,6 +1003,7 @@
 				B3ECAFECDDBFCFDFF7EF18C0 /* ExchangeRateService.swift in Sources */,
 				81D894A3A6A98A0822A39099 /* FirstRunTour.swift in Sources */,
 				7FC7FD4CF411641176DA81A1 /* GlassButtons.swift in Sources */,
+				F9CD69113355A8669CB53A1F /* GuestLedgerMigration.swift in Sources */,
 				1F860C2332E3DB560A5EE793 /* Heading.swift in Sources */,
 				DD29757C738DF755A044A1ED /* IncomeLedgerImporter.swift in Sources */,
 				2D91018BA2E0B20E1FD78B33 /* Insights.swift in Sources */,
