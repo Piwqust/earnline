@@ -1,7 +1,8 @@
 import Foundation
 import SwiftData
 
-/// A free-text divider the user can drop between sections ("New Heading").
+/// A short dated event note. The compatibility name remains `Heading` so old
+/// synced rows retain their schema and remote wire format without a migration.
 @Model
 final class Heading {
     @Attribute(.unique) var id: UUID

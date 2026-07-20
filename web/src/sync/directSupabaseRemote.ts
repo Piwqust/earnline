@@ -4,6 +4,7 @@ import {
   decodeClientRows,
   decodeEntryRows,
   decodeHeadingRows,
+  decodeMonthReviewRows,
   decodeTombstoneRows,
   decodeWorkspaceProfile,
   type WorkspaceProfilePayload,
@@ -21,6 +22,7 @@ const REALTIME_TABLES: RowTable[] = [
   "earnline_clients",
   "earnline_entries",
   "earnline_headings",
+  "earnline_month_reviews",
   "earnline_tombstones",
 ];
 
@@ -98,6 +100,7 @@ export class DirectSupabaseRemote implements SyncRemote {
       case "earnline_clients": return decodeClientRows(result.data) as RowByTable[T][];
       case "earnline_entries": return decodeEntryRows(result.data) as RowByTable[T][];
       case "earnline_headings": return decodeHeadingRows(result.data) as RowByTable[T][];
+      case "earnline_month_reviews": return decodeMonthReviewRows(result.data) as RowByTable[T][];
       case "earnline_tombstones": return decodeTombstoneRows(result.data) as RowByTable[T][];
     }
   }
@@ -109,7 +112,7 @@ export class DirectSupabaseRemote implements SyncRemote {
   }
 
   async deleteRows(
-    table: Exclude<RowTable, "earnline_tombstones">,
+    table: Exclude<RowTable, "earnline_tombstones" | "earnline_month_reviews">,
     ids: string[],
     signal?: AbortSignal,
   ): Promise<void> {

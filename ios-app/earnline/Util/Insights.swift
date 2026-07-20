@@ -1,8 +1,10 @@
 import Foundation
+import SwiftData
 
 /// Immutable, actor-independent input for the Insights dashboard. SwiftData
-/// models are copied once on the main actor, then all dashboard aggregation can
-/// run away from SwiftUI's render path without crossing model isolation.
+/// models are copied once by a private model actor, then all dashboard
+/// aggregation can run away from SwiftUI's render path without crossing model
+/// isolation.
 struct InsightsDashboardInput: Sendable {
     struct ClientRecord: Sendable {
         let id: UUID
@@ -21,6 +23,11 @@ struct InsightsDashboardInput: Sendable {
 
     let clients: [ClientRecord]
     let converter: CurrencyConverter
+
+    init(records: [ClientRecord], converter: CurrencyConverter) {
+        self.clients = records
+        self.converter = converter
+    }
 
     @MainActor
     init(clients: [Client], converter: CurrencyConverter) {
@@ -45,16 +52,14 @@ struct InsightsDashboardInput: Sendable {
         }
     }
 
-    /// One pass produces every figure the sheet needs. The chart series and
-    /// the heatmap always span the last 12 months — the card's range control
-    /// merely slices the series, so toggling 3M/6M/1Y never re-aggregates.
-    /// The leading month before the chart window is retained only as the
-    /// first point's comparison base.
+    /// One pass produces every figure the sheet needs. The leading month before
+    /// the visible window is retained only as the first point's comparison base.
     nonisolated func dashboardSnapshot(
+        windowMonths: Int = InsightsDashboardSnapshot.chartMonthCount,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> InsightsDashboardSnapshot {
-        let count = InsightsDashboardSnapshot.chartMonthCount
+        let count = max(windowMonths, 1)
         let thisMonth = monthStart(now, calendar: calendar)
         let visibleMonths = (0..<count).reversed().compactMap {
             calendar.date(byAdding: .month, value: -$0, to: thisMonth)
@@ -62,8 +67,7 @@ struct InsightsDashboardInput: Sendable {
         let previousMonth = calendar.date(byAdding: .month, value: -count, to: thisMonth)
         let visibleKeys = Set(visibleMonths.map { monthKey($0, calendar: calendar) })
         let comparisonKeys = visibleKeys.union(previousMonth.map { [monthKey($0, calendar: calendar)] } ?? [])
-        let heatmapMonths = Array(visibleMonths.suffix(InsightsDashboardSnapshot.heatmapMonthCount))
-        let windowStart = heatmapMonths.first ?? thisMonth
+        let windowStart = visibleMonths.first ?? thisMonth
         let windowEnd = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: thisMonth) ?? thisMonth
         let currentYear = calendar.component(.year, from: now)
 
@@ -127,7 +131,8 @@ struct InsightsDashboardInput: Sendable {
         let windowTotal = monthlyIncome.reduce(Decimal.zero) { $0 + $1.total }
         let activeMonthCount = monthlyIncome.count { $0.total > 0 }
         return InsightsDashboardSnapshot(
-            months: heatmapMonths,
+            windowMonths: count,
+            months: visibleMonths,
             monthlyIncome: monthlyIncome,
             dailyEarnings: dailyEarnings,
             clientTotals: clientTotals,
@@ -148,14 +153,56 @@ struct InsightsDashboardInput: Sendable {
     }
 }
 
+/// Reads the dashboard's ledger rows on a private model actor before reducing
+/// them into the Sendable snapshot consumed by `InsightsView`. Opening the
+/// sheet can therefore show its loading state immediately even when the local
+/// ledger has thousands of entries.
+@ModelActor
+actor InsightsDashboardLoader {
+    func load(
+        windowMonths: Int,
+        converter: CurrencyConverter,
+        now: Date = .now
+    ) throws -> InsightsDashboardSnapshot {
+        let storedClients = try modelContext.fetch(FetchDescriptor<Client>(
+            sortBy: [SortDescriptor(\Client.sortIndex)]
+        ))
+        let clientIDs = Set(storedClients.lazy.filter { !$0.isDeleted }.map(\.id))
+
+        var entriesByClientID: [UUID: [InsightsDashboardInput.EntryRecord]] = [:]
+        for entry in try modelContext.fetch(FetchDescriptor<Entry>()) {
+            guard !entry.isDeleted,
+                  let clientID = entry.client?.id,
+                  clientIDs.contains(clientID) else { continue }
+            entriesByClientID[clientID, default: []].append(.init(
+                amount: entry.amount,
+                currencyCode: entry.currencyCode,
+                date: entry.date,
+                holdUntil: entry.holdUntil,
+                isEarned: entry.status.isIncludedInEarnedTotals
+            ))
+        }
+
+        let records = storedClients.compactMap { client -> InsightsDashboardInput.ClientRecord? in
+            guard !client.isDeleted else { return nil }
+            return .init(
+                id: client.id,
+                name: client.name,
+                colorHex: client.colorHex,
+                entries: entriesByClientID[client.id, default: []]
+            )
+        }
+        return InsightsDashboardInput(records: records, converter: converter)
+            .dashboardSnapshot(windowMonths: windowMonths, now: now)
+    }
+}
+
 /// Complete presentation state for one Insights period. Views read this value
 /// directly, so selecting a day or chart bar never re-aggregates the ledger.
 struct InsightsDashboardSnapshot: Sendable {
-    /// The chart series always carries a year of months; the card's local
-    /// range control shows the trailing 3, 6, or all 12.
+    /// The default dashboard window retained for callers that do not choose a
+    /// period explicitly. The Insights screen may request 3, 6, or 12 months.
     static let chartMonthCount = 12
-    /// The daily heatmap covers the same trailing year as the chart; the
-    /// fixed-cell grid simply scrolls horizontally for the older months.
     static let heatmapMonthCount = 12
 
     struct MonthPoint: Identifiable, Sendable {
@@ -173,9 +220,10 @@ struct InsightsDashboardSnapshot: Sendable {
         let total: Decimal
     }
 
-    /// The heatmap's months (trailing `heatmapMonthCount`), oldest first.
+    let windowMonths: Int
+    /// The heatmap's months for the selected window, oldest first.
     let months: [Date]
-    /// The chart's months (trailing `chartMonthCount`), oldest first.
+    /// The chart's months for the selected window, oldest first.
     let monthlyIncome: [MonthPoint]
     let dailyEarnings: [Date: Decimal]
     let clientTotals: [ClientTotal]
@@ -405,10 +453,10 @@ struct Insights {
     /// Built fresh per body evaluation — cheap enough that no cross-render
     /// cache (and no cache-invalidation bug surface) is needed.
     struct LedgerSnapshot {
-        /// Months with at least one entry (newest first), always including the
-        /// current month — same contract as `monthsWithData`. A windowed
-        /// snapshot lists only the window's months; older ones materialize
-        /// when the ledger extends its window.
+        /// Months with visible ledger content (newest first), always including
+        /// the current month. Entry rows provide the normal months and note
+        /// events add their otherwise-empty months. A windowed snapshot lists
+        /// only the materialized window; older ones materialize incrementally.
         let months: [Date]
         /// Earned base-currency total per month key (canceled excluded).
         let earnedTotalByMonth: [Int: Decimal]
@@ -493,7 +541,8 @@ struct Insights {
             }
         }
         return buildLedgerSnapshot(rows: rows, hasAnyEntries: nil,
-                                   pendingCount: nil, hasOlderMonths: false)
+                                   pendingCount: nil, hasOlderMonths: false,
+                                   additionalMonths: [])
     }
 
     /// Windowed snapshot: `entries` are just the rows inside the ledger's
@@ -504,18 +553,21 @@ struct Insights {
     func ledgerSnapshot(windowed entries: [Entry],
                         hasOlderMonths: Bool,
                         hasAnyEntries: Bool,
-                        pendingCount: Int) -> LedgerSnapshot {
+                        pendingCount: Int,
+                        additionalMonths: [Date] = []) -> LedgerSnapshot {
         let rows = entries.compactMap { entry in
             entry.client.map { (owner: $0, entry: entry) }
         }
         return buildLedgerSnapshot(rows: rows, hasAnyEntries: hasAnyEntries,
-                                   pendingCount: pendingCount, hasOlderMonths: hasOlderMonths)
+                                   pendingCount: pendingCount, hasOlderMonths: hasOlderMonths,
+                                   additionalMonths: additionalMonths)
     }
 
     private func buildLedgerSnapshot(rows: [(owner: Client, entry: Entry)],
                                      hasAnyEntries: Bool?,
                                      pendingCount pendingCountOverride: Int?,
-                                     hasOlderMonths: Bool) -> LedgerSnapshot {
+                                     hasOlderMonths: Bool,
+                                     additionalMonths: [Date]) -> LedgerSnapshot {
         var entriesByClientMonth: [LedgerSnapshot.ClientMonth: [Entry]] = [:]
         var earnedTotalByClientMonth: [LedgerSnapshot.ClientMonth: Decimal] = [:]
         var earnedTotalByMonth: [Int: Decimal] = [:]
@@ -543,6 +595,9 @@ struct Insights {
             }
         }
 
+        for month in additionalMonths {
+            monthKeys.insert(Self.monthKey(of: month, calendar: calendar))
+        }
         monthKeys.insert(Self.monthKey(of: .now, calendar: calendar))
         let months = monthKeys.sorted(by: >).compactMap { key in
             calendar.date(from: DateComponents(year: key / 12, month: key % 12 + 1))

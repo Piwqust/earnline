@@ -58,7 +58,7 @@ struct LedgerBottomBarItems: ToolbarContent {
                 MenuRowLabel("Client", glyph: "person.crop.circle.badge.plus")
             }
             Button(action: onNewHeading) {
-                MenuRowLabel("Heading", glyph: "text.alignleft")
+                MenuRowLabel("Event note", glyph: "note.text")
             }
             if !clients.isEmpty {
                 Button(action: onPasteLines) {

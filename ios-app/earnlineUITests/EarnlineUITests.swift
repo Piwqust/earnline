@@ -203,6 +203,30 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["insights.selectedDay"].exists)
     }
 
+    func testLedgerStatsCardOpensInsightsOnGeneratedLedger() {
+        let app = launchApp(["-demoLedger"])
+
+        let stats = app.buttons["ledger.stats"]
+        XCTAssertTrue(stats.waitForExistence(timeout: 8))
+        XCTAssertTrue(stats.isHittable)
+        stats.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["insights.sheet"].waitForExistence(timeout: 5))
+    }
+
+    func testLedgerStatsCardOpensInsightsOnStressLedger() {
+        let app = launchApp(["-demoStressLedger"])
+
+        let stats = app.buttons["ledger.stats"]
+        XCTAssertTrue(stats.waitForExistence(timeout: 15))
+        XCTAssertTrue(stats.isHittable)
+        stats.tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["insights.sheet"].waitForExistence(timeout: 5))
+        let chartOrLoading = app.descendants(matching: .any)["insights.monthlyIncomeChart"]
+        XCTAssertTrue(chartOrLoading.waitForExistence(timeout: 12))
+    }
+
     func testLargeLedgerClientProfileAppearsBeforeAggregationCompletes() {
         let app = launchApp(["-demoClientProfile"])
 

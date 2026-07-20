@@ -47,15 +47,25 @@ struct LedgerRowBuilder {
         // An active composer is content even before the first entry exists —
         // otherwise creating your first client dead-ends on the empty state
         // instead of opening the composer it promised.
-        !headings.isEmpty || snapshot.hasEntries || activeComposerClient != nil
+        headings.contains { !$0.isInvalidated } || snapshot.hasEntries || activeComposerClient != nil
     }
 
     func blocks(in month: Date, snapshot: Insights.LedgerSnapshot) -> [LedgerBlock] {
         let headingBlocks = headings
-            .filter { Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) }
+            .filter {
+                !$0.isInvalidated
+                    && Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month)
+            }
+            .sorted {
+                $0.date == $1.date ? $0.createdAt < $1.createdAt : $0.date < $1.date
+            }
             .map(LedgerBlock.heading)
-        let clientBlocks = sectionClients(in: month, snapshot: snapshot).map(LedgerBlock.client)
-        return (headingBlocks + clientBlocks).sorted { $0.isOrderedBefore($1) }
+        let clientBlocks = sectionClients(in: month, snapshot: snapshot)
+            .sorted { $0.sortIndex == $1.sortIndex ? $0.createdAt < $1.createdAt : $0.sortIndex < $1.sortIndex }
+            .map(LedgerBlock.client)
+        // A note is a dated event, not a movable divider. Events lead a month
+        // in chronological order; income stays in its familiar client groups.
+        return headingBlocks + clientBlocks
     }
 
     func rows(
@@ -74,13 +84,15 @@ struct LedgerRowBuilder {
             for block in blocks(in: month, snapshot: snapshot) {
                 switch block {
                 case .heading(let heading):
-                    rows.append(.heading(heading))
+                    rows.append(.heading(heading, month))
                 case .client(let client):
                     rows.append(.client(client, month, snapshot.total(of: client, monthKey: key)))
                     if isComposerMonth(month), activeComposerClient?.id == client.id {
-                        rows.append(.composer(client))
+                        rows.append(.composer(client, month))
                     }
-                    rows.append(contentsOf: snapshot.entries(of: client, monthKey: key).map(LedgerRow.entry))
+                    rows.append(contentsOf: snapshot.entries(of: client, monthKey: key).map {
+                        LedgerRow.entry($0, month)
+                    })
                 }
             }
         }
@@ -118,7 +130,7 @@ struct LedgerRowBuilder {
                     .reduce(.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
                 monthTotal += earned
                 monthRows.append(.client(client, month, earned))
-                monthRows.append(contentsOf: matches.map(LedgerRow.entry))
+                monthRows.append(contentsOf: matches.map { LedgerRow.entry($0, month) })
             }
             if !monthRows.isEmpty {
                 rows.append(.month(month, monthTotal))

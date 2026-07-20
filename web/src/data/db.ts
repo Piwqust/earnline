@@ -5,7 +5,7 @@
 
 import Dexie, { type Table } from "dexie";
 import { useSyncExternalStore } from "react";
-import type { Client, Entry, Heading, Tombstone } from "../domain/types";
+import type { Client, Entry, Heading, MonthReview, Tombstone } from "../domain/types";
 
 export interface SyncMetadata {
   id: "sync";
@@ -27,6 +27,7 @@ export interface RecoveryEnvelope {
   clients: Client[];
   entries: Entry[];
   headings: Heading[];
+  monthReviews: MonthReview[];
   tombstones: Tombstone[];
 }
 
@@ -56,6 +57,7 @@ export class EarnlineDB extends Dexie {
   clients!: Table<Client, string>;
   entries!: Table<Entry, string>;
   headings!: Table<Heading, string>;
+  monthReviews!: Table<MonthReview, string>;
   tombstones!: Table<Tombstone, string>;
   syncMetadata!: Table<SyncMetadata, "sync">;
   syncLeases!: Table<SyncLease, "sync">;
@@ -82,6 +84,15 @@ export class EarnlineDB extends Dexie {
       clients: "id, sortIndex, syncState, updatedAt",
       entries: "id, clientId, date, sortIndex, syncState, updatedAt",
       headings: "id, date, sortIndex, syncState, updatedAt",
+      tombstones: "id, entity, recordId, deletedAt",
+      syncMetadata: "id",
+      syncLeases: "id, expiresAt",
+    });
+    this.version(4).stores({
+      clients: "id, sortIndex, syncState, updatedAt",
+      entries: "id, clientId, date, sortIndex, syncState, updatedAt",
+      headings: "id, date, sortIndex, syncState, updatedAt",
+      monthReviews: "id, monthStart, syncState, updatedAt",
       tombstones: "id, entity, recordId, deletedAt",
       syncMetadata: "id",
       syncLeases: "id, expiresAt",
@@ -119,35 +130,41 @@ function emitDatabaseChanged(): void {
 }
 
 async function isEmpty(database: EarnlineDB): Promise<boolean> {
-  const [clients, entries, headings, tombstones] = await Promise.all([
+  const [clients, entries, headings, monthReviews, tombstones] = await Promise.all([
     database.clients.count(),
     database.entries.count(),
     database.headings.count(),
+    database.monthReviews.count(),
     database.tombstones.count(),
   ]);
-  return clients + entries + headings + tombstones === 0;
+  return clients + entries + headings + monthReviews + tombstones === 0;
 }
 
 async function copyDatabase(source: EarnlineDB, target: EarnlineDB): Promise<void> {
-  const [clients, entries, headings, tombstones, metadata] = await Promise.all([
+  const [clients, entries, headings, monthReviews, tombstones, metadata] = await Promise.all([
     source.clients.toArray(),
     source.entries.toArray(),
     source.headings.toArray(),
+    source.monthReviews.toArray(),
     source.tombstones.toArray(),
     source.syncMetadata.get("sync"),
   ]);
   await target.transaction(
     "rw",
-    target.clients,
-    target.entries,
-    target.headings,
-    target.tombstones,
-    target.syncMetadata,
+    [
+      target.clients,
+      target.entries,
+      target.headings,
+      target.monthReviews,
+      target.tombstones,
+      target.syncMetadata,
+    ],
     async () => {
       await Promise.all([
         target.clients.bulkPut(clients),
         target.entries.bulkPut(entries),
         target.headings.bulkPut(headings),
+        target.monthReviews.bulkPut(monthReviews),
         target.tombstones.bulkPut(tombstones),
       ]);
       if (metadata) await target.syncMetadata.put(metadata);
@@ -210,10 +227,11 @@ export async function requestPersistentStorage(): Promise<boolean | null> {
 }
 
 export async function exportDatabase(database: EarnlineDB = db): Promise<RecoveryEnvelope> {
-  const [clients, entries, headings, tombstones] = await Promise.all([
+  const [clients, entries, headings, monthReviews, tombstones] = await Promise.all([
     database.clients.toArray(),
     database.entries.toArray(),
     database.headings.toArray(),
+    database.monthReviews.toArray(),
     database.tombstones.toArray(),
   ]);
   return {
@@ -224,6 +242,7 @@ export async function exportDatabase(database: EarnlineDB = db): Promise<Recover
     clients,
     entries,
     headings,
+    monthReviews,
     tombstones,
   };
 }
@@ -239,29 +258,35 @@ export function decodeRecoveryEnvelope(value: unknown): RecoveryEnvelope {
   for (const key of ["clients", "entries", "headings", "tombstones"] as const) {
     if (!Array.isArray(value[key])) throw new Error(`Backup field ${key} is missing.`);
   }
-  return value as unknown as RecoveryEnvelope;
+  if (value.monthReviews != null && !Array.isArray(value.monthReviews)) {
+    throw new Error("Backup field monthReviews is invalid.");
+  }
+  return { ...value, monthReviews: value.monthReviews ?? [] } as unknown as RecoveryEnvelope;
 }
 
 /** Restore is additive by id and marks restored rows dirty so they are pushed. */
 export async function importDatabase(
   raw: unknown,
   database: EarnlineDB = db,
-): Promise<{ clients: number; entries: number; headings: number; tombstones: number }> {
+): Promise<{ clients: number; entries: number; headings: number; monthReviews: number; tombstones: number }> {
   const backup = decodeRecoveryEnvelope(raw);
   const now = Date.now();
   const clients = backup.clients.map((row) => ({ ...row, syncState: "dirty" as const, updatedAt: now }));
   const headings = backup.headings.map((row) => ({ ...row, syncState: "dirty" as const, updatedAt: now }));
   const entries = backup.entries.map((row) => ({ ...row, syncState: "dirty" as const, updatedAt: now }));
+  const monthReviews = backup.monthReviews.map((row) => ({ ...row, syncState: "dirty" as const, updatedAt: now }));
   await database.transaction(
     "rw",
     database.clients,
     database.entries,
     database.headings,
+    database.monthReviews,
     database.tombstones,
     async () => {
       await database.clients.bulkPut(clients);
       await database.headings.bulkPut(headings);
       await database.entries.bulkPut(entries);
+      await database.monthReviews.bulkPut(monthReviews);
       await database.tombstones.bulkPut(backup.tombstones);
     },
   );
@@ -269,6 +294,7 @@ export async function importDatabase(
     clients: clients.length,
     entries: entries.length,
     headings: headings.length,
+    monthReviews: monthReviews.length,
     tombstones: backup.tombstones.length,
   };
 }

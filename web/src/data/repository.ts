@@ -6,7 +6,12 @@
 import { getDatabase, type EarnlineDB } from "./db";
 import { newUuid, deterministicUuid } from "../domain/deterministicId";
 import { nowMs } from "../domain/dateFormat";
-import type { Client, Entry, EntryStatus, Heading, SyncEntity } from "../domain/types";
+import {
+  monthReviewId,
+  monthReviewMonthStart,
+  validateMonthReviewNote,
+} from "../domain/monthReview";
+import type { Client, Entry, EntryStatus, Heading, MonthReview, SyncEntity } from "../domain/types";
 
 async function enqueueTombstone(
   database: EarnlineDB,
@@ -167,15 +172,60 @@ export async function deleteHeading(id: string): Promise<void> {
   });
 }
 
+// --- month reviews ---
+
+/** Soft-close a calendar month. The row is retained and updates the same
+ * deterministic record on every client instead of creating a deletion race. */
+export async function closeMonthReview(input: {
+  monthContaining: number;
+  note: string;
+}): Promise<MonthReview> {
+  validateMonthReviewNote(input.note);
+  const database = getDatabase();
+  const monthStart = monthReviewMonthStart(input.monthContaining);
+  const id = monthReviewId(monthStart);
+  const now = nowMs();
+  const current = await database.monthReviews.get(id);
+  const review: MonthReview = {
+    id,
+    monthStart,
+    note: input.note,
+    closedAt: now,
+    createdAt: current?.createdAt ?? now,
+    updatedAt: now,
+    syncState: "dirty",
+    lastSyncedAt: current?.lastSyncedAt ?? null,
+  };
+  await database.monthReviews.put(review);
+  return review;
+}
+
+/** Reopening is an upsert with `closedAt = null`; it never creates a tombstone. */
+export async function reopenMonthReview(monthContaining: number): Promise<MonthReview | undefined> {
+  const database = getDatabase();
+  const id = monthReviewId(monthContaining);
+  const current = await database.monthReviews.get(id);
+  if (!current || current.closedAt == null) return current;
+  const reopened: MonthReview = {
+    ...current,
+    closedAt: null,
+    updatedAt: nowMs(),
+    syncState: "dirty",
+  };
+  await database.monthReviews.put(reopened);
+  return reopened;
+}
+
 // --- counts (Settings: pending sync) ---
 
 export async function pendingSyncCount(): Promise<number> {
   const database = getDatabase();
-  const [clients, entries, headings, tombstones] = await Promise.all([
+  const [clients, entries, headings, monthReviews, tombstones] = await Promise.all([
     database.clients.where("syncState").notEqual("synced").count(),
     database.entries.where("syncState").notEqual("synced").count(),
     database.headings.where("syncState").notEqual("synced").count(),
+    database.monthReviews.where("syncState").notEqual("synced").count(),
     database.tombstones.count(),
   ]);
-  return clients + entries + headings + tombstones;
+  return clients + entries + headings + monthReviews + tombstones;
 }

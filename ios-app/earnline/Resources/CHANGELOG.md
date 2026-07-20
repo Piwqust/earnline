@@ -63,6 +63,23 @@
 - Applied filters appear as native tokens in the search field and combine naturally — a client plus a month plus "Paid" narrows to exactly those lines, and two months means either month.
 - Typing a date works too: "march", "march 2026", or "2026" finds lines from those dates, alongside the existing client, project, task, and amount matching.
 - The results header keeps its running count and earned total for whatever combination of filters and text is active.
+## July 20, 2026
+
+### Ledger
+- Scrolling across month boundaries is calmer on long histories: the ledger now uses the native list position instead of measuring every visible row, and summary graphs no longer morph while you scroll.
+- Event notes now read as dated, full-width notes in the ledger; a month with only a note remains visible.
+
+### Insights and sync
+- The Stats card is now explicitly reachable to accessibility and automated checks, and Insights shows its loading state before preparing a large dashboard.
+- Choosing the cloud copy now removes stale local project-icon preferences and month closures as well as income, clients, notes, and deletion records, so old local data cannot be pushed back to the workspace.
+
+### Reports
+- Insights can now preview and share a monthly report as beautiful PNG cards through the standard iPhone Share Sheet. Original-currency totals stay visible, and an optional current-rate USD equivalent clearly identifies excluded currencies.
+- Client profiles can share a client-only report for a month or a custom date range. It contains work, dates, projects, amounts, and statuses — never other clients or private notes.
+- You can softly close a personal month from its report with an optional note, then reopen it later; closing never locks your ledger rows.
+
+### Data
+- Settings now includes CSV export and a safe import preview. CSV exchange is limited to income lines; invalid rows or duplicates stop the import before anything changes, and new clients require confirmation.
 
 ## July 13, 2026
 

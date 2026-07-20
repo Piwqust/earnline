@@ -167,6 +167,8 @@ enum SyncCoordinator {
             predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
         let projectIcons = try context.fetch(FetchDescriptor<ProjectIconPreference>(
             predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
+        let monthReviews = try context.fetch(FetchDescriptor<MonthReview>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }))
 
         // Snapshot the dirty rows *and their edit stamps* before each upsert:
         // the UI stays live while the request is on the wire, so only the rows
@@ -195,6 +197,14 @@ enum SyncCoordinator {
             let stamps = dirtyProjectIcons.map(\.syncUpdatedAt)
             try await client.from("earnline_project_icons").upsert(payload).execute()
             markPushed(dirtyProjectIcons, stamps: stamps)
+        }
+
+        let dirtyMonthReviews = monthReviews.filter(\.needsSync)
+        if !dirtyMonthReviews.isEmpty {
+            let payload = dirtyMonthReviews.map { RemoteMonthReview($0, workspaceID: workspaceID) }
+            let stamps = dirtyMonthReviews.map(\.syncUpdatedAt)
+            try await client.from("earnline_month_reviews").upsert(payload).execute()
+            markPushed(dirtyMonthReviews, stamps: stamps)
         }
 
         var dirtyEntries: [Entry] = []
@@ -247,6 +257,19 @@ enum SyncCoordinator {
         ))
     }
 
+    private static func localMonthReviews(
+        ids: [UUID],
+        context: ModelContext
+    ) throws -> [MonthReview] {
+        guard !ids.isEmpty else { return [] }
+        guard ids.count <= idPredicateLimit else {
+            return try context.fetch(FetchDescriptor<MonthReview>())
+        }
+        return try context.fetch(FetchDescriptor<MonthReview>(
+            predicate: #Predicate { ids.contains($0.id) }
+        ))
+    }
+
     /// Mark exactly the pushed rows synced — skipping any that were edited or
     /// deleted while the upsert was in flight, so they stay dirty for the next
     /// pass instead of being silently dropped. The post-push pull sets the
@@ -277,6 +300,9 @@ enum SyncCoordinator {
         let projectIconSince = try context.fetchCount(FetchDescriptor<ProjectIconPreference>()) == 0
             ? nil
             : lastPulledAt
+        let monthReviewSince = try context.fetchCount(FetchDescriptor<MonthReview>()) == 0
+            ? nil
+            : lastPulledAt
 
         let remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
         let remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
@@ -286,10 +312,19 @@ enum SyncCoordinator {
             workspaceID: workspaceID,
             updatedAfter: projectIconSince
         )
+        let remoteMonthReviews = try await fetchMonthReviews(
+            client: client,
+            workspaceID: workspaceID,
+            updatedAfter: monthReviewSince
+        )
 
         let localHeadings = try localHeadings(ids: remoteHeadings.map(\.id), context: context)
         let localEntries = try localEntries(ids: remoteEntries.map(\.id), context: context)
         let localProjectIcons = try localProjectIcons(ids: remoteProjectIcons.map(\.id), context: context)
+        let localMonthReviewRows = try localMonthReviews(
+            ids: remoteMonthReviews.map(\.id),
+            context: context
+        )
 
         let maxUpdatedAt = (remoteClients.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
             + remoteHeadings.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
@@ -298,6 +333,17 @@ enum SyncCoordinator {
                 ProjectIconResolver.normalizedKey(for: $0.projectKey).isEmpty
                     ? nil
                     : SyncDateCodec.parseTimestamp($0.updatedAt)
+            }
+            + remoteMonthReviews.compactMap { record in
+                let closedAtIsValid = record.closedAt == nil
+                    || record.closedAt.flatMap(SyncDateCodec.parseTimestamp) != nil
+                guard MonthReview.isValid(note: record.note),
+                      let monthStart = SyncDateCodec.parseDay(record.monthStart),
+                      SyncDateCodec.dayString(monthStart).hasSuffix("-01"),
+                      record.id == MonthReview.id(for: monthStart),
+                      closedAtIsValid
+                else { return nil }
+                return SyncDateCodec.parseTimestamp(record.updatedAt)
             }).max()
 
         var clientsByID = Dictionary(uniqueKeysWithValues: localClients.map { ($0.id, $0) })
@@ -371,6 +417,52 @@ enum SyncCoordinator {
                 )
                 context.insert(preference)
                 projectIconsByID[record.id] = preference
+            }
+        }
+
+        var monthReviewsByID = Dictionary(uniqueKeysWithValues: localMonthReviewRows.map { ($0.id, $0) })
+
+        for record in remoteMonthReviews {
+            guard MonthReview.isValid(note: record.note),
+                  let monthStart = SyncDateCodec.parseDay(record.monthStart),
+                  SyncDateCodec.dayString(monthStart).hasSuffix("-01"),
+                  record.id == MonthReview.id(for: monthStart),
+                  let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
+            let closedAt: Date?
+            if let closedAtRaw = record.closedAt {
+                guard let parsedClosedAt = SyncDateCodec.parseTimestamp(closedAtRaw) else { continue }
+                closedAt = parsedClosedAt
+            } else {
+                closedAt = nil
+            }
+            let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
+            if let local = monthReviewsByID[record.id] {
+                if conflictsWithDirtyLocal(remoteUpdatedAt: remoteUpdatedAt,
+                                           localLastSyncedAt: local.lastSyncedAt,
+                                           localState: local.syncState) {
+                    if conflictResolution == .requireUserChoice { conflictCount += 1 }
+                    continue
+                }
+                guard shouldApplyRemote(localState: local.syncState) else { continue }
+                local.monthStart = MonthReview.monthStart(of: monthStart)
+                local.note = record.note
+                local.closedAt = closedAt
+                local.createdAt = createdAt
+                local.updatedAt = remoteUpdatedAt
+                local.markSynced(at: remoteUpdatedAt)
+            } else {
+                let review = MonthReview(
+                    id: record.id,
+                    monthStart: monthStart,
+                    note: record.note,
+                    closedAt: closedAt,
+                    createdAt: createdAt,
+                    updatedAt: remoteUpdatedAt,
+                    syncState: .synced,
+                    lastSyncedAt: remoteUpdatedAt
+                )
+                context.insert(review)
+                monthReviewsByID[record.id] = review
             }
         }
 
@@ -601,6 +693,21 @@ enum SyncCoordinator {
             RemoteProjectIcon.self,
             client: client,
             table: "earnline_project_icons",
+            workspaceID: workspaceID,
+            cursorColumn: "updated_at",
+            since: updatedAfter
+        )
+    }
+
+    private static func fetchMonthReviews(
+        client: SupabaseClient,
+        workspaceID: String,
+        updatedAfter: Date?
+    ) async throws -> [RemoteMonthReview] {
+        try await fetchPaged(
+            RemoteMonthReview.self,
+            client: client,
+            table: "earnline_month_reviews",
             workspaceID: workspaceID,
             cursorColumn: "updated_at",
             since: updatedAfter

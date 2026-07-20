@@ -1,7 +1,7 @@
 import { withSupabase } from "npm:@supabase/server@^1";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@^2";
 
-type TableName = "earnline_clients" | "earnline_entries" | "earnline_headings" | "earnline_project_icons" | "earnline_tombstones";
+type TableName = "earnline_clients" | "earnline_entries" | "earnline_headings" | "earnline_project_icons" | "earnline_month_reviews" | "earnline_tombstones";
 type CursorColumn = "updated_at" | "deleted_at";
 
 const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
@@ -9,8 +9,10 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   earnline_entries: ["id", "client_id", "amount", "currency_code", "project", "task", "date", "hold_until", "status", "sort_index", "created_at", "updated_at"],
   earnline_headings: ["id", "title", "date", "sort_index", "created_at", "updated_at"],
   earnline_project_icons: ["id", "project_key", "symbol_name", "created_at", "updated_at"],
+  earnline_month_reviews: ["id", "month_start", "note", "closed_at", "created_at", "updated_at"],
   earnline_tombstones: ["id", "entity", "record_id", "deleted_at", "created_at"],
 };
+const MONTH_REVIEW_MAX_NOTE_LENGTH = 280;
 const PROJECT_SYMBOLS = new Set([
   "folder", "briefcase", "display", "paintpalette", "camera", "video",
   "music.note", "doc.text", "megaphone", "cart", "globe",
@@ -76,6 +78,23 @@ function normalizedProjectKey(value: string): string {
   return value.trim().split(/\s+/u).join(" ").normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
+function isMonthStart(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-01$/.exec(value);
+  if (!match) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime())
+    && parsed.getUTCFullYear() === Number(match[1])
+    && parsed.getUTCMonth() + 1 === Number(match[2])
+    && parsed.getUTCDate() === 1;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T/.test(value)
+    && Number.isFinite(Date.parse(value));
+}
+
 function scopedRows(value: unknown, table: TableName, workspaceId: string): Record<string, unknown>[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 1000) throw new Error("Invalid sync row batch.");
   const allowed = new Set(TABLE_COLUMNS[table]);
@@ -97,6 +116,13 @@ function scopedRows(value: unknown, table: TableName, workspaceId: string): Reco
         output.project_key !== normalizedProjectKey(output.project_key) ||
         typeof output.symbol_name !== "string" || !PROJECT_SYMBOLS.has(output.symbol_name))) {
       throw new Error("Every project icon requires a normalized project key and supported symbol.");
+    }
+    if (table === "earnline_month_reviews" &&
+      (!isMonthStart(output.month_start) || typeof output.note !== "string" ||
+        Array.from(output.note).length > MONTH_REVIEW_MAX_NOTE_LENGTH ||
+        !Object.hasOwn(output, "closed_at") ||
+        (output.closed_at !== null && output.closed_at !== undefined && !isTimestamp(output.closed_at)))) {
+      throw new Error("Every month review requires a month start, short note, and valid close timestamp.");
     }
     if (table === "earnline_tombstones") {
       if (typeof output.record_id !== "string" || !UUID_PATTERN.test(output.record_id)) {
@@ -188,6 +214,7 @@ async function executeAction(
     const table = tableName(body.table);
     if (table === "earnline_tombstones") throw new Error("Tombstones are append-only.");
     if (table === "earnline_project_icons") throw new Error("Project icons reset through upsert, not delete.");
+    if (table === "earnline_month_reviews") throw new Error("Month reviews reopen through upsert, not delete.");
     const recordIds = ids(body.ids);
     if (recordIds.length > 0) {
       const { error } = await userClient.from(table).delete().eq("workspace_id", workspaceId).in("id", recordIds);

@@ -185,13 +185,27 @@ enum EarnlineSchemaV2: VersionedSchema {
     }
 }
 
+enum EarnlineSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [Client.self, Entry.self, Heading.self, SyncTombstone.self, ProjectIconPreference.self, MonthReview.self]
+    }
+}
+
 enum EarnlineMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [EarnlineSchemaV1.self, EarnlineSchemaV2.self] }
-    static var stages: [MigrationStage] { [v1toV2] }
+    static var schemas: [any VersionedSchema.Type] {
+        [EarnlineSchemaV1.self, EarnlineSchemaV2.self, EarnlineSchemaV3.self]
+    }
+    static var stages: [MigrationStage] { [v1toV2, v2toV3] }
 
     static let v1toV2 = MigrationStage.lightweight(
         fromVersion: EarnlineSchemaV1.self,
         toVersion: EarnlineSchemaV2.self
+    )
+
+    static let v2toV3 = MigrationStage.lightweight(
+        fromVersion: EarnlineSchemaV2.self,
+        toVersion: EarnlineSchemaV3.self
     )
 }
 
@@ -231,6 +245,7 @@ extension Client: SyncableModel {}
 extension Entry: SyncableModel {}
 extension Heading: SyncableModel {}
 extension ProjectIconPreference: SyncableModel {}
+extension MonthReview: SyncableModel {}
 
 extension Client {
     var syncState: SyncState {
@@ -293,6 +308,26 @@ extension Heading {
 }
 
 extension ProjectIconPreference {
+    var syncState: SyncState {
+        get { syncStateRaw.flatMap(SyncState.init(rawValue:)) ?? .dirty }
+        set { syncStateRaw = newValue.rawValue }
+    }
+
+    var needsSync: Bool { syncState != .synced }
+    var syncUpdatedAt: Date { updatedAt ?? createdAt }
+
+    func markDirty(at date: Date = .now) {
+        updatedAt = date
+        syncState = .dirty
+    }
+
+    func markSynced(at date: Date = .now) {
+        syncState = .synced
+        lastSyncedAt = date
+    }
+}
+
+extension MonthReview {
     var syncState: SyncState {
         get { syncStateRaw.flatMap(SyncState.init(rawValue:)) ?? .dirty }
         set { syncStateRaw = newValue.rawValue }

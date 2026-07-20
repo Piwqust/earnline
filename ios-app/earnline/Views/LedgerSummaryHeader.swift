@@ -39,7 +39,6 @@ struct LedgerSummaryHeader: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
-        .animation(.snappy, value: app.displayedMonth)
         .animation(.snappy, value: isSearching)
     }
 

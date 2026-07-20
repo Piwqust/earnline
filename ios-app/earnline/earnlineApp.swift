@@ -147,12 +147,20 @@ private struct WorkspaceContainerHost: View {
             // personal Supabase workspace. Insights visual/UI tests explicitly
             // request the deterministic generated ledger; other tests remain
             // empty and fast.
-            if AppModel.hasUIAutomationLaunchFlag("-demoInsights") {
+            if AppModel.hasUIAutomationLaunchFlag("-demoInsights")
+                || AppModel.hasUIAutomationLaunchFlag("-demoLedger") {
                 SampleData.seedGenerated(context)
-            } else if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile") {
+            } else if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile")
+                || AppModel.hasUIAutomationLaunchFlag("-demoStressLedger") {
                 SampleData.seedStress(context)
             } else if AppModel.hasUIAutomationLaunchFlag("-demoComposer") {
                 SampleData.seed(context)
+            }
+            // The client-profile harness exists to exercise the achievement
+            // collection itself. Keep this test-only fixture self-contained
+            // instead of depending on a setting left behind by another test.
+            if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile") {
+                app.clientBadgesEnabled = true
             }
             return
         }
@@ -300,7 +308,7 @@ private struct WorkspaceStore {
 
     init(key: Key) throws {
         self.key = key
-        let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
+        let schema = Schema(versionedSchema: EarnlineSchemaV3.self)
         // UI and unit tests must never open a person's old simulator store.
         // UI automation also seeds deterministic demo/stress fixtures. An
         // in-memory container keeps both test surfaces isolated and prevents

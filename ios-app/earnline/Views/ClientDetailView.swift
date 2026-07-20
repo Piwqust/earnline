@@ -25,6 +25,9 @@ struct ClientDetailView: View {
     @State private var snapshotError: String?
     @State private var dataRevision = 0
     @State private var rendersAchievementPreview = true
+    @State private var presentsClientReportPicker = false
+    @State private var pendingClientReport: ReportSnapshot?
+    @State private var presentsClientReportPreview = false
 
     private struct SnapshotRevision: Hashable {
         let baseCurrencyCode: String
@@ -92,6 +95,19 @@ struct ClientDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    // A cancelled picker must never reopen a previously
+                    // generated report when the next share attempt closes.
+                    pendingClientReport = nil
+                    presentsClientReportPicker = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .tint(.primary)
+                .accessibilityLabel("Share client report")
+                .accessibilityIdentifier("client.report.share")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showEditSheet = true } label: {
                     Image(systemName: "pencil")
                 }
@@ -109,6 +125,26 @@ struct ClientDetailView: View {
                 otherClientNames: clients.filter { $0.id != client.id }.map(\.name),
                 onDelete: deleteClient
             )
+        }
+        .sheet(isPresented: $presentsClientReportPicker, onDismiss: {
+            // Present only after the scope picker has completely gone away.
+            // Chaining the two sheets in the same state transaction can make
+            // UIKit drop the second presentation.
+            if pendingClientReport != nil {
+                presentsClientReportPreview = true
+            }
+        }) {
+            ClientReportScopePicker(clientName: client.name) { scope in
+                pendingClientReport = makeClientReport(scope: scope)
+                presentsClientReportPicker = false
+            }
+        }
+        .sheet(isPresented: $presentsClientReportPreview, onDismiss: {
+            pendingClientReport = nil
+        }) {
+            if let pendingClientReport {
+                ReportPreviewView(snapshot: pendingClientReport)
+            }
         }
         .undoToastHost()
         .task(id: snapshotRevision) {
@@ -418,6 +454,22 @@ struct ClientDetailView: View {
                 context.rollback()
             }
         }
+    }
+
+    /// Report rows are copied into an immutable snapshot only after the user
+    /// asks to share. The client audience then filters out all other clients,
+    /// event notes, personal comparisons, and month-review information before
+    /// the PNG renderer receives anything.
+    private func makeClientReport(scope: ReportScope) -> ReportSnapshot {
+        let input = ReportSnapshotInput(
+            clients: [client],
+            headings: [],
+            converter: app.converter
+        )
+        return ReportSnapshotBuilder(input: input).snapshot(
+            scope: scope,
+            audience: .client(id: client.id, name: client.name)
+        )
     }
 
     // MARK: Helpers

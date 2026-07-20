@@ -277,6 +277,56 @@ struct RemoteHeading: Codable, Identifiable {
     }
 }
 
+struct RemoteMonthReview: Codable, Identifiable {
+    let id: UUID
+    let workspaceID: String
+    let monthStart: String
+    let note: String
+    let closedAt: String?
+    let createdAt: String
+    let updatedAt: String
+
+    init(_ review: MonthReview, workspaceID: String) {
+        id = review.id
+        self.workspaceID = workspaceID
+        monthStart = SyncDateCodec.dayString(review.monthStart)
+        note = review.note
+        closedAt = review.closedAt.map(SyncDateCodec.timestampString)
+        createdAt = SyncDateCodec.timestampString(review.createdAt)
+        updatedAt = SyncDateCodec.timestampString(review.syncUpdatedAt)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case workspaceID = "workspace_id"
+        case monthStart = "month_start"
+        case note
+        case closedAt = "closed_at"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    /// A reopen is semantically different from an absent patch field: PostgREST
+    /// must receive an explicit JSON `null` to clear a previously stored close
+    /// timestamp during an upsert. Synthesized `Codable` uses
+    /// `encodeIfPresent`, which omits a nil optional and would leave the cloud
+    /// month closed forever.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(workspaceID, forKey: .workspaceID)
+        try container.encode(monthStart, forKey: .monthStart)
+        try container.encode(note, forKey: .note)
+        if let closedAt {
+            try container.encode(closedAt, forKey: .closedAt)
+        } else {
+            try container.encodeNil(forKey: .closedAt)
+        }
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
+}
+
 struct WorkspaceProfilePayload: Codable, Equatable {
     let workspaceID: String
     let baseCurrencyCode: String

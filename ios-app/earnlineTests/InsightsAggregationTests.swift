@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import earnline
 
@@ -103,6 +104,36 @@ struct InsightsAggregationTests {
         #expect(Insights.monthKey(of: date(2026, 1, 15)) - Insights.monthKey(of: date(2025, 12, 15)) == 1)
     }
 
+    @Test func ledgerRowsCarryTheirRepresentedMonthWithoutReadingGeometry() {
+        let month = DateFormat.monthStart(of: date(2025, 12, 22))
+        let entry = Entry(amount: 100, task: "Year-end work", date: date(2025, 12, 22))
+        let row = LedgerRow.entry(entry, month)
+
+        #expect(row.representedMonth == month)
+        #expect(row.id.representedMonth == month)
+    }
+
+    @Test func ledgerPrefetchCrossesJanuaryWithoutMissingTheTrendBoundary() {
+        let january = DateFormat.monthStart(of: date(2026, 1, 15))
+        let august = DateFormat.monthStart(of: date(2025, 8, 15))
+
+        #expect(LedgerWindowPrefetch.needsExtension(
+            for: january,
+            windowStart: january,
+            hasOlderMonths: true
+        ))
+        #expect(!LedgerWindowPrefetch.needsExtension(
+            for: january,
+            windowStart: august,
+            hasOlderMonths: true
+        ))
+        #expect(!LedgerWindowPrefetch.needsExtension(
+            for: january,
+            windowStart: january,
+            hasOlderMonths: false
+        ))
+    }
+
     @Test func ledgerSnapshotMatchesPerMonthAggregation() {
         let ins = insights()
         let a = Client(name: "A")
@@ -175,6 +206,27 @@ struct InsightsAggregationTests {
         #expect(windowed.pendingCount == 7)
     }
 
+    @Test func windowedLedgerSnapshotIncludesAnOtherwiseEmptyEventMonth() {
+        let ins = insights()
+        let client = Client(name: "Acme")
+        let recent = Entry(amount: 100, task: "recent", date: thisMonth, status: .paid)
+        recent.client = client
+        let noteMonth = monthsAgo(3)
+
+        let snapshot = ins.ledgerSnapshot(
+            windowed: [recent],
+            hasOlderMonths: false,
+            hasAnyEntries: true,
+            pendingCount: 0,
+            additionalMonths: [noteMonth]
+        )
+
+        let normalizedNoteMonth = DateFormat.monthStart(of: noteMonth)
+        #expect(snapshot.months.contains(normalizedNoteMonth))
+        #expect(snapshot.monthTotal(monthKey: snapshot.key(for: normalizedNoteMonth)) == .zero)
+        #expect(snapshot.months == snapshot.months.sorted(by: >))
+    }
+
     @Test func fullLedgerSnapshotReportsNoOlderMonths() {
         let client = Client(name: "Acme")
         client.entries = [Entry(amount: 10, task: "only", date: monthsAgo(3), status: .inProgress)]
@@ -220,6 +272,29 @@ struct InsightsAggregationTests {
         #expect(snapshot.dailyEarnings[Calendar.current.startOfDay(for: date(2026, 7, 11))] == 100)
         #expect(snapshot.bestMonth?.total == 300)
         #expect(snapshot.averageMonth == 200)
+    }
+
+    @Test func dashboardLoaderFetchesAndCopiesTheLedgerOnItsModelActor() async throws {
+        let container = try ModelContainer(
+            for: Client.self, Entry.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let client = Client(name: "Acme")
+        let entry = Entry(amount: 300, task: "Launch", date: date(2026, 7, 10), status: .paid)
+        entry.client = client
+        context.insert(client)
+        context.insert(entry)
+        try context.save()
+
+        let snapshot = try await InsightsDashboardLoader(modelContainer: container).load(
+            windowMonths: 1,
+            converter: CurrencyConverter(baseCurrencyCode: "USD", secondaryCurrencyCode: "RUB", rate: 83),
+            now: date(2026, 7, 11)
+        )
+
+        #expect(snapshot.monthlyIncome.last?.total == 300)
+        #expect(snapshot.clientTotals.map(\.name) == ["Acme"])
     }
 
     // MARK: Client profile snapshot

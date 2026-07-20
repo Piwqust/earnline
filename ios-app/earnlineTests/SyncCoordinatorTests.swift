@@ -93,7 +93,7 @@ struct SyncCoordinatorTests {
 
     private func makeContainer() throws -> ModelContainer {
         try ModelContainer(
-            for: Client.self, Entry.self, Heading.self, SyncTombstone.self, ProjectIconPreference.self,
+            for: Client.self, Entry.self, Heading.self, SyncTombstone.self, ProjectIconPreference.self, MonthReview.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
     }
@@ -259,6 +259,72 @@ struct SyncCoordinatorTests {
         #expect(cursor.rowUpdatedAt == timestamp("2026-07-04T10:00:00.000Z"))
     }
 
+    @Test func pullInsertsMonthReviewAndAdvancesCursor() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let monthStart = try #require(SyncDateCodec.parseDay("2026-01-01"))
+        let id = MonthReview.id(for: monthStart)
+
+        MockTransport.respond("GET", "earnline_month_reviews", json: """
+        [{"id":"\(id.uuidString)","workspace_id":"\(workspace)",
+          "month_start":"2026-01-01","note":"Closed after delivery",
+          "closed_at":"2026-02-01T12:00:00.000Z",
+          "created_at":"2026-02-01T09:00:00.000Z","updated_at":"2026-02-02T10:00:00.000Z"}]
+        """)
+
+        let cursor = try await SyncCoordinator.sync(
+            context: context,
+            client: makeClient(),
+            workspaceID: workspace
+        )
+
+        let review = try #require(try context.fetch(FetchDescriptor<MonthReview>()).first)
+        #expect(review.id == id)
+        #expect(SyncDateCodec.dayString(review.monthStart) == "2026-01-01")
+        #expect(review.note == "Closed after delivery")
+        #expect(review.closedAt == timestamp("2026-02-01T12:00:00.000Z"))
+        #expect(review.syncState == .synced)
+        #expect(cursor.rowUpdatedAt == timestamp("2026-02-02T10:00:00.000Z"))
+    }
+
+    @Test func cloudReopenClearsAnExistingMonthReviewCloseDate() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let monthStart = try #require(SyncDateCodec.parseDay("2026-01-01"))
+        let id = MonthReview.id(for: monthStart)
+        let existing = MonthReview(
+            id: id,
+            monthStart: monthStart,
+            note: "Locally closed",
+            closedAt: timestamp("2026-02-01T12:00:00.000Z"),
+            createdAt: timestamp("2026-02-01T09:00:00.000Z"),
+            updatedAt: timestamp("2026-02-01T12:00:00.000Z"),
+            syncState: .synced,
+            lastSyncedAt: timestamp("2026-02-01T12:00:00.000Z")
+        )
+        context.insert(existing)
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_month_reviews", json: """
+        [{"id":"\(id.uuidString)","workspace_id":"\(workspace)",
+          "month_start":"2026-01-01","note":"Cloud reopened",
+          "closed_at":null,
+          "created_at":"2026-02-01T09:00:00.000Z","updated_at":"2026-02-03T10:00:00.000Z"}]
+        """)
+
+        _ = try await SyncCoordinator.sync(
+            context: context,
+            client: makeClient(),
+            workspaceID: workspace
+        )
+
+        #expect(existing.note == "Cloud reopened")
+        #expect(existing.closedAt == nil)
+        #expect(existing.syncState == .synced)
+    }
+
     @Test func malformedRemoteRowsAreSkippedNotDefaulted() async throws {
         MockTransport.reset()
         let container = try makeContainer()
@@ -299,10 +365,16 @@ struct SyncCoordinatorTests {
             projectKey: ProjectIconResolver.normalizedKey(for: "Site"),
             symbol: .display
         )
+        let monthReview = MonthReview(
+            monthStart: timestamp("2026-01-01T12:00:00.000Z"),
+            note: "January closed",
+            closedAt: timestamp("2026-02-01T12:00:00.000Z")
+        )
         entry.client = client
         context.insert(client)
         context.insert(entry)
         context.insert(projectIcon)
+        context.insert(monthReview)
         try context.save()
 
         let cursor = try await SyncCoordinator.sync(context: context,
@@ -317,10 +389,16 @@ struct SyncCoordinatorTests {
                 && $0.body.contains("site")
                 && $0.body.contains("display")
         })
+        #expect(posts.contains {
+            $0.table == "earnline_month_reviews"
+                && $0.body.contains("2026-01-01")
+                && $0.body.contains("January closed")
+        })
 
         #expect(try context.fetch(FetchDescriptor<Client>()).first?.syncState == .synced)
         #expect(try context.fetch(FetchDescriptor<Entry>()).first?.syncState == .synced)
         #expect(try context.fetch(FetchDescriptor<ProjectIconPreference>()).first?.syncState == .synced)
+        #expect(try context.fetch(FetchDescriptor<MonthReview>()).first?.syncState == .synced)
         // Nothing was pulled, so there is no observed server stamp to advance to.
         #expect(cursor.rowUpdatedAt == nil)
     }

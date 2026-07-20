@@ -16,8 +16,8 @@ struct SettingsView: View {
 
     @State private var saveError: String?
     /// Counts shown in the form, refreshed on demand via `fetchCount` (a SQL
-    /// COUNT). The previous live `@Query`s materialized every row of all four
-    /// models and re-filtered them on each keystroke/pick, which made the
+    /// COUNT). The previous live `@Query`s materialized every synced row and
+    /// re-filtered them on each keystroke/pick, which made the
     /// currency pickers visibly lag on a large ledger.
     @State private var pendingSyncCount = 0
     @State private var unsupportedCurrencyCount = 0
@@ -45,6 +45,7 @@ struct SettingsView: View {
     #if DEBUGMENU
     @State private var showingDebugMenu = false
     #endif
+    @State private var csvTransferRoute: CSVTransferRoute?
     private let currencies = AppModel.supportedCurrencyCodes
 
     var body: some View {
@@ -161,47 +162,7 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
-                HStack {
-                    SettingsRowLabel(verbatim: "1 \(app.baseCurrencyCode)",
-                                     glyph: "chart.line.uptrend.xyaxis")
-                    Spacer()
-                    // The decimal pad has no return key, so the draft commits
-                    // when focus leaves the field (tap elsewhere, keyboard
-                    // drag-dismiss) and when the sheet goes away.
-                    TextField("Rate", value: rateFieldBinding, format: .number)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 110)
-                        .focused($rateFieldFocused)
-                        .onChange(of: rateFieldFocused) { _, focused in
-                            if !focused { commitRateDraft() }
-                        }
-                        .onDisappear(perform: commitRateDraft)
-                    Text(app.secondaryCurrencyCode)
-                        .foregroundStyle(.secondary)
-                }
-                Button(action: fetchRate) {
-                    HStack {
-                        SettingsRowLabel(isFetchingRate ? Text("Fetching rate...") : Text("Fetch current rate"),
-                                         glyph: "arrow.clockwise")
-                        Spacer()
-                        if isFetchingRate { ProgressView() }
-                    }
-                }
-                .disabled(isFetchingRate)
-            } header: {
-                Text("Display conversion rate")
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let rateFetchNote {
-                        Label(rateFetchNote,
-                              systemImage: rateFetchFailed ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                            .foregroundStyle(rateFetchFailed ? Theme.statusProgress : .secondary)
-                    }
-                    Text("Example: \(CurrencyFormatter.string(100, code: app.baseCurrencyCode)) = \(app.secondaryString(100)). Changing this rate updates converted displays; original entry amounts do not change.")
-                }
-            }
+            conversionRateSection
 
             #if DEBUGMENU
             Section {
@@ -282,6 +243,23 @@ struct SettingsView: View {
                     developerAboutContent
                 }
             }
+
+            Section {
+                Button {
+                    csvTransferRoute = .exportLedger
+                } label: {
+                    SettingsRowLabel("Export CSV", glyph: "square.and.arrow.up")
+                }
+                Button {
+                    csvTransferRoute = .importLedger
+                } label: {
+                    SettingsRowLabel("Import CSV", glyph: "square.and.arrow.down")
+                }
+            } header: {
+                Text("Data")
+            } footer: {
+                Text("Export or import ledger income lines in a standard CSV file. This is not a backup and does not include notes, month reviews, settings, or sync history.")
+            }
         }
         .scrollContentBackground(.hidden)
         .background(Theme.background)
@@ -339,9 +317,83 @@ struct SettingsView: View {
             Text("The \(guestLedgerCountText) you saved with “Continue without an account” will be added to this account and synced. Your on-device copy is left untouched, and importing again won’t create duplicates.")
         }
         .saveErrorAlert($saveError)
+        .sheet(item: $csvTransferRoute) { route in
+            CSVTransferView(route: route)
+        }
     }
 
     // MARK: Building blocks
+
+    @ViewBuilder
+    private var conversionRateSection: some View {
+        Section {
+            HStack {
+                SettingsRowLabel(verbatim: "1 \(appModel.baseCurrencyCode)",
+                                 glyph: "chart.line.uptrend.xyaxis")
+                Spacer()
+                // The decimal pad has no return key, so the draft commits when
+                // focus leaves the field or the sheet goes away.
+                TextField("Rate", value: rateFieldBinding, format: .number)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 110)
+                    .focused($rateFieldFocused)
+                    .onChange(of: rateFieldFocused) { _, focused in
+                        if !focused { commitRateDraft() }
+                    }
+                    .onDisappear(perform: commitRateDraft)
+                Text(appModel.secondaryCurrencyCode)
+                    .foregroundStyle(.secondary)
+            }
+            Button(action: fetchRate) {
+                HStack {
+                    SettingsRowLabel(isFetchingRate ? Text("Fetching rate...") : Text("Fetch current rate"),
+                                     glyph: "arrow.clockwise")
+                    Spacer()
+                    if isFetchingRate { ProgressView() }
+                }
+            }
+            .disabled(isFetchingRate)
+        } header: {
+            Text("Display conversion rate")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                if let rateFetchNote {
+                    Label(rateFetchNote,
+                          systemImage: rateFetchFailed ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(rateFetchFailed ? Theme.statusProgress : .secondary)
+                }
+                Text("Example: \(CurrencyFormatter.string(100, code: appModel.baseCurrencyCode)) = \(appModel.secondaryString(100)). Changing this rate updates converted displays; original entry amounts do not change.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var developerSupabaseContent: some View {
+        HStack(spacing: 12) {
+            SettingsRowGlyph(glyph: "network")
+            TextField("Project URL", text: Bindable(appModel).supabaseURLString)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        }
+        HStack(spacing: 12) {
+            SettingsRowGlyph(glyph: "key.horizontal")
+            TextField("Publishable key", text: Bindable(appModel).supabaseKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        }
+        Picker(selection: Bindable(appModel).workspaceEnvironment) {
+            ForEach(AppModel.WorkspaceEnvironment.allCases) { environment in
+                Text(environment.title).tag(environment)
+            }
+        } label: {
+            SettingsRowLabel("Workspace", glyph: "externaldrive")
+        }
+        .pickerStyle(.menu)
+        .tint(valueGray)
+        .accessibilityIdentifier("settings.workspace")
+    }
 
     @ViewBuilder
     private var developerSyncContent: some View {
@@ -550,12 +602,16 @@ struct SettingsView: View {
         let dirtyProjectIcons = FetchDescriptor<ProjectIconPreference>(
             predicate: #Predicate { $0.syncStateRaw != synced }
         )
+        let dirtyMonthReviews = FetchDescriptor<MonthReview>(
+            predicate: #Predicate { $0.syncStateRaw != synced }
+        )
         let tombstones = FetchDescriptor<SyncTombstone>()
         unsupportedCurrencyCount = (try? context.fetchCount(unsupported)) ?? 0
         pendingSyncCount = ((try? context.fetchCount(dirtyClients)) ?? 0)
             + ((try? context.fetchCount(dirtyEntries)) ?? 0)
             + ((try? context.fetchCount(dirtyHeadings)) ?? 0)
             + ((try? context.fetchCount(dirtyProjectIcons)) ?? 0)
+            + ((try? context.fetchCount(dirtyMonthReviews)) ?? 0)
             + ((try? context.fetchCount(tombstones)) ?? 0)
     }
 

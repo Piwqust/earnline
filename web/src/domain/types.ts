@@ -86,6 +86,18 @@ export interface Heading {
   lastSyncedAt?: number | null;
 }
 
+/** A soft close/reopen state for one calendar month; it is never tombstoned. */
+export interface MonthReview {
+  id: string;
+  monthStart: number; // UTC-midnight first day of the reviewed month, epoch ms
+  note: string;
+  closedAt?: number | null; // `null` means the month has been reopened
+  createdAt: number;
+  updatedAt?: number | null;
+  syncState: SyncState;
+  lastSyncedAt?: number | null;
+}
+
 export interface Tombstone {
   id: string;
   entity: SyncEntity;

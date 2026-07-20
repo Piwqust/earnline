@@ -1,26 +1,29 @@
 import SwiftUI
 
-/// Focused editor for both heading creation and rename. It owns its transient
-/// field/focus/confirmation state; `LedgerView` only receives typed outcomes.
+/// Focused editor for a dated event note. Its storage model remains `Heading`
+/// for sync compatibility, while the product only exposes a useful note.
 struct LedgerHeadingEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
 
     let allowsDeletion: Bool
-    let onSave: (String) -> Bool
+    let onSave: (String, Date) -> Bool
     let onDelete: (() -> Void)?
 
     @State private var title: String
+    @State private var date: Date
     @State private var confirmsDeletion = false
     @FocusState private var titleFocused: Bool
 
     init(
         initialTitle: String,
+        initialDate: Date,
         allowsDeletion: Bool,
-        onSave: @escaping (String) -> Bool,
+        onSave: @escaping (String, Date) -> Bool,
         onDelete: (() -> Void)? = nil
     ) {
         _title = State(initialValue: initialTitle)
+        _date = State(initialValue: initialDate)
         self.allowsDeletion = allowsDeletion
         self.onSave = onSave
         self.onDelete = onDelete
@@ -34,12 +37,19 @@ struct LedgerHeadingEditor: View {
         NavigationStack {
             VStack(spacing: 16) {
                 ChromeCard {
-                    ChromeRow(icon: "text.alignleft") {
-                        TextField("Title", text: $title)
-                            .focused($titleFocused)
-                            .submitLabel(.done)
-                            .onSubmit(save)
-                            .appFont(17)
+                    VStack(spacing: 0) {
+                        ChromeRow(icon: "note.text") {
+                            TextField("Note", text: $title)
+                                .focused($titleFocused)
+                                .submitLabel(.done)
+                                .onSubmit(save)
+                                .appFont(17)
+                        }
+                        ChromeDivider(inset: 16)
+                        ChromeRow(icon: "calendar") {
+                            DatePicker("Date", selection: $date, displayedComponents: .date)
+                                .tint(Theme.blue)
+                        }
                     }
                 }
 
@@ -49,7 +59,7 @@ struct LedgerHeadingEditor: View {
             .padding(.top, 8)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(Theme.background)
-            .navigationTitle("Heading")
+            .navigationTitle(allowsDeletion ? "Edit event note" : "New event note")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if allowsDeletion {
@@ -66,7 +76,7 @@ struct LedgerHeadingEditor: View {
                         .tint(.primary)
                 }
             }
-            .alert("Delete heading?", isPresented: $confirmsDeletion) {
+            .alert("Delete event note?", isPresented: $confirmsDeletion) {
                 Button("Delete", role: .destructive) {
                     onDelete?()
                     dismiss()
@@ -76,7 +86,7 @@ struct LedgerHeadingEditor: View {
                 Text(cleanTitle.isEmpty ? String(localized: "Untitled") : cleanTitle)
             }
         }
-        .presentationDetents(typeSize.isAccessibilitySize ? [.medium] : [.height(240)])
+        .presentationDetents(typeSize.isAccessibilitySize ? [.medium] : [.height(300)])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.background)
         .task {
@@ -86,7 +96,7 @@ struct LedgerHeadingEditor: View {
     }
 
     private func save() {
-        guard !cleanTitle.isEmpty, onSave(cleanTitle) else { return }
+        guard !cleanTitle.isEmpty, onSave(cleanTitle, date) else { return }
         dismiss()
     }
 }

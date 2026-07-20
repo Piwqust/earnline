@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import type { Client, Entry } from "../domain/types";
+import type { Client, Entry, MonthReview } from "../domain/types";
 import { centsFromNumber } from "../domain/money";
 import { dayMsFromParts } from "../domain/dateFormat";
+import { monthReviewId } from "../domain/monthReview";
 import {
   clientToRow,
   entryToRow,
@@ -11,6 +12,8 @@ import {
   timestampString,
   decodeEntryRows,
   RemoteDecodeError,
+  monthReviewToRow,
+  rowToMonthReview,
 } from "./remoteRecords";
 
 function makeEntry(amount: number, status: Entry["status"]): Entry {
@@ -85,6 +88,46 @@ describe("remoteRecords — wire parity", () => {
     expect(parseDay("2026-01-05")).toBe(day);
     const ts = Date.UTC(2026, 0, 5, 9, 30, 15, 250);
     expect(parseTimestamp(timestampString(ts))).toBe(ts);
+  });
+
+  it("round-trips a soft month close with the deterministic month ID", () => {
+    const monthStart = dayMsFromParts(2026, 1, 1);
+    const review: MonthReview = {
+      id: monthReviewId(monthStart),
+      monthStart,
+      note: "Closed after delivery",
+      closedAt: Date.UTC(2026, 1, 2, 9, 0),
+      createdAt: Date.UTC(2026, 1, 1, 12, 0),
+      updatedAt: Date.UTC(2026, 1, 2, 9, 0),
+      syncState: "dirty",
+      lastSyncedAt: null,
+    };
+    const row = monthReviewToRow(review, "ws");
+    expect(row.month_start).toBe("2026-01-01");
+    expect(row.closed_at).toBe(new Date(review.closedAt!).toISOString());
+    expect(rowToMonthReview(row, Date.now())).toMatchObject({
+      id: review.id,
+      monthStart,
+      note: review.note,
+      closedAt: review.closedAt,
+      syncState: "synced",
+    });
+  });
+
+  it("encodes reopening as an explicit null close timestamp", () => {
+    const monthStart = dayMsFromParts(2026, 1, 1);
+    const row = monthReviewToRow({
+      id: monthReviewId(monthStart),
+      monthStart,
+      note: "Reopened",
+      closedAt: null,
+      createdAt: Date.UTC(2026, 1, 1, 12, 0),
+      updatedAt: Date.UTC(2026, 1, 2, 9, 0),
+      syncState: "dirty",
+      lastSyncedAt: null,
+    }, "ws");
+    expect(Object.hasOwn(row, "closed_at")).toBe(true);
+    expect(row.closed_at).toBeNull();
   });
 
   it("rejects malformed timestamps, days, money, and status", () => {

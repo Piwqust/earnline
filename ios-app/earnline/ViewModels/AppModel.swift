@@ -42,6 +42,8 @@ final class AppModel {
 
     nonisolated static var isRunningUIAutomation: Bool {
         hasUIAutomationLaunchFlag("-uiTesting")
+            || hasUIAutomationLaunchFlag("-demoLedger")
+            || hasUIAutomationLaunchFlag("-demoStressLedger")
     }
     /// Swift Testing exercises the App Lock state machine directly, but its
     /// ephemeral host window never receives a full scene appearance cycle.

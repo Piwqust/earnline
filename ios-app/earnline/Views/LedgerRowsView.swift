@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Renders the heterogeneous ledger rows and owns their row-level interaction
 /// wiring. `LedgerView` keeps screen orchestration and persistence; this view
-/// keeps row presentation, swipe actions, and month-anchor reporting together.
+/// keeps row presentation and native swipe actions together.
 struct LedgerRowsView: View {
     @Environment(AppModel.self) private var app
 
@@ -16,8 +16,6 @@ struct LedgerRowsView: View {
     let onEditEntry: (UUID) -> Void
     let onDeleteEntry: (UUID) -> Void
     let onEditHeading: (UUID) -> Void
-    let onMoveHeading: (Heading, Int) -> Void
-    let canMoveHeading: (Heading, Int) -> Bool
     let onDeleteHeading: (UUID) -> Void
 
     var body: some View {
@@ -46,10 +44,8 @@ struct LedgerRowsView: View {
         switch row {
         case .month(let month, let total):
             MonthDivider(title: DateFormat.month(month), total: total)
-                .background(monthAnchorReader(month))
-        case .heading(let heading):
+        case .heading(let heading, _):
             headingRow(heading)
-                .background(monthAnchorReader(DateFormat.monthStart(of: heading.date)))
         case .client(let client, let month, let total):
             ClientChip(
                 client: client,
@@ -59,14 +55,12 @@ struct LedgerRowsView: View {
                 onOpen: { onOpenClient(client.id) },
                 onAdd: { onToggleComposer(client, month) }
             )
-            .background(monthAnchorReader(month))
-        case .composer(let client):
+        case .composer(let client, _):
             SmartComposer(client: client, month: composerMonth ?? .now)
                 .tourAnchor(.composer)
                 .transition(.opacity)
-        case .entry(let entry):
+        case .entry(let entry, _):
             entryRow(entry)
-                .background(monthAnchorReader(DateFormat.monthStart(of: entry.date)))
         }
     }
 
@@ -95,57 +89,51 @@ struct LedgerRowsView: View {
     }
 
     private func headingRow(_ heading: Heading) -> some View {
-        HStack(spacing: 8) {
-            Text(heading.title.isEmpty ? String(localized: "Untitled") : heading.title)
-                .appFont(15, .semibold)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Rectangle()
-                .fill(Theme.hairline)
-                .frame(height: 1)
+        let title = heading.title.isEmpty ? String(localized: "Untitled") : heading.title
+        let date = DateFormat.dotted(heading.date)
+        let noteLabel = String(localized: "Note")
+        return Button {
+            onEditHeading(heading.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Label(noteLabel, systemImage: "note.text")
+                        .appFont(11, .medium)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text(date)
+                        .appFont(11)
+                        .foregroundStyle(.tertiary)
+                }
+                Text(title)
+                    .appFont(15, .medium)
+                    .foregroundStyle(Theme.label)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
         }
+        .buttonStyle(.plain)
         .contentShape(.rect)
-        .onTapGesture { onEditHeading(heading.id) }
         .contextMenu {
-            Button {
-                onMoveHeading(heading, -1)
-            } label: {
-                Label("Move Up", systemImage: "arrow.up")
-            }
-            .disabled(!canMoveHeading(heading, -1))
-
-            Button {
-                onMoveHeading(heading, 1)
-            } label: {
-                Label("Move Down", systemImage: "arrow.down")
-            }
-            .disabled(!canMoveHeading(heading, 1))
-
-            Divider()
             Button(role: .destructive) {
                 onDeleteHeading(heading.id)
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
-    }
-
-    private func monthAnchorReader(_ month: Date) -> some View {
-        GeometryReader { geometry in
-            Color.clear.preference(
-                key: MonthAnchorKey.self,
-                value: [MonthAnchor(
-                    month: month,
-                    y: geometry.frame(in: .named("ledger")).minY
-                )]
-            )
-        }
+        .accessibilityLabel("\(noteLabel): \(title), \(date)")
+        .accessibilityHint("Edits note")
     }
 
     private func insets(for row: LedgerRow) -> EdgeInsets {
         switch row {
         case .month: EdgeInsets(top: 16, leading: 16, bottom: 6, trailing: 16)
-        case .heading: EdgeInsets(top: 12, leading: 16, bottom: 2, trailing: 16)
+        case .heading: EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16)
         case .client: EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16)
         case .composer: EdgeInsets(top: 6, leading: 16, bottom: 8, trailing: 16)
         case .entry: EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16)

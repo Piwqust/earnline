@@ -5,23 +5,26 @@
 
 import type { Table } from "dexie";
 import { getDatabase, type EarnlineDB } from "../data/db";
-import type { Client, Entry, Heading, SyncEntity, SyncState, Tombstone } from "../domain/types";
+import type { Client, Entry, Heading, MonthReview, SyncEntity, SyncState, Tombstone } from "../domain/types";
 import { needsSync, syncUpdatedAt } from "../domain/types";
 import type { RowByTable, RowTable, SyncRemote } from "./remoteClient";
 import {
   type ClientRow,
   type EntryRow,
   type HeadingRow,
+  type MonthReviewRow,
   type TombstoneRow,
   type WorkspaceProfilePayload,
   type WorkspaceProfileRow,
   clientToRow,
   entryToRow,
   headingToRow,
+  monthReviewToRow,
   parseTimestamp,
   rowToClient,
   rowToEntry,
   rowToHeading,
+  rowToMonthReview,
   tableFor,
   tombstoneToRow,
 } from "./remoteRecords";
@@ -226,6 +229,15 @@ async function pushLocalRows(remote: SyncRemote, database: EarnlineDB, signal?: 
     await remote.upsertRows("earnline_entries", entries.map((row) => entryToRow(row, remote.rowWorkspace)), signal);
     await markPushed(database, database.entries, entries);
   }
+  const monthReviews = await database.monthReviews.where("syncState").notEqual("synced").toArray();
+  if (monthReviews.length > 0) {
+    await remote.upsertRows(
+      "earnline_month_reviews",
+      monthReviews.map((row) => monthReviewToRow(row, remote.rowWorkspace)),
+      signal,
+    );
+    await markPushed(database, database.monthReviews, monthReviews);
+  }
 }
 
 async function markPushed<
@@ -251,15 +263,16 @@ async function pullRemoteRows(
   resolution: ConflictResolution,
   signal?: AbortSignal,
 ): Promise<number> {
-  const [clientCount, headingCount, entryCount] = await Promise.all([
-    database.clients.count(), database.headings.count(), database.entries.count(),
+  const [clientCount, headingCount, entryCount, monthReviewCount] = await Promise.all([
+    database.clients.count(), database.headings.count(), database.entries.count(), database.monthReviews.count(),
   ]);
-  const [remoteClients, remoteHeadings, remoteEntries] = await Promise.all([
+  const [remoteClients, remoteHeadings, remoteEntries, remoteMonthReviews] = await Promise.all([
     fetchRows(remote, "earnline_clients", "updated_at", clientCount === 0 ? null : lastPulledMs, signal),
     fetchRows(remote, "earnline_headings", "updated_at", headingCount === 0 ? null : lastPulledMs, signal),
     fetchRows(remote, "earnline_entries", "updated_at", entryCount === 0 ? null : lastPulledMs, signal),
+    fetchRows(remote, "earnline_month_reviews", "updated_at", monthReviewCount === 0 ? null : lastPulledMs, signal),
   ]);
-  const maxUpdatedAt = [...remoteClients, ...remoteHeadings, ...remoteEntries].reduce((max, row) => {
+  const maxUpdatedAt = [...remoteClients, ...remoteHeadings, ...remoteEntries, ...remoteMonthReviews].reduce((max, row) => {
     const value = parseTimestamp(row.updated_at);
     return value == null ? max : Math.max(max, value);
   }, 0);
@@ -280,14 +293,26 @@ async function pullRemoteRows(
     return updatedAt > (remoteDeletionTimes.get(syncKey("entry", row.id)) ?? 0);
   });
 
-  await database.transaction("rw", database.clients, database.headings, database.entries, database.tombstones, async () => {
-    const [localClients, localHeadings, localEntries, localTombstones] = await Promise.all([
+  await database.transaction(
+    "rw",
+    database.clients,
+    database.headings,
+    database.entries,
+    database.monthReviews,
+    database.tombstones,
+    async () => {
+    const [localClients, localHeadings, localEntries, localMonthReviews, localTombstones] = await Promise.all([
       database.clients.toArray(), database.headings.bulkGet(headingsToApply.map((r) => r.id)),
-      database.entries.bulkGet(entriesToApply.map((r) => r.id)), database.tombstones.toArray(),
+      database.entries.bulkGet(entriesToApply.map((r) => r.id)),
+      database.monthReviews.bulkGet(remoteMonthReviews.map((r) => r.id)),
+      database.tombstones.toArray(),
     ]);
     const clientsById = new Map(localClients.map((row) => [row.id, row]));
     const headingsById = new Map(localHeadings.filter((v): v is Heading => v != null).map((row) => [row.id, row]));
     const entriesById = new Map(localEntries.filter((v): v is Entry => v != null).map((row) => [row.id, row]));
+    const monthReviewsById = new Map(
+      localMonthReviews.filter((v): v is MonthReview => v != null).map((row) => [row.id, row]),
+    );
     const pendingDeletes = new Map(localTombstones.map((row) => [syncKey(row.entity, row.recordId), row]));
 
     let conflicts = 0;
@@ -311,6 +336,11 @@ async function pullRemoteRows(
       const pendingDelete = pendingDeletes.get(syncKey("entry", row.id));
       if (updated != null && pendingDelete && hasDeleteConflict(updated, pendingDelete)) conflicts += 1;
       else if (local && updated != null && hasDirtyConflict(updated, local)) conflicts += 1;
+    }
+    for (const row of remoteMonthReviews) {
+      const local = monthReviewsById.get(row.id);
+      const updated = parseTimestamp(row.updated_at);
+      if (local && updated != null && hasDirtyConflict(updated, local)) conflicts += 1;
     }
     if (conflicts > 0 && resolution === "requireUserChoice") throw new SyncConflictError(conflicts);
 
@@ -363,7 +393,19 @@ async function pullRemoteRows(
       await database.entries.put(decoded);
       entriesById.set(row.id, decoded);
     }
-  });
+    for (const row of remoteMonthReviews) {
+      throwIfAborted(signal);
+      const updated = parseTimestamp(row.updated_at);
+      const local = monthReviewsById.get(row.id);
+      if (local && local.syncState !== "synced") {
+        if (resolution !== "preferRemote" || updated == null || !hasDirtyConflict(updated, local)) continue;
+      }
+      const decoded = rowToMonthReview(row, Date.now());
+      await database.monthReviews.put(decoded);
+      monthReviewsById.set(row.id, decoded);
+    }
+  },
+  );
   return maxUpdatedAt;
 }
 
@@ -387,4 +429,4 @@ async function fetchRows<T extends RowTable>(
 export const syncPolicy = { hasDirtyConflict, hasDeleteConflict, tombstoneApplies };
 
 // Keep these DTO types in the generated declaration surface for consumers.
-export type SyncRows = ClientRow | EntryRow | HeadingRow;
+export type SyncRows = ClientRow | EntryRow | HeadingRow | MonthReviewRow;

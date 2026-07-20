@@ -184,7 +184,7 @@ extension AppModel {
         invokedByRetry = false
         lastSyncFailed = false
         do {
-            try clearLocalStore(context)
+            try Self.clearLocalStore(context)
             syncCursor = nil
             lastSyncAt = nil
             defaults.set(false, forKey: SampleData.autoSeededDemoKey)
@@ -262,9 +262,12 @@ extension AppModel {
         return error
     }
 
-    /// Empty the local store — used by `resetLocalDataAndPull` when switching the
-    /// source of truth to a different Supabase workspace.
-    private func clearLocalStore(_ context: ModelContext) throws {
+    /// Empty only the local, synced workspace cache — used by
+    /// `resetLocalDataAndPull` when the user explicitly chooses the cloud as
+    /// source of truth. Workspace/profile/defaults configuration is deliberately
+    /// outside this helper. It is internal so the reset contract has a direct
+    /// regression test.
+    static func clearLocalStore(_ context: ModelContext) throws {
         for entry in try context.fetch(FetchDescriptor<Entry>()) {
             context.delete(entry)
         }
@@ -273,6 +276,12 @@ extension AppModel {
         }
         for tombstone in try context.fetch(FetchDescriptor<SyncTombstone>()) {
             context.delete(tombstone)
+        }
+        for projectIcon in try context.fetch(FetchDescriptor<ProjectIconPreference>()) {
+            context.delete(projectIcon)
+        }
+        for monthReview in try context.fetch(FetchDescriptor<MonthReview>()) {
+            context.delete(monthReview)
         }
         for client in try context.fetch(FetchDescriptor<Client>()) {
             context.delete(client)

@@ -2,10 +2,11 @@
 // of being rewritten with `Date.now()`/today; therefore the cursor never moves
 // past data the client did not actually understand.
 
-import type { Client, Entry, EntryStatus, Heading, SyncEntity, Tombstone } from "../domain/types";
+import type { Client, Entry, EntryStatus, Heading, MonthReview, SyncEntity, Tombstone } from "../domain/types";
 import { syncUpdatedAt } from "../domain/types";
 import { centsFromWire, centsToWireString } from "../domain/money";
 import { dayMsFromInputValue, inputValueFromDayMs } from "../domain/dateFormat";
+import { isValidMonthReviewNote, monthReviewId, monthReviewMonthStart } from "../domain/monthReview";
 
 export interface ClientRow {
   id: string;
@@ -39,6 +40,16 @@ export interface HeadingRow {
   title: string;
   date: string;
   sort_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MonthReviewRow {
+  id: string;
+  workspace_id: string;
+  month_start: string;
+  note: string;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -209,6 +220,34 @@ export function decodeHeadingRows(value: unknown): HeadingRow[] {
   });
 }
 
+export function decodeMonthReviewRows(value: unknown): MonthReviewRow[] {
+  return rows(value, "monthReviews").map((row, index) => {
+    const c = `monthReviews[${index}]`;
+    const monthStart = day(row, "month_start", c);
+    if (!monthStart.endsWith("-01")) throw new RemoteDecodeError(`${c}.month_start is not the first day of a month.`);
+    const note = string(row, "note", c, true);
+    if (!isValidMonthReviewNote(note)) throw new RemoteDecodeError(`${c}.note is too long.`);
+    const closedAt = nullableString(row, "closed_at", c);
+    if (closedAt != null && parseTimestamp(closedAt) == null) {
+      throw new RemoteDecodeError(`${c}.closed_at is not an ISO timestamp.`);
+    }
+    const monthStartMs = requiredDay(monthStart, `${c}.month_start`);
+    const id = string(row, "id", c);
+    if (id !== monthReviewId(monthStartMs)) {
+      throw new RemoteDecodeError(`${c}.id does not match its month.`);
+    }
+    return {
+      id,
+      workspace_id: string(row, "workspace_id", c),
+      month_start: monthStart,
+      note,
+      closed_at: closedAt,
+      created_at: timestamp(row, "created_at", c),
+      updated_at: timestamp(row, "updated_at", c),
+    };
+  });
+}
+
 export function decodeTombstoneRows(value: unknown): TombstoneRow[] {
   return rows(value, "tombstones").map((row, index) => {
     const c = `tombstones[${index}]`;
@@ -253,6 +292,25 @@ export function headingToRow(h: Heading, workspaceId: string): HeadingRow {
     created_at: timestampString(h.createdAt), updated_at: timestampString(syncUpdatedAt(h)) };
 }
 
+export function monthReviewToRow(review: MonthReview, workspaceId: string): MonthReviewRow {
+  const monthStart = monthReviewMonthStart(review.monthStart);
+  if (!isValidMonthReviewNote(review.note)) {
+    throw new Error("Cannot encode a month review with an oversized note.");
+  }
+  if (review.id !== monthReviewId(monthStart)) {
+    throw new Error("Cannot encode a month review whose id does not match its month.");
+  }
+  return {
+    id: review.id,
+    workspace_id: workspaceId,
+    month_start: dayString(monthStart),
+    note: review.note,
+    closed_at: review.closedAt != null ? timestampString(review.closedAt) : null,
+    created_at: timestampString(review.createdAt),
+    updated_at: timestampString(syncUpdatedAt(review)),
+  };
+}
+
 export function tombstoneToRow(t: Tombstone, workspaceId: string): TombstoneRow {
   return { id: t.id, workspace_id: workspaceId, entity: t.entity, record_id: t.recordId,
     deleted_at: timestampString(t.deletedAt), created_at: timestampString(t.createdAt) };
@@ -293,7 +351,33 @@ export function rowToHeading(row: HeadingRow, syncedAt: number): Heading {
     lastSyncedAt: updatedAt || syncedAt };
 }
 
-export function tableFor(entity: SyncEntity): Exclude<import("./remoteClient").RowTable, "earnline_tombstones"> {
+export function rowToMonthReview(row: MonthReviewRow, syncedAt: number): MonthReview {
+  if (!row.month_start.endsWith("-01")) {
+    throw new RemoteDecodeError("monthReview.month_start is not the first day of a month.");
+  }
+  if (!isValidMonthReviewNote(row.note)) {
+    throw new RemoteDecodeError("monthReview.note is too long.");
+  }
+  const monthStart = monthReviewMonthStart(requiredDay(row.month_start, "monthReview.month_start"));
+  if (row.id !== monthReviewId(monthStart)) {
+    throw new RemoteDecodeError("monthReview.id does not match its month.");
+  }
+  const updatedAt = requiredTimestamp(row.updated_at, "monthReview.updated_at");
+  return {
+    id: row.id,
+    monthStart,
+    note: row.note,
+    closedAt: row.closed_at != null ? requiredTimestamp(row.closed_at, "monthReview.closed_at") : null,
+    createdAt: requiredTimestamp(row.created_at, "monthReview.created_at"),
+    updatedAt,
+    syncState: "synced",
+    lastSyncedAt: updatedAt || syncedAt,
+  };
+}
+
+export function tableFor(
+  entity: SyncEntity,
+): Exclude<import("./remoteClient").RowTable, "earnline_tombstones" | "earnline_month_reviews"> {
   switch (entity) {
     case "client": return "earnline_clients";
     case "entry": return "earnline_entries";

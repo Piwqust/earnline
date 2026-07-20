@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { EarnlineDB } from "../data/db";
-import type { Client, Entry } from "../domain/types";
+import type { Client, Entry, MonthReview } from "../domain/types";
+import { monthReviewId } from "../domain/monthReview";
 import type { CursorColumn, RemoteValidation, RowByTable, RowTable, SyncRemote } from "./remoteClient";
 import type { WorkspaceProfilePayload, WorkspaceProfileRow } from "./remoteRecords";
 import { SyncConflictError, sync } from "./syncCoordinator";
@@ -14,7 +15,7 @@ class FakeRemote implements SyncRemote {
   now = BASE + 10_000;
   log: string[] = [];
   rows: { [T in RowTable]: RowByTable[T][] } = {
-    earnline_clients: [], earnline_entries: [], earnline_headings: [], earnline_tombstones: [],
+    earnline_clients: [], earnline_entries: [], earnline_headings: [], earnline_month_reviews: [], earnline_tombstones: [],
   };
 
   async validate(): Promise<RemoteValidation> { return { scope: "scope", transport: "proxy" }; }
@@ -42,7 +43,10 @@ class FakeRemote implements SyncRemote {
       if (index >= 0) target[index] = stamped; else target.push(stamped);
     }
   }
-  async deleteRows(table: Exclude<RowTable, "earnline_tombstones">, ids: string[]): Promise<void> {
+  async deleteRows(
+    table: Exclude<RowTable, "earnline_tombstones" | "earnline_month_reviews">,
+    ids: string[],
+  ): Promise<void> {
     this.log.push(`delete:${table}`);
     this.rows[table] = this.rows[table].filter((row) => !ids.includes(row.id)) as never;
   }
@@ -74,6 +78,33 @@ function remoteEntry(updated = BASE + 500) {
   return { id: "entry-1", workspace_id: "opaque", client_id: "client-1", amount: "200.00", currency_code: "USD",
     project: null, task: "Remote edit", date: "2026-01-01", hold_until: null, status: "paid" as const, sort_index: 0,
     created_at: new Date(BASE).toISOString(), updated_at: new Date(updated).toISOString() };
+}
+
+function localMonthReview(syncState: MonthReview["syncState"] = "dirty"): MonthReview {
+  const monthStart = Date.UTC(2026, 0, 1);
+  return {
+    id: monthReviewId(monthStart),
+    monthStart,
+    note: "Closed after delivery",
+    closedAt: BASE + 100,
+    createdAt: BASE,
+    updatedAt: BASE + 100,
+    syncState,
+    lastSyncedAt: syncState === "synced" ? BASE : null,
+  };
+}
+
+function remoteMonthReview(updated = BASE + 500) {
+  const monthStart = "2026-01-01";
+  return {
+    id: monthReviewId(Date.UTC(2026, 0, 1)),
+    workspace_id: "opaque",
+    month_start: monthStart,
+    note: "Cloud review",
+    closed_at: new Date(BASE + 200).toISOString(),
+    created_at: new Date(BASE).toISOString(),
+    updated_at: new Date(updated).toISOString(),
+  };
 }
 
 afterEach(async () => {
@@ -210,5 +241,28 @@ describe("sync coordinator", () => {
 
     await sync(remote, BASE, { database: db });
     expect(await db.entries.get("entry-1")).toBeUndefined();
+  });
+
+  it("syncs a month review as a soft close and applies a remote reopen", async () => {
+    const db = database();
+    const local = localMonthReview();
+    await db.monthReviews.put(local);
+    const remote = new FakeRemote();
+
+    await sync(remote, null, { database: db });
+    expect(remote.rows.earnline_month_reviews).toHaveLength(1);
+    expect(await db.monthReviews.get(local.id)).toMatchObject({ syncState: "synced", closedAt: local.closedAt });
+
+    remote.rows.earnline_month_reviews = [{
+      ...remoteMonthReview(BASE + 30_000),
+      closed_at: null,
+      note: "Reopened for a correction",
+    }];
+    await sync(remote, BASE, { database: db });
+    expect(await db.monthReviews.get(local.id)).toMatchObject({
+      note: "Reopened for a correction",
+      closedAt: null,
+      syncState: "synced",
+    });
   });
 });

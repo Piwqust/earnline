@@ -2,18 +2,25 @@ import type {
   ClientRow,
   EntryRow,
   HeadingRow,
+  MonthReviewRow,
   TombstoneRow,
   WorkspaceProfilePayload,
   WorkspaceProfileRow,
 } from "./remoteRecords";
 
-export type RowTable = "earnline_clients" | "earnline_entries" | "earnline_headings" | "earnline_tombstones";
+export type RowTable =
+  | "earnline_clients"
+  | "earnline_entries"
+  | "earnline_headings"
+  | "earnline_month_reviews"
+  | "earnline_tombstones";
 export type CursorColumn = "updated_at" | "deleted_at";
 
 export interface RowByTable {
   earnline_clients: ClientRow;
   earnline_entries: EntryRow;
   earnline_headings: HeadingRow;
+  earnline_month_reviews: MonthReviewRow;
   earnline_tombstones: TombstoneRow;
 }
 
@@ -40,7 +47,11 @@ export interface SyncRemote {
     signal?: AbortSignal,
   ): Promise<RowByTable[T][]>;
   upsertRows<T extends RowTable>(table: T, rows: RowByTable[T][], signal?: AbortSignal): Promise<void>;
-  deleteRows(table: Exclude<RowTable, "earnline_tombstones">, ids: string[], signal?: AbortSignal): Promise<void>;
+  deleteRows(
+    table: Exclude<RowTable, "earnline_tombstones" | "earnline_month_reviews">,
+    ids: string[],
+    signal?: AbortSignal,
+  ): Promise<void>;
   subscribe?(
     onChange: () => void,
     onStatus: (status: RemoteConnectionStatus, error?: string) => void,

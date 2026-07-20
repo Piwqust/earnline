@@ -5,7 +5,7 @@ struct LedgerView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Query(sort: \Client.sortIndex) private var clients: [Client]
-    @Query(sort: \Heading.sortIndex) private var headings: [Heading]
+    @Query(sort: \Heading.date, order: .reverse) private var headings: [Heading]
 
     /// The one aggregation pass over the whole ledger, cached across body
     /// evaluations. `LedgerView.body` re-evaluates many times around launch
@@ -19,6 +19,13 @@ struct LedgerView: View {
     @State private var ledgerSnapshot: Insights.LedgerSnapshot?
     /// Trailing months currently materialized — see `refreshLedgerSnapshot`.
     @State private var windowMonthCount = LedgerView.initialWindowMonths
+    /// The native List reports its top visible target. Its ID contains the
+    /// represented month, so scrolling never needs a geometry preference from
+    /// every row.
+    @State private var topVisibleLedgerTarget: LedgerScrollTarget?
+    /// Coalesces sentinel and month-boundary prefetch requests. SwiftData work
+    /// happens in a later task, never inside a scroll-position callback.
+    @State private var isExtendingLedgerWindow = false
     /// Full-ledger snapshot for search, built when search opens: search spans
     /// every month, not just the materialized window.
     @State private var searchSnapshot: Insights.LedgerSnapshot?
@@ -79,9 +86,9 @@ struct LedgerView: View {
 
     /// How many trailing months the ledger materializes. Launch fetches only
     /// this window (a date-scoped SQL fetch — the whole table is never
-    /// faulted); scrolling toward the bottom extends it. Six keeps the
-    /// summary trend (displayed month + five back) correct at launch.
-    private static let initialWindowMonths = 6
+    /// faulted); scrolling toward the bottom extends it. Eight gives the
+    /// summary trend enough room to remain continuous before prefetch begins.
+    private static let initialWindowMonths = 8
     private static let windowExtensionMonths = 12
 
     private var windowStart: Date {
@@ -101,10 +108,21 @@ struct LedgerView: View {
         let inProgressRaw = EntryStatus.inProgress.rawValue
         let pending = FetchDescriptor<Entry>(predicate: #Predicate { $0.statusRaw == inProgressRaw })
         let pendingCount = (try? context.fetchCount(pending)) ?? 0
+        // Notes are independent ledger events. Include their months in the
+        // window even when a month has no income rows, and let an older note
+        // request the same incremental history prefetch as an older entry.
+        let visibleHeadingMonths = headings.compactMap { heading -> Date? in
+            guard !heading.isInvalidated, heading.date >= start else { return nil }
+            return DateFormat.monthStart(of: heading.date)
+        }
+        let hasOlderHeadings = headings.contains { heading in
+            !heading.isInvalidated && heading.date < start
+        }
         ledgerSnapshot = app.insights.ledgerSnapshot(windowed: entries,
-                                                     hasOlderMonths: olderCount > 0,
+                                                     hasOlderMonths: olderCount > 0 || hasOlderHeadings,
                                                      hasAnyEntries: olderCount > 0 || !entries.isEmpty,
-                                                     pendingCount: pendingCount)
+                                                     pendingCount: pendingCount,
+                                                     additionalMonths: visibleHeadingMonths)
         // Search spans every month, not just the window; keep its full
         // snapshot in step while it's open.
         if isSearching { searchSnapshot = app.insights.ledgerSnapshot(clients) }
@@ -113,17 +131,28 @@ struct LedgerView: View {
     /// Materialize older months once the user nears the bottom of the window
     /// (the load-older sentinel row) or scrolls the summary pill close to the
     /// window's edge, where the six-month trend would otherwise miss data.
-    private func extendLedgerWindow() {
-        guard ledgerSnapshot?.hasOlderMonths == true else { return }
-        windowMonthCount += Self.windowExtensionMonths
-        refreshLedgerSnapshot()
+    private func requestLedgerWindowExtension() {
+        guard ledgerSnapshot?.hasOlderMonths == true, !isExtendingLedgerWindow else { return }
+        isExtendingLedgerWindow = true
+        // A List can prefetch the sentinel while the user is still scrolling.
+        // Yielding separates the SQL fetch from that scroll update, and the
+        // flag coalesces repeated sentinel/top-row signals into one extension.
+        Task { @MainActor in
+            await Task.yield()
+            defer { isExtendingLedgerWindow = false }
+            guard !Task.isCancelled, ledgerSnapshot?.hasOlderMonths == true else { return }
+            windowMonthCount += Self.windowExtensionMonths
+            refreshLedgerSnapshot()
+        }
     }
 
-    private func extendLedgerWindowIfNeeded(for displayedMonth: Date) {
-        guard ledgerSnapshot?.hasOlderMonths == true,
-              let trendStart = Calendar.current.date(byAdding: .month, value: -5, to: displayedMonth),
-              trendStart < windowStart else { return }
-        extendLedgerWindow()
+    private func prefetchLedgerWindowIfNeeded(for displayedMonth: Date) {
+        guard LedgerWindowPrefetch.needsExtension(
+            for: displayedMonth,
+            windowStart: windowStart,
+            hasOlderMonths: ledgerSnapshot?.hasOlderMonths == true
+        ) else { return }
+        requestLedgerWindowExtension()
     }
 
     var body: some View {
@@ -173,15 +202,17 @@ struct LedgerView: View {
         case .newHeading:
             LedgerHeadingEditor(
                 initialTitle: "",
+                initialDate: app.displayedMonth,
                 allowsDeletion: false,
-                onSave: { saveHeading(title: $0, headingID: nil) }
+                onSave: { saveHeading(title: $0, date: $1, headingID: nil) }
             )
         case .editHeading(let id):
             if let heading = heading(withID: id) {
                 LedgerHeadingEditor(
                     initialTitle: heading.title,
+                    initialDate: heading.date,
                     allowsDeletion: true,
-                    onSave: { saveHeading(title: $0, headingID: id) },
+                    onSave: { saveHeading(title: $0, date: $1, headingID: id) },
                     onDelete: { deleteHeading(withID: id) }
                 )
             }
@@ -191,7 +222,7 @@ struct LedgerView: View {
     private var confirmationTitle: String {
         switch confirmationRoute {
         case .deleteEntry: String(localized: "Delete income line?")
-        case .deleteHeading: String(localized: "Delete heading?")
+        case .deleteHeading: String(localized: "Delete event note?")
         case nil: ""
         }
     }
@@ -346,15 +377,14 @@ struct LedgerView: View {
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 } else {
                     rowsView(ledgerRows(snapshot))
-                    // Load-older sentinel: scrolling it into view materializes
-                    // the next chunk of months. Invisible — the extension is
-                    // synchronous, so older rows simply continue the list.
+                    // Load-older sentinel: scrolling it into view requests the
+                    // next chunk after the current scroll update completes.
                     if !isSearching, snapshot.hasOlderMonths {
                         Color.clear
                             .frame(height: 1)
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .onAppear(perform: extendLedgerWindow)
+                            .onAppear(perform: requestLedgerWindowExtension)
                     }
                 }
             }
@@ -366,6 +396,7 @@ struct LedgerView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 1)
+        .scrollPosition(id: $topVisibleLedgerTarget, anchor: .top)
         // Pull-to-refresh mirrors the standard syncable-list affordance; a
         // no-op while Supabase isn't configured. Disabled in search mode so
         // a pull doesn't fight the keyboard.
@@ -373,7 +404,6 @@ struct LedgerView: View {
             guard !isSearching, app.isSupabaseConfigured else { return }
             await app.syncNow(context: context)
         }
-        .coordinateSpace(name: "ledger")
         // The floating summary cards ride a top `safeAreaBar` — a real pinned
         // bar, which is what a scroll edge effect attaches to. The native soft
         // effect then frosts rows into a blurred band as they slide up behind
@@ -402,8 +432,9 @@ struct LedgerView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollDismissesKeyboard(.interactively)
-        .onPreferenceChange(MonthAnchorKey.self) { anchors in
-            updateDisplayedMonth(anchors)
+        .onChange(of: topVisibleLedgerTarget) { _, target in
+            guard !isSearching else { return }
+            updateDisplayedMonth(target?.representedMonth)
         }
         // Runs after the first frame commits — the app appears immediately and
         // the ledger fills in a beat later — then again when the currency
@@ -486,8 +517,6 @@ struct LedgerView: View {
             onEditEntry: { sheetRoute = .editEntry($0) },
             onDeleteEntry: { confirmationRoute = .deleteEntry($0) },
             onEditHeading: { sheetRoute = .editHeading($0) },
-            onMoveHeading: { moveHeading($0, by: $1) },
-            canMoveHeading: { canMoveHeading($0, by: $1) },
             onDeleteHeading: { confirmationRoute = .deleteHeading($0) }
         )
     }
@@ -564,11 +593,12 @@ struct LedgerView: View {
     /// directly so visual checks don't depend on scripted taps.
     private func runDemoIfNeeded() {
         guard !didRunDemo else { return }
-        if AppModel.hasUIAutomationLaunchFlag("-demoComposer") {
+        if AppModel.hasUIAutomationLaunchFlag("-demoComposer"), let client = clients.first {
+            // The fixture is inserted by the root store task. Wait for its
+            // query delivery instead of consuming this one-shot hook before
+            // a client exists.
             didRunDemo = true
-            if let client = clients.first {
-                openComposer(for: client, month: .now)
-            }
+            openComposer(for: client, month: .now)
         } else if AppModel.hasUIAutomationLaunchFlag("-demoSettings")
                     || AppModel.hasUIAutomationLaunchFlag("-demoDeveloperSettings") {
             didRunDemo = true
@@ -594,18 +624,19 @@ struct LedgerView: View {
         }
     }
 
-    // MARK: Headings
+    // MARK: Event notes (persisted as Heading for sync compatibility)
 
-    private func saveHeading(title: String, headingID: UUID?) -> Bool {
+    private func saveHeading(title: String, date: Date, headingID: UUID?) -> Bool {
         guard !title.isEmpty else { return false }
         if let headingID {
             guard let heading = heading(withID: headingID) else { return false }
             heading.title = title
+            heading.date = date
             heading.markDirty()
         } else {
             context.insert(Heading(title: title,
-                                   date: app.displayedMonth,
-                                   sortIndex: nextHeadingSortIndex(in: app.displayedMonth)))
+                                   date: date,
+                                   sortIndex: 0))
         }
         return saveChanges()
     }
@@ -621,48 +652,6 @@ struct LedgerView: View {
         if saveChanges() { app.stageUndo(snapshot) }
     }
 
-    // The heading actions below run one-off (a tap, not a render). They read
-    // the same cached snapshot the list displays — falling back to a fresh
-    // pass only in the eyeblink before the launch task has produced one.
-
-    private var actionSnapshot: Insights.LedgerSnapshot {
-        ledgerSnapshot ?? app.insights.ledgerSnapshot(clients)
-    }
-
-    private func nextHeadingSortIndex(in month: Date) -> Int {
-        (rowBuilder.blocks(in: month, snapshot: actionSnapshot).map(\.sortIndex).max() ?? -1) + 1
-    }
-
-    /// Whether the heading has a neighbouring block to trade places with in
-    /// the given direction (-1 up, +1 down).
-    private func canMoveHeading(_ h: Heading, by offset: Int) -> Bool {
-        let ordered = rowBuilder.blocks(in: DateFormat.monthStart(of: h.date), snapshot: actionSnapshot)
-        guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return false }
-        return ordered.indices.contains(idx + offset)
-    }
-
-    /// Reorders a heading among its month's blocks by swapping sort indices with
-    /// the adjacent block. Only the two swapped blocks are touched, so the rest
-    /// of the ledger's order is left intact.
-    private func moveHeading(_ h: Heading, by offset: Int) {
-        let ordered = rowBuilder.blocks(in: DateFormat.monthStart(of: h.date), snapshot: actionSnapshot)
-        guard let idx = ordered.firstIndex(where: { $0.id == "h-\(h.id)" }) else { return }
-        let target = idx + offset
-        guard ordered.indices.contains(target) else { return }
-
-        let indices = ordered.map(\.sortIndex)
-        var reordered = ordered
-        reordered.swapAt(idx, target)
-        withAnimation(.snappy) {
-            for (position, block) in reordered.enumerated() where block.sortIndex != indices[position] {
-                block.applySortIndex(indices[position])
-            }
-        }
-        if saveChanges() {
-            feedback.impact += 1
-        }
-    }
-
     @discardableResult
     private func saveChanges() -> Bool {
         saveError = app.save(context)
@@ -671,15 +660,15 @@ struct LedgerView: View {
 
     // MARK: Month tracking
 
-    private func updateDisplayedMonth(_ anchors: [MonthAnchor]) {
-        guard !anchors.isEmpty else { return }
-        let above = anchors.filter { $0.y <= 44 }
-        let chosen = above.max(by: { $0.y < $1.y }) ?? anchors.min(by: { $0.y < $1.y })
-        if let m = chosen?.month, !Calendar.current.isDate(m, equalTo: app.displayedMonth, toGranularity: .month) {
+    private func updateDisplayedMonth(_ month: Date?) {
+        guard let month else { return }
+        let m = DateFormat.monthStart(of: month)
+        if !Calendar.current.isDate(m, equalTo: app.displayedMonth, toGranularity: .month) {
             app.displayedMonth = m
-            // Near the window's edge the six-month trend would read zeros for
-            // months that exist but aren't materialized yet — extend first.
-            extendLedgerWindowIfNeeded(for: m)
+            // Preload the next twelve months before the six-month summary trend
+            // reaches the edge of the materialized data. The task itself runs
+            // after this scroll callback returns.
+            prefetchLedgerWindowIfNeeded(for: m)
         }
     }
 

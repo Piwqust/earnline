@@ -2,6 +2,7 @@ import {
   decodeClientRows,
   decodeEntryRows,
   decodeHeadingRows,
+  decodeMonthReviewRows,
   decodeTombstoneRows,
   decodeWorkspaceProfile,
   type WorkspaceProfilePayload,
@@ -189,6 +190,8 @@ export class ProxyRemote implements SyncRemote {
         return decodeEntryRows(value) as RowByTable[T][];
       case "earnline_headings":
         return decodeHeadingRows(value) as RowByTable[T][];
+      case "earnline_month_reviews":
+        return decodeMonthReviewRows(value) as RowByTable[T][];
       case "earnline_tombstones":
         return decodeTombstoneRows(value) as RowByTable[T][];
     }
@@ -203,7 +206,7 @@ export class ProxyRemote implements SyncRemote {
   }
 
   async deleteRows(
-    table: Exclude<RowTable, "earnline_tombstones">,
+    table: Exclude<RowTable, "earnline_tombstones" | "earnline_month_reviews">,
     ids: string[],
     signal?: AbortSignal,
   ): Promise<void> {

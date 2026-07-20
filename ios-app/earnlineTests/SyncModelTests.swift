@@ -74,6 +74,34 @@ struct SyncModelTests {
         }
     }
 
+    @Test @MainActor func v2StoreLightweightMigratesToMonthReviewSchema() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "earnline-month-review-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appending(path: "migration.store")
+
+        do {
+            let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
+            let configuration = ModelConfiguration("MigrationV2", schema: schema, url: storeURL)
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            container.mainContext.insert(Client(name: "Preserved Client"))
+            try container.mainContext.save()
+        }
+
+        do {
+            let schema = Schema(versionedSchema: EarnlineSchemaV3.self)
+            let configuration = ModelConfiguration("MigrationV3", schema: schema, url: storeURL)
+            let container = try ModelContainer(
+                for: schema,
+                migrationPlan: EarnlineMigrationPlan.self,
+                configurations: configuration
+            )
+            #expect(try container.mainContext.fetch(FetchDescriptor<Client>()).first?.name == "Preserved Client")
+            #expect(try container.mainContext.fetch(FetchDescriptor<MonthReview>()).isEmpty)
+        }
+    }
+
     @Test @MainActor func projectIconPreferenceNormalizesAndUpdatesInPlace() throws {
         let container = try ModelContainer(
             for: ProjectIconPreference.self,
@@ -104,6 +132,39 @@ struct SyncModelTests {
         }
     }
 
+    @Test @MainActor func cloudResetClearsEveryLocalWorkspaceRowIncludingProjectIcons() throws {
+        let schema = Schema(versionedSchema: EarnlineSchemaV3.self)
+        let container = try ModelContainer(
+            for: schema,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+
+        let client = Client(name: "Local client")
+        let entry = Entry(amount: 120, task: "Local work", status: .paid)
+        entry.client = client
+        context.insert(client)
+        context.insert(entry)
+        context.insert(Heading(title: "Sent an invoice"))
+        context.insert(SyncTombstone(entity: .entry, recordID: UUID()))
+        context.insert(ProjectIconPreference(
+            id: try #require(ProjectIconResolver.preferenceID(for: "Local project")),
+            projectKey: ProjectIconResolver.normalizedKey(for: "Local project"),
+            symbol: .paintpalette
+        ))
+        context.insert(MonthReview(monthStart: .now, note: "Closed locally", closedAt: .now))
+        try context.save()
+
+        try AppModel.clearLocalStore(context)
+
+        #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<Heading>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<SyncTombstone>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<ProjectIconPreference>()).isEmpty)
+        #expect(try context.fetch(FetchDescriptor<MonthReview>()).isEmpty)
+    }
+
     @Test func remoteProjectIconEncodesAllowlistedSymbol() throws {
         let id = try #require(ProjectIconResolver.preferenceID(for: "Launch Kit"))
         let preference = ProjectIconPreference(
@@ -118,6 +179,31 @@ struct SyncModelTests {
         #expect(object["project_key"] as? String == "launch kit")
         #expect(object["symbol_name"] as? String == "paintpalette")
         #expect(object["workspace_id"] as? String == "test-workspace")
+    }
+
+    @Test func remoteMonthReviewEncodesSoftCloseWireFields() throws {
+        let monthStart = try #require(SyncDateCodec.parseDay("2026-01-01"))
+        let closedAt = try #require(SyncDateCodec.parseTimestamp("2026-02-01T12:00:00.000Z"))
+        let review = MonthReview(monthStart: monthStart, note: "January close", closedAt: closedAt)
+
+        let data = try JSONEncoder().encode(RemoteMonthReview(review, workspaceID: "test-workspace"))
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["workspace_id"] as? String == "test-workspace")
+        #expect(object["month_start"] as? String == "2026-01-01")
+        #expect(object["note"] as? String == "January close")
+        #expect(object["closed_at"] as? String == "2026-02-01T12:00:00.000Z")
+    }
+
+    @Test func remoteMonthReviewEncodesReopenAsExplicitNull() throws {
+        let monthStart = try #require(SyncDateCodec.parseDay("2026-01-01"))
+        let review = MonthReview(monthStart: monthStart, note: "Reopened", closedAt: nil)
+
+        let data = try JSONEncoder().encode(RemoteMonthReview(review, workspaceID: "test-workspace"))
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object.keys.contains("closed_at"))
+        #expect(object["closed_at"] is NSNull)
     }
 
     @Test func workspaceProfileRateEncodesAsDecimalString() throws {

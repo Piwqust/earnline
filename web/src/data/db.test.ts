@@ -9,6 +9,7 @@ import {
   importDatabase,
 } from "./db";
 import type { Client } from "../domain/types";
+import { monthReviewId } from "../domain/monthReview";
 
 const opened: EarnlineDB[] = [];
 
@@ -41,10 +42,16 @@ describe("connection-scoped IndexedDB", () => {
     const source = database("source");
     const target = database("target");
     await source.clients.put(client("recover-me"));
+    const monthStart = Date.UTC(2026, 0, 1);
+    await source.monthReviews.put({
+      id: monthReviewId(monthStart), monthStart, note: "January close", closedAt: Date.UTC(2026, 1, 1),
+      createdAt: 1, updatedAt: 1, syncState: "synced", lastSyncedAt: 1,
+    });
     const backup = await exportDatabase(source);
     const decoded = decodeRecoveryEnvelope(JSON.parse(JSON.stringify(backup)));
     await importDatabase(decoded, target);
     expect(await target.clients.get("recover-me")).toMatchObject({ syncState: "dirty" });
+    expect(await target.monthReviews.get(monthReviewId(monthStart))).toMatchObject({ syncState: "dirty" });
   });
 
   it("lets only the newest overlapping activation replace the live database", async () => {
