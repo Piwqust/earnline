@@ -11,13 +11,25 @@ struct PendingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @Query(sort: \Client.sortIndex) private var clients: [Client]
+    /// Scoped to in-progress rows in SQL. This list used to be derived by
+    /// walking `clients.flatMap(\.entries)`, which faulted every entry in the
+    /// store to find the handful that are still outstanding — the same shape
+    /// `AppModel.refreshPendingReminders` already avoids with this predicate.
+    @Query private var inProgressEntries: [Entry]
 
     @State private var editingEntry: Entry?
     @State private var pendingDelete: Entry?
     @State private var saveError: String?
     @State private var statusFeedback = 0
 
-    private var pending: [Entry] { app.pendingEntries(clients) }
+    init() {
+        let inProgress = EntryStatus.inProgress.rawValue
+        _inProgressEntries = Query(filter: #Predicate<Entry> { $0.statusRaw == inProgress })
+    }
+
+    /// Sorted here rather than in the query: "undated last" is not expressible
+    /// as a `SortDescriptor`, and the scoped set is small.
+    private var pending: [Entry] { Insights.sortedByUrgency(inProgressEntries) }
     private var totalPending: Decimal {
         pending.reduce(Decimal.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
     }
@@ -108,7 +120,7 @@ struct PendingView: View {
 
     @ViewBuilder
     private func holdBadge(_ entry: Entry) -> some View {
-        if app.isOverdue(entry) {
+        if app.insights.isOverdue(entry) {
             badge("Overdue", systemImage: "exclamationmark.circle.fill", tint: Theme.statusCanceled)
         } else if let hold = entry.holdUntil, let days = daysUntil(hold) {
             if days <= 3 {

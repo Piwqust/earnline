@@ -17,7 +17,7 @@ struct PendingTests {
         let undated = Entry(amount: 1, task: "undated", status: .inProgress)
         client.entries = [paid, later, undated, soon]
 
-        #expect(app.pendingEntries([client]).map(\.task) == ["soon", "later", "undated"])
+        #expect(Insights.sortedByUrgency(client.entries).map(\.task) == ["soon", "later", "undated"])
     }
 
     @Test func isOverdueOnlyForPastInProgressHolds() {
@@ -26,10 +26,10 @@ struct PendingTests {
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
 
-        #expect(app.isOverdue(Entry(amount: 1, task: "x", holdUntil: yesterday, status: .inProgress)))
-        #expect(!app.isOverdue(Entry(amount: 1, task: "x", holdUntil: tomorrow, status: .inProgress)))
-        #expect(!app.isOverdue(Entry(amount: 1, task: "x", holdUntil: yesterday, status: .paid)))
-        #expect(!app.isOverdue(Entry(amount: 1, task: "x", status: .inProgress)))
+        #expect(app.insights.isOverdue(Entry(amount: 1, task: "x", holdUntil: yesterday, status: .inProgress)))
+        #expect(!app.insights.isOverdue(Entry(amount: 1, task: "x", holdUntil: tomorrow, status: .inProgress)))
+        #expect(!app.insights.isOverdue(Entry(amount: 1, task: "x", holdUntil: yesterday, status: .paid)))
+        #expect(!app.insights.isOverdue(Entry(amount: 1, task: "x", status: .inProgress)))
     }
 
     @Test func desiredRequestsScheduleOnlyFutureInProgressHolds() {

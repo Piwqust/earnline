@@ -72,13 +72,21 @@ enum UndoableDelete {
     case client(ClientSnapshot)
 
     /// Re-insert the snapshot with its ORIGINAL id as a dirty row (fresh
-    /// `updatedAt`) and drop the matching local tombstone. If the debounced
-    /// sync already pushed the tombstone, the restore still wins everywhere:
-    /// the re-pushed row's server-set `updated_at` lands after the tombstone's
-    /// `deleted_at`, so the tombstone-apply guard (`deletedAt >=
-    /// syncUpdatedAt` in `SyncCoordinator.applyRemoteTombstones`) skips it,
-    /// and peer devices re-pull the row in the same pass that delivers the
+    /// `updatedAt`) and drop the matching local tombstone.
+    ///
+    /// If the debounced sync already pushed the tombstone there is nothing local
+    /// left to dequeue, and the remote tombstone stays forever — the table is
+    /// append-only. The restore still wins everywhere, but it wins on
+    /// timestamps rather than by deletion: once the row is re-pushed, its
+    /// server-set `updated_at` lands after the tombstone's `deleted_at`, so
+    /// `SyncCoordinator.tombstoneApplies` declines to delete it and the pull
+    /// filter lets peer devices re-apply it in the same pass that delivers the
     /// tombstone.
+    ///
+    /// One consequence is visible to the user: on the first pass after an
+    /// undo-that-outran-the-push, the cloud says "deleted" and this device says
+    /// "restored", so the pass fails closed with a conflict and asks which copy
+    /// to keep. Choosing this iPhone's copy resolves it permanently.
     func restore(in context: ModelContext) throws {
         switch self {
         case .entry(let snapshot):

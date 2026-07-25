@@ -1,0 +1,33 @@
+{
+  "//": [
+    "Lint/format config for the edge functions, which CI now typechecks and",
+    "lints (see .github/workflows/ci.yml).",
+    "",
+    "`no-explicit-any` is excluded rather than worked around: the ledger",
+    "operations deliberately run through the caller-scoped `SupabaseClient`, and",
+    "without generated database types that client's row generic can only be",
+    "`any`. Narrowing it would mean either checking in generated types that must",
+    "then track every migration, or casting at each call site — both of which",
+    "hide the boundary instead of documenting it. RLS is the authorization",
+    "boundary here, not the TypeScript generic.",
+    "",
+    "`no-import-prefix` wants bare specifiers plus an import map once this file",
+    "exists. `npm:` specifiers are the documented style for Supabase edge",
+    "functions and are what the deployed code uses; rewriting the imports of a",
+    "live function to satisfy a lint default added by its own lint config would",
+    "be the tail wagging the dog."
+  ],
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-explicit-any",
+        "no-import-prefix"
+      ]
+    }
+  },
+  "fmt": {
+    "lineWidth": 120,
+    "semiColons": true,
+    "singleQuote": false
+  }
+}

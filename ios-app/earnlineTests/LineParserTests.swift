@@ -261,6 +261,40 @@ struct LineParserTests {
         #expect(Calendar.current.component(.month, from: lines[1].date!) == 4)
     }
 
+    /// A line with no amount and no `project: task` colon is prose. Its first
+    /// word was being consumed as a status marker, which both lost the word and
+    /// silently marked the line paid.
+    @Test func leadingStatusWordStaysInPlainProse() {
+        let p = LineParser.parse("Paid search ads audit")
+        #expect(p.status == nil)
+        #expect(p.task == "Paid search ads audit")
+    }
+
+    /// The same word still marks the line once it reads as an income line.
+    @Test func leadingStatusWordIsAMarkerWhenTheLineHasAnAmountOrAColon() {
+        let withColon = LineParser.parse("paid Acme: retainer")
+        #expect(withColon.status == .paid)
+        #expect(withColon.project == "Acme")
+        #expect(withColon.task == "retainer")
+
+        let withSymbol = LineParser.parse("paid $300 Site refresh")
+        #expect(withSymbol.status == .paid)
+        #expect(withSymbol.amount == 300)
+        #expect(withSymbol.task == "Site refresh")
+
+        let withBareAmount = LineParser.parse("pending 450 Site refresh")
+        #expect(withBareAmount.status == .inProgress)
+        #expect(withBareAmount.amount == 450)
+    }
+
+    /// A trailing word is unambiguous — nothing follows it — so it is consumed
+    /// even without an amount or a colon.
+    @Test func trailingStatusWordIsAlwaysAMarker() {
+        let p = LineParser.parse("Acme retainer paid")
+        #expect(p.status == .paid)
+        #expect(p.task == "Acme retainer")
+    }
+
     private func date(year: Int, month: Int, day: Int) -> Date {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day))!
     }

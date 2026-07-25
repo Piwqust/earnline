@@ -92,6 +92,11 @@ enum SyncCoordinator {
         try applyRemoteTombstones(remoteTombstones,
                                   context: context,
                                   conflictResolution: conflictResolution)
+        // Tombstones are append-only and replayed in full, so a row that was
+        // deleted and later restored is still named by a live tombstone. Both
+        // the delete decision above and the pull below compare against the
+        // newest `deleted_at` per record rather than deleting on sight.
+        let deletionTimes = latestDeletionTimes(remoteTombstones)
 
         // Pull before normal row pushes. A previous version pushed first, which
         // made the local device that happened to reconnect last overwrite a
@@ -100,6 +105,7 @@ enum SyncCoordinator {
                                                        client: client,
                                                        workspaceID: workspaceID,
                                                        lastPulledAt: lastPulledAt,
+                                                       deletionTimes: deletionTimes,
                                                        conflictResolution: conflictResolution)
         // Materialize remote cascade deletes before pushing rows so an entry
         // whose client vanished remotely cannot violate the remote FK.
@@ -113,10 +119,16 @@ enum SyncCoordinator {
         // A device clock is not a valid conflict baseline: if this refresh is
         // interrupted, the row deliberately keeps a nil baseline and a later
         // concurrent edit requires a user choice instead of being overwritten.
+        //
+        // Start from what the first pull already observed: everything older was
+        // just merged, so re-reading it would double every pass's transfer and
+        // merge cost for rows this push cannot have changed.
+        let pushCursor = [maxRowUpdatedAt, lastPulledAt].compactMap { $0 }.max()
         let maxRowUpdatedAfterPush = try await pullRemoteRows(context: context,
                                                               client: client,
                                                               workspaceID: workspaceID,
-                                                              lastPulledAt: lastPulledAt,
+                                                              lastPulledAt: pushCursor,
+                                                              deletionTimes: deletionTimes,
                                                               conflictResolution: conflictResolution)
 
         try context.save()
@@ -126,27 +138,42 @@ enum SyncCoordinator {
         return SyncCursor(rowUpdatedAt: rowCursor)
     }
 
+    /// `in (…)` filters travel in the URL, and a UUID costs ~37 characters
+    /// there, so a few hundred ids already approach the 8 KB request line that
+    /// PostgREST sits behind. Deleting a client with its entries used to build
+    /// one unbounded URL: the server answered 414, the retry ladder rebuilt the
+    /// identical request, and sync stayed wedged until a local reset.
+    private static let deleteBatchSize = 100
+
     private static func pushDeletes(context: ModelContext, client: SupabaseClient, workspaceID: String) async throws {
         let tombstones = try context.fetch(FetchDescriptor<SyncTombstone>())
         guard !tombstones.isEmpty else { return }
 
-        let remoteTombstones = tombstones.map { RemoteTombstone($0, workspaceID: workspaceID) }
-        try await client
-            .from("earnline_tombstones")
-            .upsert(remoteTombstones)
-            .execute()
+        // The proxy transport rejects row batches over `pageSize`, so match it
+        // here rather than discovering the cap as an opaque 400 mid-pass.
+        for chunk in tombstones.chunked(into: pageSize) {
+            try await client
+                .from("earnline_tombstones")
+                .upsert(chunk.map { RemoteTombstone($0, workspaceID: workspaceID) })
+                .execute()
+        }
 
         // One delete per entity table (`in (…)`) rather than one request per
-        // tombstone — a large delete batch was otherwise N round-trips.
+        // tombstone — a large delete batch was otherwise N round-trips — but
+        // chunked, so the URL stays bounded however many rows went at once.
+        // Local tombstones are cleared per chunk: a failure partway through
+        // leaves the undelivered ones queued for the next pass.
         let byEntity = Dictionary(grouping: tombstones, by: \.entity)
         for (entity, group) in byEntity {
-            try await client
-                .from(tableName(for: entity))
-                .delete()
-                .in("id", values: group.map { $0.recordID.uuidString })
-                .eq("workspace_id", value: workspaceID)
-                .execute()
-            group.forEach(context.delete)
+            for chunk in group.chunked(into: deleteBatchSize) {
+                try await client
+                    .from(tableName(for: entity))
+                    .delete()
+                    .in("id", values: chunk.map { $0.recordID.uuidString })
+                    .eq("workspace_id", value: workspaceID)
+                    .execute()
+                chunk.forEach(context.delete)
+            }
         }
     }
 
@@ -286,6 +313,7 @@ enum SyncCoordinator {
                                        client: SupabaseClient,
                                        workspaceID: String,
                                        lastPulledAt: Date?,
+                                       deletionTimes: [DeletionKey: Date],
                                        conflictResolution: ConflictResolution) async throws -> Date? {
         // Clients stay a full fetch: there are few, and every remote entry
         // needs its owner resolvable even when that client wasn't in this
@@ -318,8 +346,22 @@ enum SyncCoordinator {
             updatedAfter: monthReviewSince
         )
 
-        let localHeadings = try localHeadings(ids: remoteHeadings.map(\.id), context: context)
-        let localEntries = try localEntries(ids: remoteEntries.map(\.id), context: context)
+        // A retained tombstone stays authoritative until the row is explicitly
+        // restored with a *newer* server timestamp. Without this the pass would
+        // re-insert every row the tombstone loop just deleted, and the next pass
+        // would delete it again — a row visibly flapping on every sync.
+        let applicableClients = remoteClients.filter {
+            appliesOverTombstone($0.updatedAt, .client, $0.id, deletionTimes)
+        }
+        let applicableHeadings = remoteHeadings.filter {
+            appliesOverTombstone($0.updatedAt, .heading, $0.id, deletionTimes)
+        }
+        let applicableEntries = remoteEntries.filter {
+            appliesOverTombstone($0.updatedAt, .entry, $0.id, deletionTimes)
+        }
+
+        let localHeadings = try localHeadings(ids: applicableHeadings.map(\.id), context: context)
+        let localEntries = try localEntries(ids: applicableEntries.map(\.id), context: context)
         let localProjectIcons = try localProjectIcons(ids: remoteProjectIcons.map(\.id), context: context)
         let localMonthReviewRows = try localMonthReviews(
             ids: remoteMonthReviews.map(\.id),
@@ -353,7 +395,7 @@ enum SyncCoordinator {
         // "now"/"today" fallbacks silently rewrote timestamps and entry dates,
         // which corrupted conflict resolution and the visible ledger. A skipped
         // row is retried on the next pass (`gte` cursor is inclusive).
-        for record in remoteClients {
+        for record in applicableClients {
             guard let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
             if let local = clientsByID[record.id] {
@@ -468,7 +510,7 @@ enum SyncCoordinator {
 
         var headingsByID = Dictionary(uniqueKeysWithValues: localHeadings.map { ($0.id, $0) })
 
-        for record in remoteHeadings {
+        for record in applicableHeadings {
             guard let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt),
                   let date = SyncDateCodec.parseDay(record.date) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
@@ -502,7 +544,7 @@ enum SyncCoordinator {
 
         var entriesByID = Dictionary(uniqueKeysWithValues: localEntries.map { ($0.id, $0) })
 
-        for record in remoteEntries {
+        for record in applicableEntries {
             guard let owner = clientsByID[record.clientID] else { continue }
             guard let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt),
                   let date = SyncDateCodec.parseDay(record.date) else { continue }
@@ -582,7 +624,10 @@ enum SyncCoordinator {
                                                localLastSyncedAt: client.lastSyncedAt,
                                                localState: client.syncState) {
                         if conflictResolution == .requireUserChoice { conflictCount += 1 }
-                    } else if shouldApplyRemote(localState: client.syncState) {
+                    } else if tombstoneApplies(deletedAt: deletedAt,
+                                               localLastSyncedAt: client.lastSyncedAt,
+                                               localSyncUpdatedAt: client.syncUpdatedAt,
+                                               localState: client.syncState) {
                         context.delete(client)
                     }
                 }
@@ -592,7 +637,10 @@ enum SyncCoordinator {
                                                localLastSyncedAt: heading.lastSyncedAt,
                                                localState: heading.syncState) {
                         if conflictResolution == .requireUserChoice { conflictCount += 1 }
-                    } else if shouldApplyRemote(localState: heading.syncState) {
+                    } else if tombstoneApplies(deletedAt: deletedAt,
+                                               localLastSyncedAt: heading.lastSyncedAt,
+                                               localSyncUpdatedAt: heading.syncUpdatedAt,
+                                               localState: heading.syncState) {
                         context.delete(heading)
                     }
                 }
@@ -602,7 +650,10 @@ enum SyncCoordinator {
                                                localLastSyncedAt: entry.lastSyncedAt,
                                                localState: entry.syncState) {
                         if conflictResolution == .requireUserChoice { conflictCount += 1 }
-                    } else if shouldApplyRemote(localState: entry.syncState) {
+                    } else if tombstoneApplies(deletedAt: deletedAt,
+                                               localLastSyncedAt: entry.lastSyncedAt,
+                                               localSyncUpdatedAt: entry.syncUpdatedAt,
+                                               localState: entry.syncState) {
                         context.delete(entry)
                     }
                 }
@@ -616,6 +667,60 @@ enum SyncCoordinator {
     /// chooses to keep this device's copy.
     static func shouldApplyRemote(localState: SyncState) -> Bool {
         localState == .synced
+    }
+
+    /// Identifies one deleted row across the tombstone entities.
+    struct DeletionKey: Hashable {
+        let entity: SyncEntity
+        let recordID: UUID
+    }
+
+    /// Newest `deleted_at` per record. Tombstones are append-only and replayed
+    /// in full on every pass, so the same row can carry several; only the latest
+    /// deletion can still be authoritative over a restore.
+    static func latestDeletionTimes(_ records: [RemoteTombstone]) -> [DeletionKey: Date] {
+        var output: [DeletionKey: Date] = [:]
+        for record in records {
+            guard let entity = SyncEntity(rawValue: record.entity),
+                  let deletedAt = SyncDateCodec.parseTimestamp(record.deletedAt) else { continue }
+            let key = DeletionKey(entity: entity, recordID: record.recordID)
+            output[key] = output[key].map { Swift.max($0, deletedAt) } ?? deletedAt
+        }
+        return output
+    }
+
+    /// Whether a remote tombstone still describes the local row, or has been
+    /// superseded by a restore.
+    ///
+    /// A dirty local row is never deleted here — `conflictsWithDirtyLocal` has
+    /// already routed it to a user choice, and `.preferLocal` deliberately keeps
+    /// this device's copy. For a clean row the tombstone only wins when it is at
+    /// least as new as the server version this device last observed: a row that
+    /// was deleted, restored, and re-pushed carries a `lastSyncedAt` *after* the
+    /// deletion, and must survive. Without this comparison the restored row was
+    /// deleted again on the pass after the user chose to keep it, while the row
+    /// still existed remotely.
+    ///
+    /// `localSyncUpdatedAt` is only the fallback for a row that has never
+    /// completed a pull (nil baseline), matching the web client's rule.
+    static func tombstoneApplies(deletedAt: Date,
+                                 localLastSyncedAt: Date?,
+                                 localSyncUpdatedAt: Date,
+                                 localState: SyncState) -> Bool {
+        guard localState == .synced else { return false }
+        return deletedAt >= (localLastSyncedAt ?? localSyncUpdatedAt)
+    }
+
+    /// Whether a pulled row may be applied over the newest tombstone naming it.
+    /// A row that is not strictly newer than its deletion is skipped, so the
+    /// pull cannot re-insert what the tombstone loop just deleted.
+    private static func appliesOverTombstone(_ updatedAt: String,
+                                             _ entity: SyncEntity,
+                                             _ recordID: UUID,
+                                             _ deletionTimes: [DeletionKey: Date]) -> Bool {
+        guard let deletedAt = deletionTimes[DeletionKey(entity: entity, recordID: recordID)] else { return true }
+        guard let rowUpdatedAt = SyncDateCodec.parseTimestamp(updatedAt) else { return false }
+        return rowUpdatedAt > deletedAt
     }
 
     /// `lastSyncedAt` stores the latest server version actually observed for a
@@ -729,6 +834,18 @@ enum SyncCoordinator {
             return "earnline_entries"
         case .heading:
             return "earnline_headings"
+        }
+    }
+}
+
+extension Array {
+    /// Split into fixed-size batches, preserving order. Used to bound both the
+    /// row count of an upsert body and the URL length of an `in (…)` delete —
+    /// see `SyncCoordinator.deleteBatchSize`.
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0, count > size else { return isEmpty ? [] : [self] }
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
         }
     }
 }

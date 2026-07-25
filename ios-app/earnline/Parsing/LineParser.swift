@@ -191,6 +191,12 @@ enum LineParser {
 
     private static func extractStatusWord(_ s: inout String) -> EntryStatus? {
         let lowered = s.lowercased()
+        // A *leading* status word is only a marker when the rest of the line
+        // still reads as an income line. "Paid search ads audit" is a task, and
+        // consuming its first word both lost the word and silently marked the
+        // line paid. A trailing word ("Acme retainer paid") is unambiguous —
+        // nothing else follows it — so it is always consumed.
+        let leadingWordIsAMarker = requiresStructuralContext(s)
         for (word, status) in statusWords {
             if lowered == word {
                 s = ""
@@ -200,12 +206,22 @@ enum LineParser {
                 s = String(s.dropLast(word.count)).trimmingCharacters(in: .whitespaces)
                 return status
             }
-            if lowered.hasPrefix(word + " ") {
+            if leadingWordIsAMarker, lowered.hasPrefix(word + " ") {
                 s = String(s.dropFirst(word.count)).trimmingCharacters(in: .whitespaces)
                 return status
             }
         }
         return nil
+    }
+
+    /// Whether the line carries the shape of an income line rather than free
+    /// prose: a `project: task` colon, a currency symbol, or a number long
+    /// enough for `extractAmount`'s bare-number fallback to accept it.
+    private static func requiresStructuralContext(_ s: String) -> Bool {
+        if s.contains(":") { return true }
+        if s.rangeOfCharacter(from: CharacterSet(charactersIn: "$€₽£₴")) != nil { return true }
+        if s.range(of: "\\d{2,}", options: .regularExpression) != nil { return true }
+        return s.range(of: "(?i)\\d\\s*(k|к|usd|eur|rub|gbp|uah)\\b", options: .regularExpression) != nil
     }
 
     // MARK: - Amount

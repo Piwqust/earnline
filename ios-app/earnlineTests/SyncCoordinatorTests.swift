@@ -439,11 +439,15 @@ struct SyncCoordinatorTests {
         // A synced client with a *dirty* entry — deleted on another device.
         // The tombstone must land before the push so the doomed entry is
         // never upserted (its remote FK row is already gone).
+        // `lastSyncedAt` is the server version this device last observed, and it
+        // must predate the tombstone — a row deleted remotely at 07-05 cannot
+        // also have been seen alive afterwards. The tombstone-vs-restore rule
+        // compares against exactly this value.
         let client = Client(name: "Gone",
                             createdAt: timestamp("2026-07-01T09:00:00.000Z"),
                             updatedAt: timestamp("2026-07-01T09:00:00.000Z"),
                             syncState: .synced,
-                            lastSyncedAt: .now)
+                            lastSyncedAt: timestamp("2026-07-01T09:00:00.000Z"))
         let entry = Entry(amount: 50, task: "orphaned edit")
         entry.client = client
         context.insert(client)
@@ -584,5 +588,215 @@ struct SyncCoordinatorTests {
 
         #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
         #expect(cursor.rowUpdatedAt == timestamp("2026-07-01T00:00:00.000Z"))
+    }
+
+    // MARK: Restore over a retained tombstone
+
+    /// Tombstones are append-only and replayed in full, so a row that was
+    /// deleted and then restored is still named by its own tombstone forever.
+    /// The restore wins because its server `updated_at` — recorded in
+    /// `lastSyncedAt` by the post-push pull — lands after the deletion.
+    ///
+    /// Before the tombstone-vs-restore comparison existed, this row was deleted
+    /// again on the pass after the user chose to keep it, while it still existed
+    /// in Postgres: silent local data loss plus a permanent divergence.
+    @Test func restoredRowSurvivesItsOwnRetainedTombstone() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let restoredAt = timestamp("2026-07-10T10:00:00.000Z")
+        let client = Client(name: "Restored",
+                            createdAt: timestamp("2026-07-01T09:00:00.000Z"),
+                            updatedAt: restoredAt,
+                            syncState: .synced,
+                            lastSyncedAt: restoredAt)
+        context.insert(client)
+        try context.save()
+
+        // The delete that was pushed before the user hit Undo. It is never
+        // pruned, so every later pass sees it again.
+        MockTransport.respond("GET", "earnline_tombstones", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)","entity":"client",
+          "record_id":"\(client.id.uuidString)",
+          "deleted_at":"2026-07-05T12:00:00.000Z","created_at":"2026-07-05T12:00:00.000Z"}]
+        """)
+        // No `earnline_clients` response: the cursor has already advanced past
+        // this row, so the incremental pull returns nothing for it. That is what
+        // makes the old behaviour permanent — the tombstone deleted the row and
+        // no later pull ever brought it back, while it still existed remotely.
+        let cursorPastTheRestore = timestamp("2026-07-20T00:00:00.000Z")
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace,
+                                           lastPulledAt: cursorPastTheRestore)
+
+        let survivors = try context.fetch(FetchDescriptor<Client>())
+        #expect(survivors.count == 1)
+        #expect(survivors.first?.name == "Restored")
+    }
+
+    /// The mirror case: a row whose server copy is *older* than its tombstone
+    /// was left behind by a partially completed delete. The pull must not
+    /// resurrect it, or it would flap — deleted by the tombstone loop, then
+    /// re-inserted by the pull — on every single pass.
+    @Test func rowOlderThanItsTombstoneIsNotResurrectedByThePull() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let orphanID = UUID()
+        MockTransport.respond("GET", "earnline_tombstones", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)","entity":"client",
+          "record_id":"\(orphanID.uuidString)",
+          "deleted_at":"2026-07-05T12:00:00.000Z","created_at":"2026-07-05T12:00:00.000Z"}]
+        """)
+        MockTransport.respond("GET", "earnline_clients", json: """
+        [{"id":"\(orphanID.uuidString)","workspace_id":"\(workspace)","name":"Half-deleted",
+          "color_hex":"#0088FF","sort_index":0,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-04T09:00:00.000Z"}]
+        """)
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace)
+
+        #expect(try context.fetch(FetchDescriptor<Client>()).isEmpty)
+    }
+
+    /// A skipped row is still an *observed* server version: the cursor has to
+    /// advance past it, or every later pass would re-fetch and re-skip it.
+    @Test func skippedTombstonedRowStillAdvancesTheCursor() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let orphanID = UUID()
+        MockTransport.respond("GET", "earnline_tombstones", json: """
+        [{"id":"\(UUID().uuidString)","workspace_id":"\(workspace)","entity":"client",
+          "record_id":"\(orphanID.uuidString)",
+          "deleted_at":"2026-07-05T12:00:00.000Z","created_at":"2026-07-05T12:00:00.000Z"}]
+        """)
+        MockTransport.respond("GET", "earnline_clients", json: """
+        [{"id":"\(orphanID.uuidString)","workspace_id":"\(workspace)","name":"Half-deleted",
+          "color_hex":"#0088FF","sort_index":0,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-04T09:00:00.000Z"}]
+        """)
+
+        let cursor = try await SyncCoordinator.sync(context: context,
+                                                     client: makeClient(),
+                                                     workspaceID: workspace)
+
+        #expect(cursor.rowUpdatedAt == timestamp("2026-07-04T09:00:00.000Z"))
+    }
+
+    // MARK: Request shaping
+
+    /// `in (…)` ids travel in the URL. One unbounded DELETE for a large batch
+    /// (a client and all its entries) exceeded the request line, the server
+    /// answered 414, and every retry rebuilt the identical request.
+    @Test func largeDeleteBatchIsSplitAcrossRequests() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        for _ in 0..<250 {
+            SyncDeleteQueue.enqueue(.entry, id: UUID(), in: context)
+        }
+        try context.save()
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace)
+
+        let deletes = MockTransport.recorded.filter {
+            $0.method == "DELETE" && $0.table == "earnline_entries"
+        }
+        // 250 ids at 100 per request.
+        #expect(deletes.count == 3)
+        // No single request may carry the whole batch.
+        #expect(deletes.allSatisfy { $0.query.count < 8_000 })
+        // Every tombstone still went out, and none linger locally.
+        #expect(try context.fetch(FetchDescriptor<SyncTombstone>()).isEmpty)
+    }
+
+    /// The post-push pull only needs the server stamps for rows this pass just
+    /// wrote. Re-running it from the original cursor re-fetched, re-decoded and
+    /// re-merged the entire delta a second time on every single pass.
+    @Test func postPushPullResumesFromTheFirstPullsCursor() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let baseline = timestamp("2026-07-01T10:00:00.000Z")
+        let client = Client(name: "Local", createdAt: baseline, updatedAt: baseline,
+                            syncState: .synced, lastSyncedAt: baseline)
+        context.insert(client)
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_clients", json: """
+        [{"id":"\(client.id.uuidString)","workspace_id":"\(workspace)","name":"Cloud",
+          "color_hex":"#0088FF","sort_index":0,
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-09T10:00:00.000Z"}]
+        """)
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace,
+                                           lastPulledAt: baseline)
+
+        let clientGets = MockTransport.recorded.filter {
+            $0.method == "GET" && $0.table == "earnline_clients"
+        }
+        #expect(clientGets.count == 2)
+        // The second pass starts from what the first observed (07-09), not from
+        // the cursor this pass began with (07-01).
+        #expect(clientGets[0].query != clientGets[1].query)
+        #expect(clientGets[1].query.contains("2026-07-09"))
+    }
+
+    // MARK: Decision rules
+
+    @Test func tombstoneLosesToANewerObservedServerVersion() {
+        let deletedAt = timestamp("2026-07-05T12:00:00.000Z")
+        // Restored and re-pushed after the delete — must survive.
+        #expect(!SyncCoordinator.tombstoneApplies(
+            deletedAt: deletedAt,
+            localLastSyncedAt: timestamp("2026-07-10T10:00:00.000Z"),
+            localSyncUpdatedAt: timestamp("2026-07-10T10:00:00.000Z"),
+            localState: .synced
+        ))
+        // Deleted after this device last saw the row — must apply.
+        #expect(SyncCoordinator.tombstoneApplies(
+            deletedAt: deletedAt,
+            localLastSyncedAt: timestamp("2026-07-01T10:00:00.000Z"),
+            localSyncUpdatedAt: timestamp("2026-07-01T10:00:00.000Z"),
+            localState: .synced
+        ))
+        // A dirty row is routed to a user choice, never silently deleted.
+        #expect(!SyncCoordinator.tombstoneApplies(
+            deletedAt: deletedAt,
+            localLastSyncedAt: timestamp("2026-07-01T10:00:00.000Z"),
+            localSyncUpdatedAt: timestamp("2026-07-01T10:00:00.000Z"),
+            localState: .dirty
+        ))
+    }
+
+    @Test func latestDeletionTimeWinsForARepeatedlyDeletedRow() {
+        let recordID = UUID()
+        func tombstone(_ deletedAt: String) -> RemoteTombstone {
+            RemoteTombstone(
+                SyncTombstone(entity: .entry, recordID: recordID, deletedAt: timestamp(deletedAt)),
+                workspaceID: workspace
+            )
+        }
+        let times = SyncCoordinator.latestDeletionTimes([
+            tombstone("2026-07-01T00:00:00.000Z"),
+            tombstone("2026-07-09T00:00:00.000Z"),
+            tombstone("2026-07-05T00:00:00.000Z"),
+        ])
+        let key = SyncCoordinator.DeletionKey(entity: .entry, recordID: recordID)
+        #expect(times[key] == timestamp("2026-07-09T00:00:00.000Z"))
     }
 }

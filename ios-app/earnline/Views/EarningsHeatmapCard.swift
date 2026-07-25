@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// The daily-earnings heatmap card from Insights, split into its own view: a
 /// fixed-cell month grid (weekday labels pinned, months scroll), a legend, and
@@ -8,8 +9,8 @@ import SwiftUI
 /// parent and passed in as `map`.
 struct EarningsHeatmapCard: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let clients: [Client]
     let map: [Date: Decimal]
     let maxDaily: Decimal
     let heatTotal: Decimal
@@ -351,7 +352,10 @@ struct EarningsHeatmapCard: View {
     @ViewBuilder
     private func dayDetail(day: Date, map: [Date: Decimal], heatTotal: Decimal) -> some View {
         let dayTotal = map[calendar.startOfDay(for: day)] ?? 0
-        let rows = app.dayContributions(on: day, clients: clients)
+        let rows = app.insights.dayContributions(
+            on: day,
+            candidates: Insights.dayContributionCandidates(on: day, in: context)
+        )
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {

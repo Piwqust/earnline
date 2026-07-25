@@ -276,10 +276,10 @@ struct SyncModelTests {
 
         client.entries = [paid, progress, canceled]
 
-        #expect(app.total(of: client, in: monthDate) == 150)
-        #expect(app.monthTotal([client], in: monthDate) == 150)
-        #expect(app.entries(of: client, in: monthDate).count == 3)
-        #expect(app.earnedEntries(of: client, in: monthDate).count == 2)
+        #expect(app.insights.total(of: client, in: monthDate) == 150)
+        #expect(app.insights.monthTotal([client], in: monthDate) == 150)
+        #expect(app.insights.entries(of: client, in: monthDate).count == 3)
+        #expect(app.insights.earnedEntries(of: client, in: monthDate).count == 2)
     }
 
     @Test func syncRetryDelaysBackOffThenStop() {

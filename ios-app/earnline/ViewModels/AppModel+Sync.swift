@@ -56,18 +56,55 @@ extension AppModel {
         }
     }
 
+    /// How many follow-up passes one `syncNow` call will chain before handing
+    /// back to the normal triggers. Realtime echoes this device's own writes, so
+    /// a busy workspace can keep requesting one more pass indefinitely.
+    private static let maxChainedSyncPasses = 8
+
+    /// Returns `nil` when the final pass succeeded, otherwise its user-facing
+    /// error. Callers that report an outcome must use this rather than reading
+    /// `syncError`, which also carries realtime-subscription failures.
+    @discardableResult
     func syncNow(context: ModelContext,
-                 conflictResolution: SyncCoordinator.ConflictResolution = .requireUserChoice) async {
+                 conflictResolution: SyncCoordinator.ConflictResolution = .requireUserChoice) async -> String? {
         guard isSupabaseConfigured else {
             syncMessage = String(localized: "Offline")
-            return
+            // Deliberately not `syncError`: no pass ran, and that field can
+            // still hold an unrelated realtime-subscription warning — which is
+            // the exact confusion this return value exists to remove.
+            return String(localized: "Sync is not set up for this workspace.")
         }
         guard !isSyncing else {
             // A pass is already on the wire — run another when it finishes so
             // edits made mid-flight are pushed rather than dropped.
             followUpSyncRequested = true
-            return
+            return nil
         }
+
+        // Chained rather than recursive: `syncNow` used to tail-call itself for
+        // each follow-up, so a workspace whose realtime echoes its own pushes
+        // could nest passes without bound.
+        var resolution = conflictResolution
+        var remainingPasses = Self.maxChainedSyncPasses
+        var outcome: String?
+        repeat {
+            followUpSyncRequested = false
+            outcome = await runSyncPass(context: context, conflictResolution: resolution)
+            // An explicit conflict choice belongs to the pass the user asked
+            // for, not to whatever landed while that pass was running.
+            resolution = .requireUserChoice
+            remainingPasses -= 1
+        } while followUpSyncRequested && remainingPasses > 0 && isSupabaseConfigured
+        followUpSyncRequested = false
+        return outcome
+    }
+
+    /// One push/pull pass. `nil` on success, otherwise the message shown to the
+    /// user for this pass.
+    private func runSyncPass(
+        context: ModelContext,
+        conflictResolution: SyncCoordinator.ConflictResolution
+    ) async -> String? {
         // Any pass supersedes a pending retry; an externally triggered one
         // (edit, foreground, realtime) also restarts the backoff ladder.
         retryTask?.cancel()
@@ -80,9 +117,10 @@ extension AppModel {
         } catch {
             syncMessage = String(localized: "Needs sync")
             syncError = String(localized: "Earnline could not safely remove local sample data before sync. Nothing was uploaded. Try again after restarting the app.")
-            return
+            return syncError
         }
         let generation = syncGeneration
+        var passError: String?
         isSyncing = true
         syncMessage = String(localized: "Syncing...")
         syncError = nil
@@ -103,7 +141,7 @@ extension AppModel {
             )
             guard generation == syncGeneration else {
                 finishStaleSyncPass()
-                return
+                return nil
             }
             if profileEditGeneration == profileStamp {
                 applyRemoteWorkspaceProfile(remoteProfile)
@@ -120,7 +158,7 @@ extension AppModel {
                                                             conflictResolution: conflictResolution)
             guard generation == syncGeneration else {
                 finishStaleSyncPass()
-                return
+                return nil
             }
             syncCursor = nextCursor.rowUpdatedAt
             lastSyncAt = Date()
@@ -134,7 +172,7 @@ extension AppModel {
         } catch {
             guard generation == syncGeneration else {
                 finishStaleSyncPass()
-                return
+                return nil
             }
             context.rollback()
             if let conflict = error as? SyncCoordinator.SyncConflictError {
@@ -148,12 +186,10 @@ extension AppModel {
                 lastSyncFailed = true
                 scheduleRetrySync(context: context)
             }
+            passError = syncError
         }
         isSyncing = false
-        if followUpSyncRequested {
-            followUpSyncRequested = false
-            await syncNow(context: context)
-        }
+        return passError
     }
 
     /// An in-flight pass outlived a workspace switch: drop its results and
@@ -188,8 +224,10 @@ extension AppModel {
             syncCursor = nil
             lastSyncAt = nil
             defaults.set(false, forKey: SampleData.autoSeededDemoKey)
-            await syncNow(context: context)
-            return syncError
+            // Report what *this* pass produced. Reading `syncError` here also
+            // surfaced a stale realtime-subscription warning, so a reset that
+            // fully succeeded could still be announced as a failure.
+            return await syncNow(context: context)
         } catch {
             syncMessage = String(localized: "Needs sync")
             syncError = error.localizedDescription

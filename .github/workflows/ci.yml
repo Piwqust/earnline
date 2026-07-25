@@ -7,8 +7,30 @@ on:
       - main
 
 jobs:
-  ios:
-    name: iOS (build & test)
+  ios-lint:
+    name: iOS (lint)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      # Not `--strict`: the config is tuned so the existing code has zero
+      # error-level violations, and the ~50 remaining warnings are surfaced as
+      # annotations for incremental cleanup rather than as a blocked build.
+      # Tighten a threshold in .swiftlint.yml alongside the change that earns it.
+      - name: Lint
+        run: swiftlint lint --reporter github-actions-logging
+
+  # Unit and UI tests are separate jobs on purpose. Run as one `xcodebuild test`
+  # they were indistinguishable in the log, so a flaky UI test looked exactly
+  # like a real unit-test regression.
+  ios-unit:
+    name: iOS (unit tests)
     runs-on: macos-latest
     defaults:
       run:
@@ -22,16 +44,59 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
-      - name: Run tests
+      - name: Run unit tests
         run: |
           xcodebuild \
             -scheme earnline \
             -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -only-testing:earnlineTests \
+            -resultBundlePath unit-tests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             test
 
+      - name: Upload result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unit-tests-xcresult
+          path: ios-app/unit-tests.xcresult
+          retention-days: 7
+
+  ios-ui:
+    name: iOS (UI tests)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Run UI tests
+        run: |
+          xcodebuild \
+            -scheme earnline \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -only-testing:earnlineUITests \
+            -resultBundlePath ui-tests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+      - name: Upload result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-tests-xcresult
+          path: ios-app/ui-tests.xcresult
+          retention-days: 7
+
   web:
-    name: Web (test & build)
+    name: Web (lint, test & build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -48,8 +113,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Run tests
         run: npm test
 
       - name: Build
         run: npm run build
+
+  # The edge functions are the web client's security boundary — origin checks,
+  # row scoping, and the workspace-membership gate all live there — and had no
+  # check of any kind in CI.
+  edge-functions:
+    name: Supabase edge functions (typecheck & lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Typecheck
+        run: deno check earnline-sync/index.ts earnline-pair-device/index.ts
+
+      - name: Lint
+        run: deno lint

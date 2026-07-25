@@ -613,51 +613,16 @@ final class AppModel {
 
     // MARK: Grouping, totals & insights
 
-    /// The aggregation layer — grouping/totals, trend series, the daily
-    /// heatmap, and the pending queue — lives in the pure `Insights` value
-    /// type. `AppModel` forwards to a snapshot built from the current
-    /// `converter`, so views keep calling `app.total(…)`, `app.monthlySeries(…)`
-    /// etc. unchanged while the math is unit-tested in isolation.
+    /// The aggregation layer — grouping/totals, the daily heatmap, and the
+    /// pending queue — lives in the pure `Insights` value type, built from the
+    /// current `converter` so the math stays unit-testable in isolation.
+    ///
+    /// Callers use `app.insights.…` directly. There used to be a forwarder here
+    /// for each method; every one of them had lost its last production caller
+    /// when `LedgerSnapshot` and `InsightsDashboardSnapshot` replaced the
+    /// per-client-per-month API, leaving a dozen dead methods on the app's
+    /// central observable object that read as live paths.
     var insights: Insights { Insights(converter: converter) }
-
-    func entries(of client: Client, in month: Date) -> [Entry] { insights.entries(of: client, in: month) }
-    func earnedEntries(of client: Client, in month: Date) -> [Entry] { insights.earnedEntries(of: client, in: month) }
-    func total(of client: Client, in month: Date) -> Decimal { insights.total(of: client, in: month) }
-    func clientsWithEntries(_ clients: [Client], in month: Date) -> [Client] { insights.clientsWithEntries(clients, in: month) }
-    func monthTotal(_ clients: [Client], in month: Date) -> Decimal { insights.monthTotal(clients, in: month) }
-
-    func monthlySeries(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, total: Decimal)] {
-        insights.monthlySeries(clients, lastNMonths: lastNMonths)
-    }
-    func clientTotals(_ clients: [Client], lastNMonths: Int = 12) -> [(client: Client, total: Decimal)] {
-        insights.clientTotals(clients, lastNMonths: lastNMonths)
-    }
-    func topClients(_ clients: [Client], lastNMonths: Int = 12, limit: Int = 3) -> [(client: Client, total: Decimal)] {
-        insights.topClients(clients, lastNMonths: lastNMonths, limit: limit)
-    }
-    func monthlyDeltas(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, delta: Decimal, total: Decimal)] {
-        insights.monthlyDeltas(clients, lastNMonths: lastNMonths)
-    }
-
-    /// Straight-line month-end projection — see `Insights.monthPace`. Kept as a
-    /// static forwarder so existing `AppModel.monthPace` call sites and tests
-    /// need no change.
-    nonisolated static func monthPace(total: Decimal,
-                                      now: Date = .now,
-                                      calendar: Calendar = .current) -> Decimal? {
-        Insights.monthPace(total: total, now: now, calendar: calendar)
-    }
-
-    func dailyEarnings(_ clients: [Client], from startDay: Date, through endDay: Date) -> [Date: Decimal] {
-        insights.dailyEarnings(clients, from: startDay, through: endDay)
-    }
-    func dayContributions(on day: Date, clients: [Client]) -> [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] {
-        insights.dayContributions(on: day, clients: clients)
-    }
-
-    func pendingEntries(_ clients: [Client]) -> [Entry] { insights.pendingEntries(clients) }
-    func isOverdue(_ entry: Entry) -> Bool { insights.isOverdue(entry) }
-    func monthsWithData(_ clients: [Client]) -> [Date] { insights.monthsWithData(clients) }
 
     /// Rebuild local hold-until reminders from the current entries. Called after
     /// every save point (via `queueSync`) and after a sync pull, so the schedule

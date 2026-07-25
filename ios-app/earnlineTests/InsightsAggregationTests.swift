@@ -33,32 +33,6 @@ struct InsightsAggregationTests {
         #expect(insights().monthTotal([a, b], in: thisMonth) == 150)
     }
 
-    @Test func clientTotalsDropZeroEarnersAndSortDescending() {
-        let a = Client(name: "A")
-        let b = Client(name: "B")
-        let c = Client(name: "C")
-        a.entries = [Entry(amount: 100, task: "x", date: thisMonth, status: .paid)]
-        b.entries = [Entry(amount: 300, task: "y", date: thisMonth, status: .paid)]
-        c.entries = [Entry(amount: 999, task: "z", date: thisMonth, status: .canceled)] // nothing earned
-
-        let totals = insights().clientTotals([a, b, c], lastNMonths: 3)
-        #expect(totals.map(\.client.name) == ["B", "A"]) // C dropped, sorted desc
-        #expect(totals.first?.total == 300)
-    }
-
-    @Test func monthlyDeltasAreMonthOverMonthChange() {
-        let client = Client(name: "Acme")
-        client.entries = [
-            Entry(amount: 100, task: "last", date: monthsAgo(1), status: .paid),
-            Entry(amount: 250, task: "now", date: thisMonth, status: .paid),
-        ]
-        let deltas = insights().monthlyDeltas([client], lastNMonths: 2)
-        #expect(deltas.count == 2)
-        // Last bar: this month (250) minus last month (100) = +150.
-        #expect(deltas.last?.delta == 150)
-        #expect(deltas.last?.total == 250)
-    }
-
     @Test func pendingEntriesOrderDatedBeforeUndatedThenBySoonestHold() {
         let client = Client(name: "Acme")
         let soon = Entry(amount: 10, task: "soon", date: thisMonth,
@@ -69,7 +43,7 @@ struct InsightsAggregationTests {
         let paid = Entry(amount: 40, task: "paid", date: thisMonth, status: .paid) // excluded
         client.entries = [undated, later, soon, paid]
 
-        let pending = insights().pendingEntries([client])
+        let pending = Insights.sortedByUrgency(client.entries)
         #expect(pending.map(\.task) == ["soon", "later", "undated"]) // dated-soonest first, undated last
     }
 

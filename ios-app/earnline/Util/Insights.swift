@@ -268,73 +268,8 @@ struct Insights {
         }
     }
 
-    func clientsWithEntries(_ clients: [Client], in month: Date) -> [Client] {
-        clients
-            .filter { !entries(of: $0, in: month).isEmpty }
-            .sorted { $0.sortIndex < $1.sortIndex }
-    }
-
     func monthTotal(_ clients: [Client], in month: Date) -> Decimal {
         clients.reduce(Decimal.zero) { $0 + total(of: $1, in: month) }
-    }
-
-    // MARK: Trend series
-
-    /// Earned base-currency total for each of the last `lastNMonths` months,
-    /// oldest first. Months with no data come back as 0 so the chart is continuous.
-    func monthlySeries(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, total: Decimal)] {
-        let thisMonth = DateFormat.monthStart(of: .now)
-        return (0..<max(lastNMonths, 1)).reversed().compactMap { offset in
-            guard let month = calendar.date(byAdding: .month, value: -offset, to: thisMonth) else { return nil }
-            return (month: month, total: monthTotal(clients, in: month))
-        }
-    }
-
-    /// Every client that earned over the last `lastNMonths` months, highest
-    /// first, dropping clients with nothing earned — the full breakdown behind
-    /// the Top clients composition bar.
-    func clientTotals(_ clients: [Client], lastNMonths: Int = 12) -> [(client: Client, total: Decimal)] {
-        let months = monthlySeries(clients, lastNMonths: lastNMonths).map(\.month)
-        return clients
-            .map { client in
-                (client: client, total: months.reduce(Decimal.zero) { $0 + total(of: client, in: $1) })
-            }
-            .filter { $0.total > 0 }
-            .sorted { $0.total > $1.total }
-    }
-
-    /// The `limit` highest-earning clients over the window.
-    func topClients(_ clients: [Client], lastNMonths: Int = 12, limit: Int = 3) -> [(client: Client, total: Decimal)] {
-        Array(clientTotals(clients, lastNMonths: lastNMonths).prefix(limit))
-    }
-
-    /// Month-over-month change in earned revenue across the last `lastNMonths`
-    /// months: each month's earned total minus the prior month's. An extra
-    /// leading month is fetched so the first bar has a real baseline.
-    func monthlyDeltas(_ clients: [Client], lastNMonths: Int = 12) -> [(month: Date, delta: Decimal, total: Decimal)] {
-        let series = monthlySeries(clients, lastNMonths: lastNMonths + 1)
-        guard series.count >= 2 else {
-            return series.map { (month: $0.month, delta: $0.total, total: $0.total) }
-        }
-        return (1..<series.count).map { index in
-            (month: series[index].month,
-             delta: series[index].total - series[index - 1].total,
-             total: series[index].total)
-        }
-    }
-
-    /// Straight-line month-end projection for the running month: the earned
-    /// total so far scaled up to the full month. Nil while there's nothing to
-    /// extrapolate — no earnings yet, or the first two days of a month (one
-    /// early invoice would project an absurd figure).
-    nonisolated static func monthPace(total: Decimal,
-                                      now: Date = .now,
-                                      calendar: Calendar = .current) -> Decimal? {
-        guard total > 0 else { return nil }
-        let day = calendar.component(.day, from: now)
-        guard day >= 3,
-              let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count else { return nil }
-        return (total / Decimal(day) * Decimal(daysInMonth)).rounded()
     }
 
     // MARK: Daily heatmap
@@ -354,55 +289,68 @@ struct Insights {
         return (start, end, base / Decimal(count), count)
     }
 
-    /// Earned base-currency amount for each calendar day in `[startDay, endDay]`,
-    /// with held lines distributed evenly over their span. Canceled lines are
-    /// excluded; days with nothing earned are simply absent from the result.
-    /// Keys are start-of-day, matching what the heatmap looks up.
-    func dailyEarnings(_ clients: [Client], from startDay: Date, through endDay: Date) -> [Date: Decimal] {
-        let lo = calendar.startOfDay(for: startDay)
-        let hi = calendar.startOfDay(for: endDay)
-        guard lo <= hi else { return [:] }
-        var map: [Date: Decimal] = [:]
-        for client in clients {
-            for entry in client.entries where entry.status.isIncludedInEarnedTotals {
-                let span = heatSpan(of: entry)
-                var day = max(span.start, lo)
-                let last = min(span.end, hi)
-                while day <= last {
-                    map[day, default: .zero] += span.perDay
-                    guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-                    day = next
-                }
-            }
-        }
-        return map
-    }
-
     /// The lines earning on `day`, largest slice first, each paired with the
     /// base-currency amount it contributes that day (a full amount, or one even
     /// slice of a held line). Powers the tapped-day breakdown.
-    func dayContributions(on day: Date, clients: [Client]) -> [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] {
+    ///
+    /// `candidates` is a superset supplied by the caller — see
+    /// `dayContributionCandidates(on:in:)`. This used to walk every client's
+    /// entries on every day tap.
+    func dayContributions(on day: Date, candidates: [Entry]) -> [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] {
         let target = calendar.startOfDay(for: day)
         var rows: [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] = []
-        for client in clients {
-            for entry in client.entries where entry.status.isIncludedInEarnedTotals {
-                let span = heatSpan(of: entry)
-                if target >= span.start && target <= span.end {
-                    rows.append((entry: entry, amount: span.perDay, isHeldSlice: span.dayCount > 1))
-                }
+        for entry in candidates
+        where !entry.isDeleted && entry.status.isIncludedInEarnedTotals {
+            let span = heatSpan(of: entry)
+            if target >= span.start && target <= span.end {
+                rows.append((entry: entry, amount: span.perDay, isHeldSlice: span.dayCount > 1))
             }
         }
         return rows.sorted { $0.amount > $1.amount }
     }
 
+    /// Every entry that could contribute to `day`, fetched in two scoped
+    /// queries rather than by faulting the whole store:
+    ///
+    /// 1. lines dated on the day itself, and
+    /// 2. lines dated earlier that carry a hold — a held line spreads its
+    ///    amount across `date ... holdUntil`, so only these can reach forward.
+    ///
+    /// The hold set is bounded by how many held lines exist in history, which
+    /// is a small fraction of the ledger. `dayContributions` then applies the
+    /// exact span test to the union.
+    static func dayContributionCandidates(on day: Date, in context: ModelContext) -> [Entry] {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+
+        let onTheDay = FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
+        )
+        let heldFromEarlier = FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.holdUntil != nil && $0.date < dayStart }
+        )
+        let sameDay = (try? context.fetch(onTheDay)) ?? []
+        let held = (try? context.fetch(heldFromEarlier)) ?? []
+
+        var seen = Set(sameDay.map(\.id))
+        return sameDay + held.filter { seen.insert($0.id).inserted }
+    }
+
     // MARK: Pending / outstanding
 
-    /// All in-progress lines, soonest `holdUntil` first (undated last), then by
-    /// creation. These are the lines that still need follow-up.
-    func pendingEntries(_ clients: [Client]) -> [Entry] {
-        clients
-            .flatMap(\.entries)
-            .filter { $0.status == .inProgress }
+    /// Order in-progress lines by urgency: soonest `holdUntil` first (undated
+    /// last), then by creation.
+    ///
+    /// The caller supplies the rows. This used to take `[Client]` and reach
+    /// through `flatMap(\.entries)`, faulting the entire store to find the
+    /// handful of outstanding lines; callers now pass a predicate-scoped fetch.
+    static func sortedByUrgency(_ entries: [Entry]) -> [Entry] {
+        // `isDeleted`, not `isInvalidated` — same reason as `ledgerSnapshot`:
+        // it reads only registration metadata, so a free-standing fixture with
+        // no context yet is not mistaken for a dead row.
+        entries
+            .filter { !$0.isDeleted && $0.status == .inProgress }
             .sorted { a, b in
                 switch (a.holdUntil, b.holdUntil) {
                 case let (l?, r?): return l == r ? a.createdAt < b.createdAt : l < r
@@ -513,19 +461,6 @@ struct Insights {
         func monthTotal(monthKey: Int) -> Decimal {
             earnedTotalByMonth[monthKey] ?? .zero
         }
-    }
-
-    /// Earned base-currency totals for one client, bucketed by month key —
-    /// the client-detail page's chart and stat source. One pass over the
-    /// client's entries, like `ledgerSnapshot`.
-    func earnedTotalsByMonth(of client: Client) -> [Int: Decimal] {
-        var totals: [Int: Decimal] = [:]
-        for entry in client.entries
-        where !entry.isDeleted && entry.status.isIncludedInEarnedTotals {
-            totals[Self.monthKey(of: entry.date, calendar: calendar), default: .zero] +=
-                converter.toBase(entry.amount, code: entry.currencyCode)
-        }
-        return totals
     }
 
     /// Full snapshot over every client's entries — the search path, the

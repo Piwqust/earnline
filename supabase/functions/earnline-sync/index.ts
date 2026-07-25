@@ -256,6 +256,11 @@ const jwtHandler = withSupabase({ auth: "user" }, async (request, context) => {
     try {
       const body = record(await request.json());
       if (body.action === "batch") {
+        // Not transactional: the actions run in order against the caller-scoped
+        // client, so a failure partway through leaves the earlier ones applied
+        // and returns one opaque 400. That is survivable only because the sync
+        // protocol is idempotent and retried — do not batch anything that is
+        // not safe to re-send. See docs/AUDIT-2026-07.md (S2).
         if (!Array.isArray(body.requests) || body.requests.length < 1 || body.requests.length > 12) {
           throw new Error("Invalid sync request batch.");
         }

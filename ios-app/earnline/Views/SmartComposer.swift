@@ -18,8 +18,6 @@ struct SmartComposer: View {
     /// keyboard or move VoiceOver focus away from the actual account screen.
     var automaticallyFocus = true
 
-    @Query(sort: \Entry.createdAt, order: .reverse) private var allEntries: [Entry]
-
     enum Field: Hashable { case amount, project, task }
     @FocusState private var focus: Field?
 
@@ -34,6 +32,17 @@ struct SmartComposer: View {
     @State private var showHoldPicker = false
     @State private var primed = false
     @State private var saveError: String?
+    /// Distinct recent project names for the chevron menu, collected once when
+    /// the composer opens.
+    ///
+    /// This used to be a computed property over a live, unbounded
+    /// `@Query(sort: \Entry.createdAt)`. Amount, project, and task are all
+    /// `@State` on this view, so every character typed re-evaluated `body` and
+    /// re-walked the entire Entry table — and the live query re-fetched on every
+    /// store change besides, including each save inside a sync pass. On a ledger
+    /// of any size that is the most expensive thing the app does, on its most
+    /// frequent interaction, and it defeated the ledger's windowed fetch.
+    @State private var existingProjects: [String] = []
 
     private var amountDecimal: Decimal? {
         guard let d = LineParser.decimal(from: amountText), d > 0 else { return nil }
@@ -181,16 +190,32 @@ struct SmartComposer: View {
         }
     }
 
-    /// Distinct project names already used anywhere, most-recent first.
-    private var existingProjects: [String] {
+    /// The menu offers at most `projectSuggestionLimit` names, so the scan is
+    /// bounded to the newest rows rather than the whole table. A project that
+    /// hasn't been touched in hundreds of lines is not a useful suggestion, and
+    /// the field stays free-form for anything else.
+    private static let projectSuggestionLimit = 12
+    private static let projectScanLimit = 400
+
+    /// Distinct project names already used, most-recent first.
+    private func loadExistingProjects() {
+        var descriptor = FetchDescriptor<Entry>(
+            sortBy: [SortDescriptor(\Entry.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = Self.projectScanLimit
+        // Only `project` is read below; leaving the rest unfaulted keeps this
+        // off the ledger's hot path even on a large store.
+        descriptor.propertiesToFetch = [\.project]
+        let recent = (try? context.fetch(descriptor)) ?? []
+
         var seen = Set<String>()
         var result: [String] = []
-        for entry in allEntries {
+        for entry in recent where !entry.isInvalidated {
             guard let raw = entry.project?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { continue }
             if seen.insert(raw.lowercased()).inserted { result.append(raw) }
-            if result.count >= 12 { break }
+            if result.count >= Self.projectSuggestionLimit { break }
         }
-        return result
+        existingProjects = result
     }
 
     private var statusChip: some View {
@@ -312,6 +337,7 @@ struct SmartComposer: View {
     private func prime() {
         guard !primed else { return }
         primed = true
+        loadExistingProjects()
         currencyCode = app.baseCurrencyCode
         entryDate = defaultDate
         if !initialText.isEmpty {
@@ -331,7 +357,15 @@ struct SmartComposer: View {
         let cleanTask = Validation.trimmed(task, max: Limits.maxTaskLength)
         guard !cleanTask.isEmpty else { focus = .task; warn(); return }
         let cleanProject = Validation.trimmed(project, max: Limits.maxProjectLength)
-        let minIndex = client.entries.map(\.sortIndex).min() ?? 0
+        // A new line goes above the client's existing ones. Ask SQL for the
+        // lowest index instead of faulting every entry the client owns.
+        let clientID = client.id
+        var lowestIndex = FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.client?.id == clientID },
+            sortBy: [SortDescriptor(\Entry.sortIndex, order: .forward)]
+        )
+        lowestIndex.fetchLimit = 1
+        let minIndex = (try? context.fetch(lowestIndex))?.first?.sortIndex ?? 0
         let entry = Entry(
             amount: amount,
             currencyCode: currencyCode,
@@ -351,6 +385,9 @@ struct SmartComposer: View {
             saveError = error
         } else {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            // The line just committed may have introduced a project name, and
+            // the next line is usually typed straight after.
+            loadExistingProjects()
             withAnimation(.snappy) {
                 amountText = ""; project = ""; task = ""
                 holdUntil = nil; status = .paid; entryDate = defaultDate

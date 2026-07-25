@@ -151,8 +151,7 @@ struct InsightsView: View {
                 .accessibilityLabel("\(snapshot.unsupportedCurrencyCount) lines are excluded from consolidated totals because no conversion rate is set")
         }
 
-        EarningsHeatmapCard(clients: clients,
-                            map: map,
+        EarningsHeatmapCard(map: map,
                             maxDaily: maxDaily,
                             heatTotal: heatTotal,
                             months: snapshot.months,

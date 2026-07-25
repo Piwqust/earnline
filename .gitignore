@@ -40,3 +40,6 @@ ios-app/Config/Local.private.xcconfig
 
 # Supabase CLI link and connection cache
 supabase/.temp/
+
+# Stray plist a mis-redirected `xcodebuild -destination ... > -` leaves behind.
+-
