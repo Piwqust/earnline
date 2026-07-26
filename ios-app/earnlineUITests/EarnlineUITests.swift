@@ -181,6 +181,7 @@ final class EarnlineUITests: XCTestCase {
         let sheet = app.descendants(matching: .any)["insights.sheet"]
         XCTAssertTrue(sheet.waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["3M"].exists)
+        XCTAssertFalse(app.buttons["insights.report.share"].exists)
 
         let chart = app.descendants(matching: .any)["insights.monthlyIncomeChart"]
         XCTAssertTrue(chart.waitForExistence(timeout: 8))
@@ -203,28 +204,42 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["insights.selectedDay"].exists)
     }
 
-    func testLedgerStatsCardOpensInsightsOnGeneratedLedger() {
+    func testStatsCardIsInformationalAndInsightsRemainInMoreMenu() {
         let app = launchApp(["-demoLedger"])
 
-        let stats = app.buttons["ledger.stats"]
+        let stats = app.descendants(matching: .any)["ledger.stats.summary"]
         XCTAssertTrue(stats.waitForExistence(timeout: 8))
-        XCTAssertTrue(stats.isHittable)
-        stats.tap()
+        XCTAssertFalse(app.buttons["ledger.stats"].exists)
 
+        let menu = app.buttons["ledger.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        menu.tap()
+
+        let insights = app.buttons["Insights"]
+        XCTAssertTrue(insights.waitForExistence(timeout: 3))
+        insights.tap()
         XCTAssertTrue(app.descendants(matching: .any)["insights.sheet"].waitForExistence(timeout: 5))
     }
 
-    func testLedgerStatsCardOpensInsightsOnStressLedger() {
-        let app = launchApp(["-demoStressLedger"])
+    func testEmptyLedgerCreatesAClientBeforeOpeningIncomeComposer() {
+        let app = launchApp()
 
-        let stats = app.buttons["ledger.stats"]
-        XCTAssertTrue(stats.waitForExistence(timeout: 15))
-        XCTAssertTrue(stats.isHittable)
-        stats.tap()
+        let start = app.buttons["ledger.empty.primary"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertEqual(start.label, "Add client")
+        XCTAssertGreaterThanOrEqual(start.frame.height, 44)
+        start.tap()
 
-        XCTAssertTrue(app.descendants(matching: .any)["insights.sheet"].waitForExistence(timeout: 5))
-        let chartOrLoading = app.descendants(matching: .any)["insights.monthlyIncomeChart"]
-        XCTAssertTrue(chartOrLoading.waitForExistence(timeout: 12))
+        let clientName = app.textFields["Client name"]
+        XCTAssertTrue(clientName.waitForExistence(timeout: 3))
+        clientName.tap()
+        clientName.typeText("Acme")
+
+        let create = app.buttons["client.create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 2))
+        create.tap()
+
+        XCTAssertTrue(app.buttons["composer.submit"].waitForExistence(timeout: 5))
     }
 
     func testLargeLedgerClientProfileAppearsBeforeAggregationCompletes() {
@@ -232,6 +247,7 @@ final class EarnlineUITests: XCTestCase {
 
         let profile = app.descendants(matching: .any)["client.profile"]
         XCTAssertTrue(profile.waitForExistence(timeout: 12))
+        XCTAssertFalse(app.buttons["client.report.share"].exists)
         XCTAssertTrue(app.staticTexts["Stress Client 1"].exists)
         XCTAssertTrue(app.staticTexts["Total earned"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["All Transactions"].waitForExistence(timeout: 8))

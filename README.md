@@ -59,6 +59,10 @@ Choose the `earnline` scheme, then run it on an iPhone simulator or a connected
 iPhone. The [iOS README](ios-app/README.md) has the focused setup notes,
 development companion details, and validation commands.
 
+For agent-assisted iOS work, use Xcode 27 and its native Xcode MCP server as
+the project baseline. Verify the app on an iPhone 17 with the iOS 27 runtime;
+this does not change the app's iOS 26 deployment target.
+
 ## The web is optional
 
 The React app is a desktop-first companion for people who specifically want a

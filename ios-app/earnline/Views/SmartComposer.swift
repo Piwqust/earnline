@@ -425,9 +425,11 @@ struct DatePickerPopover: View {
                 Button(role: .destructive, action: onClear) {
                     Label(clearTitle, systemImage: "xmark.circle")
                         .appFont(14, .medium)
+                        .foregroundStyle(Theme.statusCanceled)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .tint(Theme.statusCanceled)
             }
         }
         .padding(16)

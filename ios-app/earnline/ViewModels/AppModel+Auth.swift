@@ -116,24 +116,15 @@ extension AppModel {
     nonisolated static let localGuestWorkspaceID = "local-guest"
     nonisolated static let localGuestDefaultsKey = "localGuestMode"
 
-    /// A UI-test-only route that keeps the real authentication gate visible
-    /// while the rest of UI automation stays offline and in-memory. Production
-    /// code never sets this argument.
-    nonisolated static var isAuthGatePreview: Bool {
-        isRunningUIAutomation && hasUIAutomationLaunchFlag("-authGatePreview")
-    }
-
     var requiresAccountAuthentication: Bool {
         // Dev is deliberately a local-only companion. It has no production
         // auth route, even if a configuration file contains development keys.
         guard !Self.isLocalOnlyDevBuild else { return false }
-        if Self.isAuthGatePreview { return true }
         return workspaceEnvironment == .production && !Self.isRunningUIAutomation
     }
 
-    /// Debug gate presets are visual, local-only states. They must still be
-    /// able to replace the ledger in the Dev app, even though that app never
-    /// requires a real Supabase account.
+    /// Debug presets must be able to replace the ledger in the Dev companion
+    /// even though that target never requires a production account.
     var isDebugAuthGatePreview: Bool {
         #if DEBUGMENU
         debugAuthGatePreview
@@ -158,13 +149,11 @@ extension AppModel {
     }
 
     func bootstrapAuthentication() async {
-        if Self.isAuthGatePreview {
-            applyAuthGatePreviewState()
-            return
-        }
-        // Keep an explicitly selected Dev preview stable while the view tree
-        // refreshes. No auth client is created for this path.
+        #if DEBUGMENU
+        // A debug preview owns its visible state. Never let a bootstrap task
+        // replace it or start a client while someone is testing a scenario.
         if isDebugAuthGatePreview { return }
+        #endif
         guard requiresAccountAuthentication else {
             if case .ready = accountState { return }
             accountState = .ready(AccountSession(userID: "local", email: nil, workspaceID: workspaceID, membershipRole: "owner", isPairedDevice: false))
@@ -175,7 +164,7 @@ extension AppModel {
             return
         }
         guard hasSupabaseConfiguration else {
-            accountState = .failure(String(localized: "This build is missing its Supabase configuration."))
+            continueWithoutAccount()
             return
         }
 
@@ -183,34 +172,30 @@ extension AppModel {
         accountState = .checking
         do {
             let session = try await supabase().auth.session
-            guard await verifyAppleCredentialState(for: session) else { return }
+            guard await verifyAppleCredentialState(for: session) else {
+                continueWithoutAccount()
+                return
+            }
             await resolveWorkspace(for: session)
+            if !isAccountReady {
+                continueWithoutAccount()
+            }
         } catch {
-            accountState = .signedOut
+            continueWithoutAccount()
         }
     }
 
-    /// The anonymous entry point: a guest ledger that stays on this device.
-    /// No Supabase session is created; sync remains off until the user signs
-    /// in with a real account from Settings.
+    /// The automatic local fallback. No Supabase session is created, so sync
+    /// stays off while the on-device ledger remains immediately usable.
     func continueWithoutAccount() {
-        if Self.isAuthGatePreview {
-            accountState = .ready(localGuestSession())
+        #if DEBUGMENU
+        if isDebugAuthGatePreview {
+            debugCompleteAuthPreview()
             return
         }
+        #endif
         defaults.set(true, forKey: Self.localGuestDefaultsKey)
         activateLocalGuestWorkspace()
-    }
-
-    /// Leaves guest mode and returns to the sign-in gate. The guest store
-    /// stays on disk untouched, so choosing guest again restores it.
-    func leaveGuestMode() {
-        defaults.removeObject(forKey: Self.localGuestDefaultsKey)
-        detachWorkspaceStore()
-        workspaceID = workspaceEnvironment.workspaceID
-        workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):signed-out"
-        accountState = .signedOut
-        resetSupabaseClient()
     }
 
     private func activateLocalGuestWorkspace() {
@@ -239,10 +224,13 @@ extension AppModel {
         provider: Provider,
         launchFlow: @escaping @MainActor @Sendable (URL) async throws -> URL
     ) async {
-        if Self.isAuthGatePreview {
-            accountState = .authenticating
+        #if DEBUGMENU
+        if isDebugAuthGatePreview {
+            _ = provider
+            debugBeginAuthenticating(provider: "External provider")
             return
         }
+        #endif
         guard hasSupabaseConfiguration else {
             accountState = .failure(String(localized: "This build is missing its Supabase configuration."))
             return
@@ -264,10 +252,12 @@ extension AppModel {
     /// identity token for a Supabase session. `nonce` is the RAW nonce whose
     /// SHA-256 digest was attached to the Apple request.
     func signInWithApple(result: Result<ASAuthorization, Error>, nonce: String) async {
-        if Self.isAuthGatePreview {
-            accountState = .authenticating
+        #if DEBUGMENU
+        if isDebugAuthGatePreview {
+            debugBeginAuthenticating(provider: "Apple")
             return
         }
+        #endif
         switch result {
         case let .success(authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
@@ -324,10 +314,12 @@ extension AppModel {
     }
 
     func retryWorkspaceResolution() async {
-        if Self.isAuthGatePreview {
-            accountState = .ready(previewAccountSession(isPairedDevice: false))
+        #if DEBUGMENU
+        if isDebugAuthGatePreview {
+            debugCompleteAuthPreview()
             return
         }
+        #endif
         guard hasSupabaseConfiguration else { return }
         accountState = .checking
         do {
@@ -339,12 +331,6 @@ extension AppModel {
     }
 
     func createPairingCode() async throws -> PairingCode {
-        if Self.isAuthGatePreview {
-            return PairingCode(
-                token: UUID(uuidString: "4C4B8B18-6E55-4B04-B3EC-5B4B2B3AA97C")!,
-                expiresAt: .now.addingTimeInterval(10 * 60)
-            )
-        }
         guard let accountSession, accountSession.isOwner else {
             throw AccountAuthError.ownerRequired
         }
@@ -361,11 +347,13 @@ extension AppModel {
             accountState = .failure(String(localized: "Enter a valid pairing code."))
             return
         }
-        if Self.isAuthGatePreview {
+        #if DEBUGMENU
+        if isDebugAuthGatePreview {
             _ = token
-            accountState = .ready(previewAccountSession(isPairedDevice: true))
+            debugCompleteAuthPreview()
             return
         }
+        #endif
         guard hasSupabaseConfiguration else {
             accountState = .failure(String(localized: "This build is missing its Supabase configuration."))
             return
@@ -386,13 +374,6 @@ extension AppModel {
     }
 
     func pairedDevices() async throws -> [PairedDevice] {
-        if Self.isAuthGatePreview {
-            return [PairedDevice(
-                id: UUID(uuidString: "BD078F2D-D828-4D64-B631-69E2C28D046E")!,
-                createdAt: .now.addingTimeInterval(-14 * 24 * 60 * 60),
-                lastSignInAt: .now.addingTimeInterval(-2 * 60 * 60)
-            )]
-        }
         guard let accountSession, accountSession.isOwner else {
             throw AccountAuthError.ownerRequired
         }
@@ -404,7 +385,6 @@ extension AppModel {
     }
 
     func revokePairedDevice(_ device: PairedDevice) async throws {
-        if Self.isAuthGatePreview { return }
         guard let accountSession, accountSession.isOwner else {
             throw AccountAuthError.ownerRequired
         }
@@ -416,10 +396,12 @@ extension AppModel {
     }
 
     func signOutAccount() async {
-        if Self.isAuthGatePreview {
-            accountState = .signedOut
+        #if DEBUGMENU
+        if isDebugAuthGatePreview {
+            debugShowAuthPreview(.onboarding)
             return
         }
+        #endif
         let userID = accountSession?.userID
         let pairedDevice = switch accountState {
         case let .ready(session): session.isPairedDevice
@@ -459,9 +441,6 @@ extension AppModel {
                 syncError = String(localized: "Signed out on this iPhone, but the local Apple sign-in check could not be cleared. It will be replaced after your next Sign in with Apple.")
             }
         }
-        detachWorkspaceStore()
-        workspaceID = workspaceEnvironment.workspaceID
-        workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):signed-out"
         resetSupabaseClient()
 
         if remoteDisconnectFailure != nil || localSignOutFailure != nil {
@@ -471,10 +450,10 @@ extension AppModel {
             } else {
                 message = String(localized: "Signed out on this iPhone. The server could not be reached to end this session remotely.")
             }
-            accountState = .failure(message)
-        } else {
-            accountState = .signedOut
+            syncError = message
         }
+        syncMessage = String(localized: "Offline")
+        continueWithoutAccount()
     }
 
     private func startObservingAppleCredentialRevocationsIfNeeded() {
@@ -554,14 +533,12 @@ extension AppModel {
         } catch {
             didFailLocalCleanup = true
         }
-        detachWorkspaceStore()
-        workspaceID = workspaceEnvironment.workspaceID
-        workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):signed-out"
         accountSecurityNotice = didFailLocalCleanup
-            ? String(localized: "Your Apple sign-in was revoked. Earnline blocked access to this ledger, but could not clear every local sign-in check. Restart the app, unlock the iPhone, and sign in again.")
+            ? String(localized: "Your Apple sign-in was revoked. Earnline opened a separate on-device ledger, but could not clear every local sign-in check.")
             : nil
-        accountState = .failure(String(localized: "Your Apple sign-in was revoked. Sign in again to continue."))
         resetSupabaseClient()
+        syncMessage = String(localized: "Offline")
+        continueWithoutAccount()
     }
 
     private func resolveWorkspace(for session: Session) async {
@@ -769,43 +746,6 @@ extension AppModel {
         return UUID(uuidString: url.lastPathComponent)
     }
 
-    private func applyAuthGatePreviewState() {
-        let processInfo = ProcessInfo.processInfo
-        let environmentState = processInfo.environment["EARNLINE_UI_TEST_AUTH_GATE_STATE"]
-        let arguments = processInfo.arguments
-        let stateIndex = arguments.firstIndex(of: "-authGateState")
-        let argumentState = stateIndex.flatMap { index in
-            arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
-        }
-        let state = environmentState ?? argumentState ?? "signedOut"
-
-        switch state {
-        case "checking":
-            accountState = .checking
-        case "authenticating":
-            accountState = .authenticating
-        case "failure":
-            accountState = .failure(String(localized: "Could not complete account setup. Please try again."))
-        case "workspacePending":
-            accountState = .awaitingWorkspace(isPairedDevice: false)
-        case "pairedWorkspacePending":
-            accountState = .awaitingWorkspace(isPairedDevice: true)
-        case "ready":
-            accountState = .ready(previewAccountSession(isPairedDevice: false))
-        default:
-            accountState = .signedOut
-        }
-    }
-
-    private func previewAccountSession(isPairedDevice: Bool) -> AccountSession {
-        AccountSession(
-            userID: isPairedDevice ? "ui-test-paired-device" : "ui-test-owner",
-            email: isPairedDevice ? nil : "owner@example.com",
-            workspaceID: workspaceID,
-            membershipRole: isPairedDevice ? "device" : "owner",
-            isPairedDevice: isPairedDevice
-        )
-    }
 }
 
 enum AccountAuthError: LocalizedError {

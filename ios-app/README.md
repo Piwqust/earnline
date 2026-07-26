@@ -52,12 +52,72 @@ adding files or changing build settings.
 For a regression check, use Xcode's Test action or run the scheme's tests:
 
 ```bash
-xcodebuild \
+earnline_xcode_developer_dir="/path/to/Xcode-beta.app/Contents/Developer"
+DEVELOPER_DIR="$earnline_xcode_developer_dir" xcodebuild \
   -project earnline.xcodeproj \
   -scheme earnline \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
   test
 ```
+
+### Test plans
+
+`Everyday` is the default plan for feature and visual work. It excludes the
+rare large-text accessibility UI check, so a normal `xcodebuild test` or Xcode
+**Product → Test** does not run it.
+
+Before an App Store or release-readiness pass, select **Product → Test Plan →
+AppStoreRelease** in Xcode, or add `-testPlan AppStoreRelease` to the command
+above. That plan includes the accessibility check as well as the normal tests.
+
+## Xcode 27 beta and MCP
+
+Xcode 27 and its native Xcode MCP server are the standard local toolchain for
+agent-assisted Earnline work. The server follows the project, scheme, and run
+destination selected in the open Xcode window. For Earnline, open
+`earnline.xcodeproj`, select the `earnline` scheme, and use an iPhone 17
+simulator on the iOS 27 runtime. This verifies iOS 27 behavior; it does not
+raise the app's iOS 26 deployment target.
+
+In Xcode, enable `Xcode → Settings → Intelligence → Model Context Protocol →
+Allow external agents to use Xcode tools`. For Codex, verify the workstation
+bridge before a session:
+
+```bash
+codex mcp get xcode
+```
+
+If the `xcode` server is absent, add the native bridge once:
+
+```bash
+codex mcp add xcode -- xcrun mcpbridge
+```
+
+Before a verification pass:
+
+1. List Xcode windows and keep the returned tab identifier.
+2. Confirm the active scheme and switch the run destination explicitly.
+3. Get the test list before constructing targeted test identifiers.
+4. Run the focused tests first, then the complete active test plan.
+5. Check Xcode's Issue navigator separately; a passing build does not prove
+   that the UI interaction or the complete test plan passed.
+
+Xcode's GUI and terminal can point at different installations. Verify the
+command-line toolchain before using CLI results as iOS 27 evidence:
+
+```bash
+earnline_xcode_developer_dir="/path/to/Xcode-beta.app/Contents/Developer"
+DEVELOPER_DIR="$earnline_xcode_developer_dir" xcodebuild -version
+DEVELOPER_DIR="$earnline_xcode_developer_dir" \
+  xcrun --sdk iphonesimulator --show-sdk-version
+```
+
+Prefer setting `DEVELOPER_DIR` per command over changing the machine-wide
+`xcode-select` setting. If a standalone Simulator MCP reports an IDB companion
+disconnect on a new beta runtime, treat that as a tool-compatibility failure,
+not an app failure. Use the native Xcode MCP test actions or XCUITest for taps
+and accessibility assertions; standalone simulator screenshots remain useful
+for optical inspection.
 
 ## Development companion
 

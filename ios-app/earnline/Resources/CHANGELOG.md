@@ -1,5 +1,21 @@
 # What's new
 
+## July 26, 2026
+
+### Simplified ledger
+- Removed report and recap creation, previews, and sharing from Insights, client profiles, and the ledger.
+- The Stats card is now a static monthly summary. Open **Insights** from the **…** menu when you want charts.
+- Earnline now opens directly to the ledger; account setup and modal first-entry tours no longer appear.
+- Delete actions in contextual menus now show a matching red trash icon.
+
+### First earnings
+- An empty ledger now makes the required order explicit: first add a client, then record income for that client. Saving the client opens the existing income composer with that client already selected.
+- The first-ledger header uses one calm month-and-total summary instead of empty Stats cards, and the bottom add control creates a client directly until one exists.
+- The first-action guide is now a quiet client-to-income path with one clear button, replacing the large checklist card.
+
+### Dev testing
+- **earnline Dev** now has local account and onboarding previews for signed out, signing in, sign-in errors, offline errors, workspace setup, paired-device setup, and simulated sign out. These previews never contact a provider or Supabase, change a session, or modify ledger data.
+
 ## July 17, 2026
 
 ### Private sync security
@@ -72,11 +88,6 @@
 ### Insights and sync
 - The Stats card is now explicitly reachable to accessibility and automated checks, and Insights shows its loading state before preparing a large dashboard.
 - Choosing the cloud copy now removes stale local project-icon preferences and month closures as well as income, clients, notes, and deletion records, so old local data cannot be pushed back to the workspace.
-
-### Reports
-- Insights can now preview and share a monthly report as beautiful PNG cards through the standard iPhone Share Sheet. Original-currency totals stay visible, and an optional current-rate USD equivalent clearly identifies excluded currencies.
-- Client profiles can share a client-only report for a month or a custom date range. It contains work, dates, projects, amounts, and statuses — never other clients or private notes.
-- You can softly close a personal month from its report with an optional note, then reopen it later; closing never locks your ledger rows.
 
 ### Data
 - Settings now includes CSV export and a safe import preview. CSV exchange is limited to income lines; invalid rows or duplicates stop the import before anything changes, and new clients require confirmation.

@@ -57,7 +57,6 @@ struct LedgerRowsView: View {
             )
         case .composer(let client, _):
             SmartComposer(client: client, month: composerMonth ?? .now)
-                .tourAnchor(.composer)
                 .transition(.opacity)
         case .entry(let entry, _):
             entryRow(entry)
@@ -124,7 +123,9 @@ struct LedgerRowsView: View {
                 onDeleteHeading(heading.id)
             } label: {
                 Label("Delete", systemImage: "trash")
+                    .foregroundStyle(Theme.statusCanceled)
             }
+            .tint(Theme.statusCanceled)
         }
         .accessibilityLabel("\(noteLabel): \(title), \(date)")
         .accessibilityHint("Edits note")

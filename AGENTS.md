@@ -7,6 +7,14 @@
 - Treat this repository as one iPhone-first product: native SwiftUI in `ios-app/` is the primary client, while the desktop-first React app in `web/` is an optional companion.
 - Preserve the personal product model: one shared Supabase workspace, no login, no password, and no account UI unless the user explicitly changes that requirement.
 
+## Xcode 27 and MCP baseline
+
+- Use Xcode 27 and its native Xcode MCP server as the default local toolchain for agent-assisted iOS work. This is a development and iOS 27 verification baseline; it does not change Earnline's iOS 26 deployment target unless `ios-app/project.yml` is explicitly changed.
+- Open `ios-app/earnline.xcodeproj` in Xcode 27 and enable `Xcode → Settings → Intelligence → Model Context Protocol → Allow external agents to use Xcode tools`. Connect Codex through `xcrun mcpbridge`; the native server follows the open Xcode window rather than a project path supplied in a terminal command.
+- Before an iOS action, identify the Xcode window, confirm the active scheme and run destination, and switch them deliberately. Default to `earnline` on iPhone 17 with the iOS 27 runtime. Use `earnline-dev` only for Debug-only checks and `earnline-device` only for an explicitly physical-device task.
+- Prefer the native Xcode MCP server for build, run, tests, simulator input, screenshots, accessibility hierarchy, logs, and Xcode configuration. Keep XCUITest for durable regression coverage. A standalone Simulator MCP or IDB companion disconnect on a beta runtime is a tool-compatibility failure, not proof of an app failure.
+- Treat Xcode 26/iOS 26 and Xcode 27/iOS 27 evidence as separate. When using the command line, set `DEVELOPER_DIR` per command to the Xcode 27 installation and verify it with `xcodebuild -version`; never change machine-wide `xcode-select` for this repository.
+
 ## Design workflow
 
 For every user-visible change, inspect the running surface before editing and verify the running surface after editing. A successful compile is not visual verification.
@@ -25,7 +33,7 @@ Small, well-scoped fixes do not require a separate design proposal, but they sti
 
 - iOS visual and interaction work: use `ios-hig-design`, `mobile-ios-design`, and `swiftui-ui-patterns`.
 - iOS 26 glass work: also use `swiftui-liquid-glass`.
-- iOS runtime checks: use `ios-debugger-agent` with XcodeBuildMCP and inspect screenshots plus the accessibility hierarchy.
+- iOS runtime checks: use the native Xcode 27 MCP server (`xcrun mcpbridge`) and inspect screenshots plus the accessibility hierarchy.
 - Web visual work: use `impeccable`; use browser automation for live inspection, keyboard checks, console errors, responsive states, and screenshots.
 - Figma is a source of truth only when the user supplies or approves a file or node. Do not invent a parallel Figma system that drifts from code.
 
@@ -58,10 +66,12 @@ Small, well-scoped fixes do not require a separate design proposal, but they sti
 
 ### iOS verification
 
-- Prefer XcodeBuildMCP for build, run, simulator interaction, screenshots, logs, and UI inspection.
-- Build and run the `earnline` scheme on the booted iPhone 17 simulator.
+- Prefer the native Xcode 27 MCP server for build, run, simulator interaction, screenshots, logs, UI inspection, and active-project configuration.
+- Build and run the explicitly selected scheme; normally this is `earnline` on the booted iPhone 17 iOS 27 simulator.
 - Run relevant unit tests; run the full iOS test suite for shared model, sync, parser, or navigation changes.
+- The default `Everyday` test plan skips release-only accessibility-size UI checks. Select `AppStoreRelease` only when the user explicitly asks for an App Store or release-readiness pass; do not turn it on for routine feature or visual work.
 - Capture the changed screen and exercise the actual interaction, not only its launch state.
+- Review the Xcode Issue navigator separately. A successful build, launch, or screenshot does not prove that the interaction and full test plan passed.
 
 ## Optional web companion
 

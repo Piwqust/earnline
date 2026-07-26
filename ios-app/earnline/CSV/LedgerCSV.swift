@@ -2,7 +2,7 @@ import Foundation
 
 /// The deliberately small interchange format for ledger income rows. It is
 /// RFC 4180 CSV encoded as UTF-8; it is not a backup and intentionally does
-/// not carry sync IDs, notes, month reviews, or workspace settings.
+/// not carry sync IDs, notes, or workspace settings.
 enum LedgerCSV {
     static let columns = [
         "date", "client", "project", "task", "amount", "currency_code", "status", "hold_date",

@@ -51,7 +51,9 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var app = appModel
         Form {
-            if app.workspaceEnvironment == .production, app.isAccountReady {
+            if app.workspaceEnvironment == .production,
+               app.isAccountReady,
+               app.accountSession?.isLocalOnly != true {
                 AccountDevicesSection(showingPairingCode: $showingPairingCode)
             }
 
@@ -258,7 +260,7 @@ struct SettingsView: View {
             } header: {
                 Text("Data")
             } footer: {
-                Text("Export or import ledger income lines in a standard CSV file. This is not a backup and does not include notes, month reviews, settings, or sync history.")
+                Text("Export or import ledger income lines in a standard CSV file. This is not a backup and does not include notes, settings, or sync history.")
             }
         }
         .scrollContentBackground(.hidden)

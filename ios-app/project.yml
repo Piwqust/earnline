@@ -9,6 +9,8 @@ options:
     iOS: "26.0"
   developmentLanguage: en
   groupSortPosition: top
+fileGroups:
+  - TestPlans
 settings:
   base:
     MARKETING_VERSION: "1.0"
@@ -185,9 +187,13 @@ schemes:
           script: |
             "${PROJECT_DIR}/Scripts/install-dev-companion.sh"
     test:
-      targets:
-        - earnlineTests
-        - earnlineUITests
+      # Everyday is deliberately the default. AppStoreRelease includes the
+      # rarely needed accessibility-size regression checks and is selected
+      # explicitly before an App Store/release-readiness pass.
+      testPlans:
+        - path: TestPlans/Everyday.xctestplan
+          defaultPlan: true
+        - path: TestPlans/AppStoreRelease.xctestplan
   earnline-dev:
     build:
       targets:

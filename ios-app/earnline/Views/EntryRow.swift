@@ -157,7 +157,9 @@ struct EntryRow: View {
     private var deleteButton: some View {
         Button(role: .destructive, action: onDelete) {
             Label("Delete", systemImage: "trash")
+                .foregroundStyle(Theme.statusCanceled)
         }
+        .tint(Theme.statusCanceled)
     }
 
     private var dateLine: some View {

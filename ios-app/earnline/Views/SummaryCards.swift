@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// The floating glass header from the Figma: two side-by-side cards — "Earned
-/// in <month>" with the running total on the left, and a "Stats" card with a
-/// faded sparkline and the month-over-month change on the right. Tapping the
-/// Stats card opens the full Insights sheet.
+/// in <month>" with the running total on the left, and a static "Stats" card
+/// with a faded sparkline and the month-over-month change on the right.
 struct SummaryCards: View {
     @Environment(AppModel.self) private var app
     let month: Date
@@ -11,7 +10,6 @@ struct SummaryCards: View {
     /// Earned base-currency totals ending at `month`, oldest first — drives the
     /// sparkline and the growth figure so both track the displayed month.
     let trend: [Decimal]
-    let onOpenStats: () -> Void
 
     /// Tracks the prior total for value-transition direction when a user edits
     /// a line or switches an explicit display context.
@@ -69,35 +67,31 @@ struct SummaryCards: View {
     // MARK: Stats
 
     private var statsCard: some View {
-        Button(action: onOpenStats) {
-            ZStack(alignment: .bottomLeading) {
-                Sparkline(values: trend.map(doubleValue))
-                    .padding(.top, 22)
-                    .allowsHitTesting(false)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Stats")
-                        .appFont(14, .medium)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Spacer(minLength: 12)
-                    Text(growthText)
-                        .appFont(20, .medium, design: .rounded)
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.label)
-                        .contentTransition(.numericText())
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+        ZStack(alignment: .bottomLeading) {
+            Sparkline(values: trend.map(doubleValue))
+                .padding(.top, 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Stats")
+                    .appFont(14, .medium)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 12)
+                Text(growthText)
+                    .appFont(20, .medium, design: .rounded)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.label)
+                    .contentTransition(.numericText())
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(16)
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Theme.Radius.summary))
-            .contentShape(.rect(cornerRadius: Theme.Radius.summary))
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(16)
+        .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("Stats")
         .accessibilityValue(growthText)
-        .accessibilityHint(Text("Opens insights"))
-        .accessibilityIdentifier("ledger.stats")
+        .accessibilityIdentifier("ledger.stats.summary")
     }
 
     /// This month against the one before it. Nil when there's no prior baseline

@@ -4,7 +4,7 @@ import XCTest
 /// build or launch the local companion.
 @MainActor
 final class EarnlineDevUITests: XCTestCase {
-    func testDebugMenuRendersLocalAuthGatePreviews() {
+    func testDebugMenuOpensLocalAccountAndErrorPreviews() {
         let app = XCUIApplication()
         app.launchArguments = [
             "-uiTesting",
@@ -12,31 +12,31 @@ final class EarnlineDevUITests: XCTestCase {
             "-resetExperimentalFeatures"
         ]
         app.launchEnvironment["EARNLINE_UI_TEST_FLAGS"] = app.launchArguments.joined(separator: " ")
-        app.launchEnvironment["EARNLINE_UI_TEST_AUTH_GATE_STATE"] = "signedOut"
         app.launch()
 
         let debugChip = app.buttons["debug.chip"]
         XCTAssertTrue(debugChip.waitForExistence(timeout: 5))
         debugChip.tap()
 
-        let signedOut = app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Signed out")
-        ).firstMatch
-        XCTAssertTrue(signedOut.waitForExistence(timeout: 3))
-        signedOut.tap()
+        let onboarding = app.buttons["debug.auth.onboarding"]
+        XCTAssertTrue(onboarding.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["debug.auth.signOut"].exists)
+        XCTAssertTrue(app.buttons["debug.auth.signInFailure"].exists)
+        XCTAssertTrue(app.buttons["debug.auth.offlineFailure"].exists)
+        XCTAssertTrue(app.buttons["debug.auth.workspacePending"].exists)
+        XCTAssertTrue(app.buttons["debug.auth.pairedWorkspacePending"].exists)
 
-        let entryGate = app.descendants(matching: .any)["auth.entry"]
-        XCTAssertTrue(entryGate.waitForExistence(timeout: 3))
+        onboarding.tap()
+        XCTAssertTrue(app.buttons["debug.auth.close"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Continue with Google"].exists)
 
-        XCTAssertTrue(debugChip.waitForExistence(timeout: 3))
-        debugChip.tap()
+        app.buttons["Continue with Google"].tap()
+        XCTAssertTrue(app.staticTexts["debug.auth.authenticatingState"].waitForExistence(timeout: 2))
+        app.buttons["Simulate error"].tap()
+        XCTAssertTrue(app.staticTexts["debug.auth.failure"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Sign-in issue"].exists)
 
-        let ready = app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Ready (debug session)")
-        ).firstMatch
-        XCTAssertTrue(ready.waitForExistence(timeout: 3))
-        ready.tap()
-
+        app.buttons["debug.auth.close"].tap()
         XCTAssertTrue(app.buttons["ledger.menu"].waitForExistence(timeout: 3))
     }
 }

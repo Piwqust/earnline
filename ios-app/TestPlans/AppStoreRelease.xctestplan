@@ -1,0 +1,30 @@
+{
+  "configurations" : [
+    {
+      "id" : "322128CF-428D-4129-9D33-1B76272AEC86",
+      "name" : "App Store release",
+      "options" : {
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:earnline.xcodeproj",
+        "identifier" : "43D655A2369D28AE1A46AE31",
+        "name" : "earnlineTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:earnline.xcodeproj",
+        "identifier" : "0A022DC032F7C98F286FACE3",
+        "name" : "earnlineUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

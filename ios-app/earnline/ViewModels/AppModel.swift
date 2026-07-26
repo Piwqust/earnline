@@ -240,25 +240,6 @@ final class AppModel {
     var requireAppLock: Bool {
         didSet { defaults.set(requireAppLock, forKey: "requireAppLock") }
     }
-    /// The guided first-entry tour runs once per install — for guests and
-    /// signed-in accounts alike — then never again. Skipping counts as
-    /// completing.
-    var hasCompletedFirstRunTour: Bool {
-        didSet { defaults.set(hasCompletedFirstRunTour, forKey: "hasCompletedFirstRunTour") }
-    }
-    /// Debug-menu escape hatch: lets the tour replay on a ledger that already
-    /// has rows. Transient — never persisted.
-    var debugForceFirstRunTour = false
-    /// UI automation launches with an empty store, which would otherwise start
-    /// the tour under every ledger test — so under automation the tour is
-    /// opt-in via the `-firstRunTour` launch argument.
-    var shouldOfferFirstRunTour: Bool {
-        guard !hasCompletedFirstRunTour else { return false }
-        if Self.isRunningUIAutomation {
-            return Self.hasUIAutomationLaunchFlag("-firstRunTour")
-        }
-        return true
-    }
     private(set) var isLocked = false
     /// A non-blocking privacy message shown in Settings after the app disables
     /// an impossible legacy lock (for example, after the device passcode was
@@ -274,10 +255,12 @@ final class AppModel {
     var syncError: String?
     var accountState: AccountState = .checking
     #if DEBUGMENU
-    /// A Dev-only visual override for exercising the account-gate states.
-    /// It never turns on authentication or sync; it only lets the root choose
-    /// the gate instead of the local ledger while a debug preset is active.
+    /// A Dev-only account-screen simulator. It never creates, clears, or
+    /// changes a real authentication session; it only replaces the visible
+    /// ledger with an explicitly requested local preview.
     var debugAuthGatePreview = false
+    var debugAuthPreviewProviderName: String?
+    @ObservationIgnored var debugAccountStateBeforePreview: AccountState?
     #endif
     /// Number of remote edits/deletes that changed after this device's last
     /// observed server version. These require an explicit user choice rather
@@ -401,7 +384,13 @@ final class AppModel {
             ?? defaults.object(forKey: "syncCursor") as? Date
             ?? savedLastSyncAt
         syncCursor = savedSyncCursor
-        if let saved = defaults.string(forKey: "appearanceMode").flatMap(AppearanceMode.init(rawValue:)) {
+        if Self.hasUIAutomationLaunchFlag("-uiTestDarkAppearance") {
+            // Keep visual regression tests independent from whichever
+            // appearance preference the simulator persisted previously.
+            // Assigning during initialization does not write the test-only
+            // override back to UserDefaults.
+            appearanceMode = .dark
+        } else if let saved = defaults.string(forKey: "appearanceMode").flatMap(AppearanceMode.init(rawValue:)) {
             appearanceMode = saved
         } else if let legacyDark = defaults.object(forKey: "prefersDarkMode") as? Bool {
             // Migrate the old binary toggle without changing what the user
@@ -428,10 +417,6 @@ final class AppModel {
             clientBadgesEnabled = true
         }
         requireAppLock = defaults.bool(forKey: "requireAppLock")
-        if Self.hasUIAutomationLaunchFlag("-resetFirstRunTour") {
-            defaults.set(false, forKey: "hasCompletedFirstRunTour")
-        }
-        hasCompletedFirstRunTour = defaults.bool(forKey: "hasCompletedFirstRunTour")
         syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
     }
 

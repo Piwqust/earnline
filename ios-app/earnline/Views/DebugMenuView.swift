@@ -154,9 +154,9 @@ private extension CGFloat {
 
 // MARK: - Menu
 
-/// The dev-build control room: force any auth-gate state, replay onboarding
-/// moments, seed or wipe the local store, and read the flags and identities
-/// that normally require a debugger to see. Every row explains what it does.
+/// The dev-build control room: seed or wipe the local store and read the flags
+/// and identities that normally require a debugger to see. Every row explains
+/// what it does.
 struct DebugMenuView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -169,8 +169,7 @@ struct DebugMenuView: View {
 
     var body: some View {
         Form {
-            gateSection
-            onboardingSection
+            authenticationSection
             dataSection
             flagsSection
             systemSection
@@ -205,32 +204,40 @@ struct DebugMenuView: View {
         }
     }
 
-    // MARK: Auth gate
+    // MARK: Account and onboarding
 
-    private var gateSection: some View {
+    private var authenticationSection: some View {
         Section {
-            ForEach(AppModel.DebugGateState.allCases) { preset in
-                actionRow(preset.title, preset.caption) {
+            ForEach(AppModel.DebugAuthPreview.allCases) { preview in
+                actionRow(
+                    preview.title,
+                    preview.caption,
+                    accessibilityIdentifier: preview.accessibilityIdentifier
+                ) {
                     dismiss()
-                    app.debugForceGateState(preset)
+                    app.debugShowAuthPreview(preview)
                 }
             }
-        } header: {
-            Text(verbatim: "Auth gate states")
-        } footer: {
-            Text(verbatim: "Each row is a local visual state: it closes this menu and shows the gate without contacting auth or sync.")
-        }
-    }
-
-    private var onboardingSection: some View {
-        Section {
-            actionRow("Replay first-run tour",
-                      "Closes this menu and replays the guided first-entry tour on the current ledger, even if it already has rows.") {
+            actionRow(
+                "Simulate sign out",
+                "Returns to the signed-out onboarding screen without removing a real credential or changing this device’s local ledger.",
+                accessibilityIdentifier: "debug.auth.signOut"
+            ) {
                 dismiss()
-                app.debugReplayFirstRunTour()
+                app.debugShowAuthPreview(.onboarding)
+            }
+            actionRow(
+                "Return to ledger",
+                "Closes any local account preview and restores the account state that was active before testing.",
+                accessibilityIdentifier: "debug.auth.returnToLedger"
+            ) {
+                dismiss()
+                app.debugCompleteAuthPreview()
             }
         } header: {
-            Text(verbatim: "Onboarding")
+            Text(verbatim: "Account & onboarding")
+        } footer: {
+            Text(verbatim: "Every scenario is local to earnline Dev: no OAuth sheet, Supabase request, session change, or ledger data change occurs. “Onboarding” is the signed-out account screen; “sign out” is its matching local preview.")
         }
     }
 
@@ -271,11 +278,6 @@ struct DebugMenuView: View {
 
     private var flagsSection: some View {
         Section {
-            actionRow("Clear guest-mode flag",
-                      "Forgets “Continue without an account”: the next launch boots to the sign-in gate. The guest ledger stays on disk.") {
-                app.defaults.removeObject(forKey: AppModel.localGuestDefaultsKey)
-                flagsNote = "Guest-mode flag cleared."
-            }
             actionRow("Reset Developer Mode",
                       "Switches the Developer Mode toggle off, hiding the advanced Settings sections again.") {
                 app.developerModeEnabled = false
@@ -343,6 +345,7 @@ struct DebugMenuView: View {
     private func actionRow(_ title: String,
                            _ caption: String,
                            role: ButtonRole? = nil,
+                           accessibilityIdentifier: String? = nil,
                            action: @escaping () -> Void) -> some View {
         Button(role: role, action: action) {
             VStack(alignment: .leading, spacing: 3) {
@@ -357,6 +360,7 @@ struct DebugMenuView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
         }
+        .accessibilityIdentifier(accessibilityIdentifier ?? title)
     }
 
     private func diagnosticRow(_ title: String, _ value: String) -> some View {
@@ -401,56 +405,102 @@ struct DebugMenuView: View {
 // MARK: - Debug-only model helpers
 
 extension AppModel {
-    enum DebugGateState: String, CaseIterable, Identifiable {
-        case signedOut, checking, authenticating, failure, workspacePending, pairedWorkspacePending, ready
+    /// All account previews are visual-only. They are deliberately separate
+    /// from `AccountState` so a Dev build cannot accidentally exercise a real
+    /// provider, alter the stored Supabase session, or switch a workspace.
+    enum DebugAuthPreview: String, CaseIterable, Identifiable {
+        case onboarding
+        case checking
+        case signingIn
+        case signInFailure
+        case offlineFailure
+        case workspacePending
+        case pairedWorkspacePending
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
-            case .signedOut: "Signed out"
-            case .checking: "Checking"
-            case .authenticating: "Authenticating"
-            case .failure: "Failure"
-            case .workspacePending: "Workspace pending"
-            case .pairedWorkspacePending: "Workspace pending (paired)"
-            case .ready: "Ready (debug session)"
+            case .onboarding: "Open account onboarding"
+            case .checking: "Show account check"
+            case .signingIn: "Show sign-in in progress"
+            case .signInFailure: "Show sign-in error"
+            case .offlineFailure: "Show offline sign-in error"
+            case .workspacePending: "Show workspace pending"
+            case .pairedWorkspacePending: "Show paired-device setup"
             }
         }
 
         var caption: String {
             switch self {
-            case .signedOut: "Live ledger preview behind the black panel: Apple pill, Google/GitHub icon pills, local-only options."
-            case .checking: "Preview with the panel in its minimal checking state — no splash."
-            case .authenticating: "Panel with all options disabled and Google's pill showing its in-flight spinner."
-            case .failure: "Panel with the “Sign-in issue” notice above the buttons."
-            case .workspacePending: "Panel variant a permanent account sees before the operator handoff."
-            case .pairedWorkspacePending: "The same panel for a QR-paired device, with the extra pairing button."
-            case .ready: "Straight to the ledger under a local-only debug session that never syncs."
+            case .onboarding:
+                "The signed-out account screen, including the onboarding video and local entry options."
+            case .checking:
+                "The minimal loading state while an existing account is being checked."
+            case .signingIn:
+                "A provider action in progress; use the preview controls to finish, cancel, or fail it."
+            case .signInFailure:
+                "A recoverable authentication failure above the usual entry actions."
+            case .offlineFailure:
+                "The account screen when the sign-in request cannot reach the network."
+            case .workspacePending:
+                "The state after identity succeeds but the workspace is not ready yet."
+            case .pairedWorkspacePending:
+                "The matching setup state for a device linked by a one-time pairing code."
             }
         }
+
+        var accessibilityIdentifier: String { "debug.auth.\(rawValue)" }
     }
 
-    func debugForceGateState(_ preset: DebugGateState) {
+    func debugShowAuthPreview(_ preview: DebugAuthPreview) {
+        if !debugAuthGatePreview {
+            debugAccountStateBeforePreview = accountState
+        }
+
         showSettings = false
         debugAuthGatePreview = true
-        switch preset {
-        case .signedOut: accountState = .signedOut
-        case .checking: accountState = .checking
-        case .authenticating: accountState = .authenticating
-        case .failure: accountState = .failure("Forced from the debug menu.")
-        case .workspacePending: accountState = .awaitingWorkspace(isPairedDevice: false)
-        case .pairedWorkspacePending: accountState = .awaitingWorkspace(isPairedDevice: true)
-        case .ready: accountState = .ready(debugLocalSession())
+        debugAuthPreviewProviderName = nil
+
+        switch preview {
+        case .onboarding:
+            accountState = .signedOut
+        case .checking:
+            accountState = .checking
+        case .signingIn:
+            debugAuthPreviewProviderName = "Google"
+            accountState = .authenticating
+        case .signInFailure:
+            accountState = .failure("We couldn’t complete the sign-in. Try again or choose a different method.")
+        case .offlineFailure:
+            accountState = .failure("You appear to be offline. Reconnect and try signing in again.")
+        case .workspacePending:
+            accountState = .awaitingWorkspace(isPairedDevice: false)
+        case .pairedWorkspacePending:
+            accountState = .awaitingWorkspace(isPairedDevice: true)
         }
     }
 
-    /// Clears the completion flag and forces the tour past its empty-ledger
-    /// gate, so it can be replayed on a populated dev ledger.
-    func debugReplayFirstRunTour() {
-        showSettings = false
-        hasCompletedFirstRunTour = false
-        debugForceFirstRunTour = true
+    func debugBeginAuthenticating(provider: String) {
+        guard isDebugAuthGatePreview else { return }
+        debugAuthPreviewProviderName = provider
+        accountState = .authenticating
+    }
+
+    func debugCompleteAuthPreview() {
+        guard isDebugAuthGatePreview else { return }
+        accountState = debugAccountStateBeforePreview
+            ?? .ready(AccountSession(
+                userID: "debug-local",
+                email: nil,
+                workspaceID: workspaceID,
+                membershipRole: "owner",
+                isPairedDevice: false,
+                isLocalOnly: true
+            ))
+        debugAccountStateBeforePreview = nil
+        debugAuthPreviewProviderName = nil
+        debugAuthGatePreview = false
     }
 
     var debugAccountStateDescription: String {
@@ -464,17 +514,5 @@ extension AppModel {
         }
     }
 
-    /// Marked local-only so a forced "ready" can never let sync run against a
-    /// half-real identity.
-    private func debugLocalSession() -> AccountSession {
-        AccountSession(
-            userID: "debug",
-            email: "debug@earnline.dev",
-            workspaceID: workspaceID,
-            membershipRole: "owner",
-            isPairedDevice: false,
-            isLocalOnly: true
-        )
-    }
 }
 #endif

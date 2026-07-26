@@ -64,6 +64,7 @@ struct NewClientSheet: View {
         .sheetHeader("New client", onClose: { dismiss() })
         .sheetFooter {
             PillCTA("Add client", isEnabled: validation.validName != nil, action: create)
+                .accessibilityIdentifier("client.create")
         }
         .presentationDetents(detents)
         .presentationDragIndicator(.visible)

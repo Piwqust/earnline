@@ -461,6 +461,7 @@ struct Insights {
         func monthTotal(monthKey: Int) -> Decimal {
             earnedTotalByMonth[monthKey] ?? .zero
         }
+
     }
 
     /// Full snapshot over every client's entries — the search path, the

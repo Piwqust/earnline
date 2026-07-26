@@ -107,7 +107,7 @@ struct CSVTransferView: View {
             }
             .accessibilityIdentifier("settings.csv.export")
         } footer: {
-            Text("Exports ledger income lines only: date, client, project, task, original amount, currency, status, and hold date. This is not a backup and does not include notes, month reviews, settings, or sync IDs.")
+            Text("Exports ledger income lines only: date, client, project, task, original amount, currency, status, and hold date. This is not a backup and does not include notes, settings, or sync IDs.")
         }
 
         Section("Included") {

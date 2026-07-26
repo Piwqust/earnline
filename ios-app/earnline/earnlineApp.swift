@@ -61,17 +61,7 @@ private struct WorkspaceContainerHost: View {
         @Bindable var app = app
         Group {
             if let store {
-                ZStack {
-                    if app.isAccountReady {
-                        LedgerView()
-                            .id(store.key)
-                            .transition(.opacity)
-                    } else {
-                        AuthGateView()
-                            .transition(.opacity)
-                    }
-                }
-                    .animation(.easeInOut(duration: 0.22), value: app.isAccountReady)
+                primaryContent(for: store)
                     // Settings is presented here, outside the `.id` boundary, so a
                     // workspace switch made *from inside Settings* swaps the ledger
                     // underneath without dismissing the sheet the user is touching.
@@ -117,32 +107,41 @@ private struct WorkspaceContainerHost: View {
             }
             .onOpenURL { url in
                 Task { await app.handleAuthCallback(url) }
-            }
+        }
+    }
+
+    @ViewBuilder
+    private func primaryContent(for store: WorkspaceStore) -> some View {
+        #if DEBUGMENU
+        if app.isDebugAuthGatePreview, !app.isAccountReady {
+            DebugAuthGateView()
+                .transition(.opacity)
+        } else {
+            LedgerView()
+                .id(store.key)
+                .transition(.opacity)
+        }
+        #else
+        LedgerView()
+            .id(store.key)
+        #endif
     }
 
     @ViewBuilder
     private var unavailableStoreContent: some View {
-        if app.isAccountReady {
-            StoreRecoveryView(
-                canCreateFreshAccountStore: app.canCreateFreshAccountStoreAfterRecovery,
-                retry: retryActiveStore,
-                createFreshAccountStore: {
-                    app.createFreshAccountStoreAfterRecovery()
-                }
-            )
-        } else {
-            AuthGateView()
-        }
+        StoreRecoveryView(
+            canCreateFreshAccountStore: app.canCreateFreshAccountStoreAfterRecovery,
+            retry: retryActiveStore,
+            createFreshAccountStore: {
+                app.createFreshAccountStoreAfterRecovery()
+            }
+        )
     }
 
     @MainActor
     private func bootstrapCurrentStore(store: WorkspaceStore) async {
         let context = store.container.mainContext
         if AppModel.isRunningUIAutomation {
-            if AppModel.isAuthGatePreview {
-                await app.bootstrapAuthentication()
-                return
-            }
             // Keep smoke tests deterministic and isolated from the user's
             // personal Supabase workspace. Insights visual/UI tests explicitly
             // request the deterministic generated ledger; other tests remain

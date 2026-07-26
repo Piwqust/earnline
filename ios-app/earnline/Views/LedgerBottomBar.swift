@@ -39,13 +39,17 @@ struct LedgerBottomBarItems: ToolbarContent {
         }
     }
 
+    @ViewBuilder
     private var addMenu: some View {
-        Menu {
-            if clients.isEmpty {
-                Button { onIncome(nil) } label: {
-                    MenuRowLabel("Income", glyph: "dollarsign")
-                }
-            } else {
+        if clients.isEmpty {
+            Button(action: onNewClient) {
+                Label("Add client", systemImage: "person.crop.circle.badge.plus")
+            }
+            .tint(.primary)
+            .accessibilityLabel("Add client")
+            .accessibilityIdentifier("ledger.fab")
+        } else {
+            Menu {
                 Menu {
                     ForEach(clients) { client in
                         Button { onIncome(client) } label: { Text(client.name) }
@@ -53,24 +57,22 @@ struct LedgerBottomBarItems: ToolbarContent {
                 } label: {
                     MenuRowLabel("Income", glyph: "dollarsign")
                 }
-            }
-            Button(action: onNewClient) {
-                MenuRowLabel("Client", glyph: "person.crop.circle.badge.plus")
-            }
-            Button(action: onNewHeading) {
-                MenuRowLabel("Event note", glyph: "note.text")
-            }
-            if !clients.isEmpty {
+                Button(action: onNewClient) {
+                    MenuRowLabel("Client", glyph: "person.crop.circle.badge.plus")
+                }
+                Button(action: onNewHeading) {
+                    MenuRowLabel("Event note", glyph: "note.text")
+                }
                 Button(action: onPasteLines) {
                     MenuRowLabel("Paste lines", glyph: "doc.on.clipboard")
                 }
+            } label: {
+                Label("Add", systemImage: "plus")
             }
-        } label: {
-            Label("Add", systemImage: "plus")
+            .tint(.primary)
+            .accessibilityLabel("Add")
+            .accessibilityIdentifier("ledger.fab")
         }
-        .tint(.primary)
-        .accessibilityLabel("Add")
-        .accessibilityIdentifier("ledger.fab")
     }
 
     /// Search no longer needs a menu entry — the field itself rests in the
@@ -122,7 +124,9 @@ struct LedgerSearchFiltersMenu: View {
                     tokens.removeAll()
                 } label: {
                     Label("Clear filters", systemImage: "xmark.circle")
+                        .foregroundStyle(Theme.statusCanceled)
                 }
+                .tint(Theme.statusCanceled)
             }
         } label: {
             Label("Filters", systemImage: filterSymbol)

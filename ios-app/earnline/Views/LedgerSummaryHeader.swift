@@ -4,13 +4,14 @@ import SwiftUI
 /// so month changes do not invalidate every ledger row.
 struct LedgerSummaryHeader: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let monthlyTotals: [Int: Decimal]
     var isSearching = false
     var searchHitCount = 0
     var searchEarnedTotal: Decimal = 0
     var hasSearchFilter = false
-    let onOpenStats: () -> Void
+    var hasAnyEntries = true
 
     private var displayedTotal: Decimal {
         monthlyTotals[Insights.monthKey(of: app.displayedMonth)] ?? .zero
@@ -28,12 +29,13 @@ struct LedgerSummaryHeader: View {
         Group {
             if isSearching {
                 compactSearchHeader
+            } else if !hasAnyEntries {
+                firstEarningsHeader
             } else {
                 SummaryCards(
                     month: app.displayedMonth,
                     total: displayedTotal,
-                    trend: displayedTrend,
-                    onOpenStats: onOpenStats
+                    trend: displayedTrend
                 )
             }
         }
@@ -73,5 +75,47 @@ struct LedgerSummaryHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var firstEarningsHeader: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    firstEarningsTitle
+                    firstEarningsAmount
+                }
+            } else {
+                HStack(alignment: .lastTextBaseline, spacing: 16) {
+                    firstEarningsTitle
+                    Spacer(minLength: 12)
+                    firstEarningsAmount
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("ledger.firstEarnings.summary")
+    }
+
+    private var firstEarningsTitle: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Earnings")
+                .appFont(22, .bold, relativeTo: .title2)
+                .foregroundStyle(Theme.label)
+            Text(DateFormat.monthAndYear(app.displayedMonth))
+                .appFont(14, .medium, relativeTo: .subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var firstEarningsAmount: some View {
+        Text(app.primaryString(displayedTotal))
+            .appFont(32, .bold, design: .rounded, relativeTo: .title)
+            .monospacedDigit()
+            .foregroundStyle(Theme.label)
+            .contentTransition(.numericText())
     }
 }

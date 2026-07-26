@@ -1,0 +1,33 @@
+{
+  "configurations" : [
+    {
+      "id" : "0AA21526-16F5-4FF5-8803-100E68C9B184",
+      "name" : "Everyday",
+      "options" : {
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:earnline.xcodeproj",
+        "identifier" : "43D655A2369D28AE1A46AE31",
+        "name" : "earnlineTests"
+      }
+    },
+    {
+      "skippedTests" : [
+        "EarnlineUITests/testFiltersRemainReachableAtAccessibilityTextSize()"
+      ],
+      "target" : {
+        "containerPath" : "container:earnline.xcodeproj",
+        "identifier" : "0A022DC032F7C98F286FACE3",
+        "name" : "earnlineUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

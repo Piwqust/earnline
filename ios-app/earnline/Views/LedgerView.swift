@@ -4,6 +4,7 @@ import SwiftData
 struct LedgerView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     @Query(sort: \Heading.date, order: .reverse) private var headings: [Heading]
 
@@ -61,7 +62,6 @@ struct LedgerView: View {
     @State private var feedback = LedgerFeedbackState()
     @State private var didRunDemo = false
     @State private var saveError: String?
-    @State private var tour = FirstRunTourState()
 
     // MARK: Derived
 
@@ -80,6 +80,15 @@ struct LedgerView: View {
 
     private var activeComposerClient: Client? { rowBuilder.activeComposerClient }
     private var hasSearchFilter: Bool { rowBuilder.hasSearchFilter }
+    /// A large first-earnings header is useful context but cannot remain fixed
+    /// above the onboarding card at accessibility sizes: it would cover the
+    /// card as the person scrolls to its primary action. Let it scroll with the
+    /// card instead, preserving a clear reading order and a reachable action.
+    private var showsInlineFirstEarningsHeader: Bool {
+        dynamicTypeSize.isAccessibilitySize
+            && !isSearching
+            && ledgerSnapshot?.hasEntries == false
+    }
 
     /// One scan per query/token/store change, replacing the four per render.
     private func refreshSearchStats() {
@@ -174,9 +183,6 @@ struct LedgerView: View {
             isSnapshotRefreshScheduled = false
             guard !Task.isCancelled else { return }
             refreshLedgerSnapshot()
-            if let snapshot = ledgerSnapshot {
-                tour.entrySaved(app: app, hasAnyEntries: snapshot.hasEntries)
-            }
         }
     }
 
@@ -387,14 +393,6 @@ struct LedgerView: View {
             scrollContent
         }
         .undoToastHost()
-        // The single first-action spotlight rides above the whole ledger
-        // surface. Sheets naturally cover it while a person adds a client.
-        .overlayPreferenceValue(TourAnchorKey.self) { anchors in
-            if tour.isPresented, sheetRoute == nil, !isSearching {
-                FirstRunTourOverlay(tour: tour, anchors: anchors)
-            }
-        }
-        .animation(.smooth(duration: 0.3), value: tour.isPresented)
     }
 
     // MARK: Header
@@ -404,14 +402,14 @@ struct LedgerView: View {
     // from it) directly here would register the whole `LedgerView.body` as an
     // observer, rebuilding the ledger rows — every month, client, and entry —
     // each time the top month ticks over. That rebuild was the scroll hitch.
-    private func header(monthlyTotals: [Int: Decimal]) -> some View {
+    private func header(monthlyTotals: [Int: Decimal], hasAnyEntries: Bool) -> some View {
         LedgerSummaryHeader(
             monthlyTotals: monthlyTotals,
             isSearching: isSearching,
             searchHitCount: searchStats.hitCount,
             searchEarnedTotal: searchStats.earnedTotal,
             hasSearchFilter: hasSearchFilter,
-            onOpenStats: { sheetRoute = .insights }
+            hasAnyEntries: hasAnyEntries
         )
     }
 
@@ -424,12 +422,18 @@ struct LedgerView: View {
         // are many around launch — reuse it for free, and scrolling never
         // touches it: the header owns the `displayedMonth` read.
         List {
+            if showsInlineFirstEarningsHeader, let snapshot = ledgerSnapshot {
+                header(monthlyTotals: snapshot.earnedTotalByMonth, hasAnyEntries: snapshot.hasEntries)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+            }
+
             if let snapshot = ledgerSnapshot {
                 if isSearching {
                     searchListContent(snapshot)
                 } else if !rowBuilder.hasContent(in: snapshot) {
-                    EmptyStateView(onStart: startFirstLine)
-                        .tourAnchor(.emptyStateCTA)
+                    EmptyStateView(client: mostRecentClient, onStart: startFirstLine)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -469,8 +473,8 @@ struct LedgerView: View {
         // stays put at rest. A plain `safeAreaInset` gave the effect no bar to
         // frost against, so the top read as a hard cut with no blur.
         .safeAreaBar(edge: .top) {
-            if let snapshot = ledgerSnapshot {
-                header(monthlyTotals: snapshot.earnedTotalByMonth)
+            if !showsInlineFirstEarningsHeader, let snapshot = ledgerSnapshot {
+                header(monthlyTotals: snapshot.earnedTotalByMonth, hasAnyEntries: snapshot.hasEntries)
             }
         }
         // UIKit replaces the docked bottom-bar items with its full search
@@ -499,9 +503,6 @@ struct LedgerView: View {
         // settings re-price the totals. Data edits arrive via `didSave` below.
         .task(id: pricingRevision) {
             refreshLedgerSnapshot()
-            if let snapshot = ledgerSnapshot {
-                tour.evaluateStart(app: app, hasAnyEntries: snapshot.hasEntries)
-            }
         }
         // Every mutation in this app persists through a context save (the
         // AppModel.save contract, plus the sync pass's own saves), so this is
@@ -630,7 +631,9 @@ struct LedgerView: View {
     }
 
     private var mostRecentClient: Client? {
-        clients.max { $0.createdAt < $1.createdAt } ?? clients.first
+        clients
+            .filter { !$0.isInvalidated }
+            .max { $0.createdAt < $1.createdAt }
     }
 
     private func client(withID id: UUID) -> Client? {

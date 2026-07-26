@@ -69,7 +69,7 @@ struct PairDeviceRedeemSheet: View {
                     }
 
                     if let pairingError {
-                        AuthInlineNotice(label: "Couldn’t connect this device", message: pairingError)
+                        PairingInlineNotice(label: "Couldn’t connect this device", message: pairingError)
                     }
                 }
                 .frame(maxWidth: 520)
@@ -132,18 +132,7 @@ struct AccountDevicesSection: View {
                 LabeledContent("This device") {
                     Text(session.isLocalOnly ? "Local" : (session.isPairedDevice ? "Paired" : "Owner"))
                 }
-                if session.isLocalOnly {
-                    // A guest ledger cannot pair or sync; the only account
-                    // action is stepping up to a real sign-in. The guest
-                    // store stays on disk, so this is not destructive.
-                    Button {
-                        app.showSettings = false
-                        app.leaveGuestMode()
-                    } label: {
-                        Label("Sign in…", systemImage: "person.crop.circle.badge.plus")
-                    }
-                    .accessibilityHint("Returns to the sign-in screen")
-                } else {
+                if !session.isLocalOnly {
                     if session.isOwner {
                         Button {
                             showingPairingCode = true
@@ -245,6 +234,36 @@ struct PairingCodeDisplaySheet: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+private struct PairingInlineNotice: View {
+    let label: LocalizedStringKey
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundStyle(Theme.statusProgress)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label)
+                    .font(.subheadline.weight(.semibold))
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: .rect(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .strokeBorder(Theme.statusProgress.opacity(0.30), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

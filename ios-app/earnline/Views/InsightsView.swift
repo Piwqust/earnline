@@ -10,9 +10,9 @@ struct InsightsView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Query(sort: \Client.sortIndex) private var clients: [Client]
-    @Query(sort: \Heading.date, order: .reverse) private var headings: [Heading]
-    @Query(sort: \MonthReview.monthStart, order: .reverse) private var monthReviews: [MonthReview]
+    // No `@Query` here on purpose: the dashboard is aggregated on a private
+    // model actor. Querying clients or entries for this sheet would fault the
+    // whole ledger onto the main actor just to present it.
 
     @State private var windowMonths = 3
     @State private var selectedDay: Date?
@@ -22,10 +22,6 @@ struct InsightsView: View {
     @State private var dashboardError: String?
     @State private var dashboardReloadToken = 0
     @State private var dashboardDataRevision = 0
-    @State private var personalReportSnapshot: ReportSnapshot?
-    @State private var personalReportScope: ReportScope?
-    @State private var reportReviewOverride: ReportMonthReview?
-    @State private var presentsPersonalReportPreview = false
 
     private var calendar: Calendar { .current }
 
@@ -69,16 +65,6 @@ struct InsightsView: View {
         .task(id: dashboardRevision) { await loadDashboard() }
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
             dashboardDataRevision &+= 1
-        }
-        .sheet(isPresented: $presentsPersonalReportPreview) {
-            if let personalReportSnapshot {
-                ReportPreviewView(
-                    snapshot: personalReportSnapshot,
-                    onCloseMonth: closePersonalReportMonth,
-                    onReopenMonth: reopenPersonalReportMonth,
-                    snapshotFactory: refreshedPersonalReportSnapshot
-                )
-            }
         }
     }
 
@@ -141,8 +127,6 @@ struct InsightsView: View {
         let maxDaily = map.values.max() ?? .zero
         let heatTotal = map.values.reduce(Decimal.zero, +)
 
-        shareMonthlyReportAction(snapshot)
-
         if snapshot.unsupportedCurrencyCount > 0 {
             Label("\(snapshot.unsupportedCurrencyCount) line(s) are excluded from these totals because no conversion rate is set.",
                   systemImage: "exclamationmark.triangle.fill")
@@ -171,32 +155,6 @@ struct InsightsView: View {
                 topClientsCard(snapshot.clientTotals)
             }
         }
-    }
-
-    private func shareMonthlyReportAction(_ dashboard: InsightsDashboardSnapshot) -> some View {
-        let month = selectedPoint(dashboard.monthlyIncome)?.month
-            ?? dashboard.monthlyIncome.last?.month
-            ?? .now
-        return Button {
-            let scope = ReportScope.month(containing: month)
-            personalReportScope = scope
-            reportReviewOverride = nil
-            personalReportSnapshot = makePersonalReport(scope: scope)
-            presentsPersonalReportPreview = true
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Label("Share monthly report", systemImage: "square.and.arrow.up")
-                    .font(.body.weight(.semibold))
-                Text(DateFormat.monthAndYear(month))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .accessibilityHint("Previews PNG cards before opening the Share Sheet")
-        .accessibilityIdentifier("insights.report.share")
     }
 
     private var dashboardSkeleton: some View {
@@ -244,94 +202,6 @@ struct InsightsView: View {
 
     private func retryDashboardLoad() {
         dashboardReloadToken &+= 1
-    }
-
-    // MARK: Shareable monthly report
-
-    /// Copy report input only after the user explicitly asks for a report.
-    /// The builder then owns immutable values; the image renderer never reads
-    /// live SwiftData models while it draws a card.
-    private func makePersonalReport(scope: ReportScope) -> ReportSnapshot {
-        let input = ReportSnapshotInput(
-            clients: clients,
-            headings: headings,
-            monthReviews: personalReportMonthReviews,
-            converter: app.converter
-        )
-        return ReportSnapshotBuilder(input: input).snapshot(scope: scope, audience: .personal)
-    }
-
-    private var personalReportMonthReviews: [ReportMonthReview] {
-        var reviews = monthReviews.compactMap { review -> ReportMonthReview? in
-            guard !review.isDeleted else { return nil }
-            return ReportMonthReview(
-                monthStart: review.monthStart,
-                note: review.note,
-                closedAt: review.closedAt
-            )
-        }
-        if let reportReviewOverride {
-            reviews.removeAll {
-                Calendar.current.isDate($0.monthStart,
-                                        equalTo: reportReviewOverride.monthStart,
-                                        toGranularity: .month)
-            }
-            reviews.append(reportReviewOverride)
-        }
-        return reviews
-    }
-
-    private func refreshedPersonalReportSnapshot() -> ReportSnapshot {
-        guard let scope = personalReportScope else {
-            return personalReportSnapshot
-                ?? makePersonalReport(scope: .month(containing: .now))
-        }
-        return makePersonalReport(scope: scope)
-    }
-
-    private func closePersonalReportMonth(note: String) -> String? {
-        guard let scope = personalReportScope, scope.isMonth else {
-            return String(localized: "This report is not a calendar month.")
-        }
-        do {
-            let review = try MonthReviewStore.close(
-                monthContaining: scope.period().start,
-                note: note,
-                in: context
-            )
-            if let error = app.save(context) { return error }
-            reportReviewOverride = ReportMonthReview(
-                monthStart: review.monthStart,
-                note: review.note,
-                closedAt: review.closedAt
-            )
-            return nil
-        } catch {
-            return error.localizedDescription
-        }
-    }
-
-    private func reopenPersonalReportMonth() -> String? {
-        guard let scope = personalReportScope, scope.isMonth else {
-            return String(localized: "This report is not a calendar month.")
-        }
-        do {
-            guard let review = try MonthReviewStore.reopen(
-                monthContaining: scope.period().start,
-                in: context
-            ) else {
-                return nil
-            }
-            if let error = app.save(context) { return error }
-            reportReviewOverride = ReportMonthReview(
-                monthStart: review.monthStart,
-                note: review.note,
-                closedAt: review.closedAt
-            )
-            return nil
-        } catch {
-            return error.localizedDescription
-        }
     }
 
     // MARK: Period

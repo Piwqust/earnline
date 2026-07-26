@@ -10,7 +10,7 @@ a parallel product direction.
 
 | Path | What | Stack |
 | --- | --- | --- |
-| [`ios-app/`](ios-app) | **Primary iPhone app** | SwiftUI (iOS 26) · SwiftData · Supabase Swift |
+| [`ios-app/`](ios-app) | **Primary iPhone app** | SwiftUI (iOS 26 target) · Xcode 27/MCP · SwiftData · Supabase Swift |
 | [`web/`](web) | Optional desktop companion | React · Vite · TypeScript · Dexie · supabase-js |
 | [`supabase/`](supabase) | Private sync contract | Postgres schema + migrations |
 | [`docs/`](docs) | Screenshots and operator documentation | — |
@@ -40,6 +40,32 @@ cd ios-app
 xcodegen generate        # regenerate earnline.xcodeproj
 open earnline.xcodeproj
 ```
+
+### Xcode 27 and native MCP
+
+Use Xcode 27 as the local toolchain for agent-assisted iOS work. Open the
+project in Xcode, enable `Xcode → Settings → Intelligence → Model Context
+Protocol → Allow external agents to use Xcode tools`, then use the native
+Xcode MCP server. It follows the selected Xcode project, scheme, and run
+destination, so confirm those before every build or test.
+
+The usual verification target is `earnline` on iPhone 17 with the iOS 27
+runtime. This is a testing baseline, not a deployment-target change: the app
+continues to support iOS 26 unless `project.yml` changes. For Codex on a Mac
+that does not yet have the bridge configured, run:
+
+```bash
+codex mcp get xcode
+# If the server is absent:
+codex mcp add xcode -- xcrun mcpbridge
+```
+
+Use the native Xcode MCP server for interactive builds, launches, screenshots,
+logs, and accessibility inspection; keep XCUITest for repeatable regression
+coverage. If CLI verification is needed, set `DEVELOPER_DIR` for that command
+to the Xcode 27 installation rather than changing the system-wide
+`xcode-select` setting. See [the iOS guide](ios-app/README.md) for the exact
+verification sequence.
 
 ## Working on the optional web companion
 
