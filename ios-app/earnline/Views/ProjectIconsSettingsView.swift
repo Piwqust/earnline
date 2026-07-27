@@ -18,21 +18,32 @@ struct ProjectIconsSettingsView: View {
             } else if projects.isEmpty {
                 ContentUnavailableView(
                     "No projects yet",
-                    systemImage: "folder",
+                    systemImage: "folder.fill",
                     description: Text("Projects appear here after you add them to an income line.")
                 )
             } else {
-                List(projects) { project in
-                    NavigationLink {
-                        ProjectSymbolPickerView(
-                            projectName: project.name
-                        )
-                    } label: {
-                        Label(project.name, systemImage: symbol(for: project.name).systemImageName)
-                            .lineLimit(2)
+                List {
+                    Section {
+                        Text("Choose one quiet marker for each project. It appears beside the project name in your ledger.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                    .accessibilityValue(symbol(for: project.name).title)
+
+                    Section("Projects") {
+                        ForEach(projects) { project in
+                            NavigationLink {
+                                ProjectSymbolPickerView(projectName: project.name)
+                            } label: {
+                                ProjectCatalogLabel(
+                                    projectName: project.name,
+                                    symbol: assignedSymbol(for: project.name)
+                                )
+                            }
+                            .accessibilityValue(assignedSymbol(for: project.name)?.title ?? "No icon")
+                        }
+                    }
                 }
+                .listStyle(.insetGrouped)
             }
         }
         .navigationTitle("Project icons")
@@ -45,8 +56,9 @@ struct ProjectIconsSettingsView: View {
         .saveErrorAlert($loadError, title: "Could not load projects")
     }
 
-    private func symbol(for projectName: String) -> ProjectSymbol {
-        ProjectIconResolver.symbol(for: projectName, in: preferences)
+    private func assignedSymbol(for projectName: String) -> ProjectSymbol? {
+        let key = ProjectIconResolver.normalizedKey(for: projectName)
+        return preferences.first { $0.projectKey == key }?.symbol
     }
 
     @MainActor
@@ -70,9 +82,20 @@ private struct ProjectSymbolPickerView: View {
 
     let projectName: String
     @State private var saveError: String?
+    @State private var previewEntry: Entry
+
+    init(projectName: String) {
+        self.projectName = projectName
+        _previewEntry = State(initialValue: Entry(
+            amount: 390,
+            project: projectName,
+            task: String(localized: "New income line"),
+            status: .paid
+        ))
+    }
 
     private var columns: [GridItem] {
-        let count = dynamicTypeSize.isAccessibilitySize ? 2 : 4
+        let count = dynamicTypeSize.isAccessibilitySize ? 3 : 5
         return Array(repeating: GridItem(.flexible(), spacing: 12), count: count)
     }
 
@@ -82,17 +105,53 @@ private struct ProjectSymbolPickerView: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(ProjectSymbol.allCases) { symbol in
-                    symbolButton(symbol)
+            VStack(alignment: .leading, spacing: 28) {
+                ledgerPreview
+
+                VStack(alignment: .leading, spacing: 24) {
+                    Text("Choose an icon")
+                        .font(.headline)
+                        .foregroundStyle(Theme.label)
+
+                    ForEach(ProjectSymbolCategory.allCases) { category in
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(category.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+
+                            LazyVGrid(columns: columns, spacing: 14) {
+                                ForEach(category.symbols) { symbol in
+                                    symbolButton(symbol)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 24)
         }
-        .navigationTitle(projectName)
+        .navigationTitle("Project icon")
         .navigationBarTitleDisplayMode(.inline)
         .background(Theme.background)
         .saveErrorAlert($saveError, title: "Could not save project icon")
+    }
+
+    private var ledgerPreview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("In your ledger")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            // This is the exact renderer used by LedgerRowsView, not a visual
+            // approximation. The preview changes together with its selected
+            // symbol and inherits the user's current currency formatting.
+            EntryRow(entry: previewEntry, projectSymbol: selection)
+                .allowsHitTesting(false)
+        }
+        .onAppear { previewEntry.currencyCode = app.baseCurrencyCode }
     }
 
     private func symbolButton(_ symbol: ProjectSymbol) -> some View {
@@ -100,33 +159,22 @@ private struct ProjectSymbolPickerView: View {
         return Button {
             select(symbol)
         } label: {
-            VStack(spacing: 8) {
-                Image(systemName: symbol.systemImageName)
-                    .font(.title2.weight(.medium))
-                    .symbolRenderingMode(.monochrome)
-                    .frame(height: 28)
-                Text(symbol.title)
-                    .font(.caption)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-            }
-            .foregroundStyle(isSelected ? app.accentColor : Theme.label)
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .padding(.horizontal, 4)
-            .background(
-                isSelected ? app.accentColor.opacity(0.12) : Theme.surface,
-                in: .rect(cornerRadius: 16, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(isSelected ? app.accentColor : Theme.hairline,
-                                  lineWidth: isSelected ? 2 : 0.5)
-            }
-            .contentShape(.rect)
+            Image(systemName: symbol.systemImageName)
+                .font(.title3.weight(.semibold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(isSelected ? .white : .secondary)
+                .frame(width: 52, height: 52)
+                .background(
+                    isSelected ? app.accentColor : Color(.tertiarySystemFill),
+                    in: .circle
+                )
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(symbol.title)
+        .accessibilityValue(isSelected ? "Selected" : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("projectIcon.option.\(symbol.id)")
     }
 
     private func select(_ symbol: ProjectSymbol) {
@@ -136,6 +184,33 @@ private struct ProjectSymbolPickerView: View {
             saveError = app.save(context)
         } catch {
             saveError = error.localizedDescription
+        }
+    }
+}
+
+private struct ProjectCatalogLabel: View {
+    let projectName: String
+    let symbol: ProjectSymbol?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol?.systemImageName ?? "folder.fill")
+                .font(.body.weight(.medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(symbol == nil ? .tertiary : .secondary)
+                .frame(width: 24, height: 28)
+                .accessibilityHidden(true)
+
+            Text(projectName)
+                .foregroundStyle(Theme.label)
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            Text(symbol?.title ?? "Choose")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }
@@ -184,6 +259,51 @@ extension ProjectSymbol {
         case .sparkles: return String(localized: "Creative")
         case .chart: return String(localized: "Growth")
         case .building: return String(localized: "Business")
+        case .app: return String(localized: "App")
+        case .cloud: return String(localized: "Cloud")
+        case .terminal: return String(localized: "Code")
+        case .bolt: return String(localized: "Fast")
+        case .cpu: return String(localized: "Technology")
+        case .photo: return String(localized: "Image")
+        case .pencil: return String(localized: "Writing")
+        case .theater: return String(localized: "Studio")
+        case .creditCard: return String(localized: "Card")
+        case .banknote: return String(localized: "Money")
+        case .people: return String(localized: "Team")
+        case .calendar: return String(localized: "Schedule")
+        case .storefront: return String(localized: "Store")
+        case .bag: return String(localized: "Shopping")
+        }
+    }
+}
+
+private enum ProjectSymbolCategory: String, CaseIterable, Identifiable {
+    case work
+    case creative
+    case digital
+    case commerce
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .work: "Work"
+        case .creative: "Creative"
+        case .digital: "Digital"
+        case .commerce: "Commerce"
+        }
+    }
+
+    var symbols: [ProjectSymbol] {
+        switch self {
+        case .work:
+            [.folder, .briefcase, .document, .package, .building, .tools, .chart, .people]
+        case .creative:
+            [.paintpalette, .sparkles, .camera, .video, .photo, .music, .pencil, .theater]
+        case .digital:
+            [.display, .app, .cloud, .terminal, .bolt, .cpu, .globe, .calendar]
+        case .commerce:
+            [.cart, .creditCard, .banknote, .megaphone, .storefront, .bag]
         }
     }
 }

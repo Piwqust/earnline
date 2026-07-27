@@ -61,7 +61,10 @@ private struct WorkspaceContainerHost: View {
         @Bindable var app = app
         Group {
             if let store {
-                primaryContent(for: store)
+                ZStack {
+                    primaryContent(for: store)
+                }
+                    .animation(.easeInOut(duration: 0.22), value: app.isAccountReady)
                     // Settings is presented here, outside the `.id` boundary, so a
                     // workspace switch made *from inside Settings* swaps the ledger
                     // underneath without dismissing the sheet the user is touching.
@@ -116,32 +119,76 @@ private struct WorkspaceContainerHost: View {
         if app.isDebugAuthGatePreview, !app.isAccountReady {
             DebugAuthGateView()
                 .transition(.opacity)
+        } else if app.isAccountReady {
+            ledger(for: store)
         } else {
-            LedgerView()
-                .id(store.key)
+            AuthGateView()
                 .transition(.opacity)
         }
         #else
-        LedgerView()
-            .id(store.key)
+        if app.isAccountReady {
+            ledger(for: store)
+        } else {
+            AuthGateView()
+                .transition(.opacity)
+        }
         #endif
+    }
+
+    /// The ledger, with the first-run flow layered over it when it is due.
+    ///
+    /// Onboarding is a sibling layer rather than a cover because its last
+    /// screen *is* the ledger: the owner's new client and first line are
+    /// already behind the "You're all set!" scrim. Keeping the real view
+    /// mounted underneath also means its bootstrap has run by the time the
+    /// flow hands over.
+    @ViewBuilder
+    private func ledger(for store: WorkspaceStore) -> some View {
+        ZStack {
+            LedgerView()
+                .id(store.key)
+                .allowsHitTesting(!app.isPresentingOnboarding)
+                .accessibilityHidden(app.isPresentingOnboarding)
+
+            if app.isPresentingOnboarding {
+                OnboardingFlowView {
+                    app.onboardingCompleted = true
+                    app.isPresentingOnboarding = false
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.35), value: app.isPresentingOnboarding)
+        .transition(.opacity)
     }
 
     @ViewBuilder
     private var unavailableStoreContent: some View {
-        StoreRecoveryView(
-            canCreateFreshAccountStore: app.canCreateFreshAccountStoreAfterRecovery,
-            retry: retryActiveStore,
-            createFreshAccountStore: {
-                app.createFreshAccountStoreAfterRecovery()
-            }
-        )
+        // A store that will not open is only recoverable once we know whose
+        // ledger it is. Until then the gate stays in front of it.
+        if app.isAccountReady {
+            StoreRecoveryView(
+                canCreateFreshAccountStore: app.canCreateFreshAccountStoreAfterRecovery,
+                retry: retryActiveStore,
+                createFreshAccountStore: {
+                    app.createFreshAccountStoreAfterRecovery()
+                }
+            )
+        } else {
+            AuthGateView()
+        }
     }
 
     @MainActor
     private func bootstrapCurrentStore(store: WorkspaceStore) async {
         let context = store.container.mainContext
         if AppModel.isRunningUIAutomation {
+            // The gate's own tests need the real authentication surface, in a
+            // deterministic state, with no fixtures seeded behind it.
+            if AppModel.isAuthGatePreview {
+                await app.bootstrapAuthentication()
+                return
+            }
             // Keep smoke tests deterministic and isolated from the user's
             // personal Supabase workspace. Insights visual/UI tests explicitly
             // request the deterministic generated ledger; other tests remain
@@ -161,6 +208,12 @@ private struct WorkspaceContainerHost: View {
             if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile") {
                 app.clientBadgesEnabled = true
             }
+            // UI automation runs on a wiped defaults suite, so every test would
+            // otherwise launch into the first-run flow. It is opt-in here and
+            // opt-in only.
+            if AppModel.hasUIAutomationLaunchFlag("-demoOnboarding") {
+                app.isPresentingOnboarding = true
+            }
             return
         }
         app.lockOnLaunchIfNeeded()
@@ -170,6 +223,12 @@ private struct WorkspaceContainerHost: View {
         // private, account-scoped one. Let the new container's task own the
         // first sync; never push the old container under the new membership.
         guard initialStoreIdentity == app.workspaceStoreIdentity, app.isAccountReady else { return }
+        // A workspace that has never been introduced gets the first-run flow
+        // before anything else touches the screen. It writes real rows, so it
+        // waits until the resolved account's own store is the one on screen.
+        if !app.onboardingCompleted {
+            app.isPresentingOnboarding = true
+        }
         if store.environment == .production {
             do {
                 try SampleData.cleanupLeakedProductionFixturesIfNeeded(context)
@@ -204,6 +263,9 @@ private struct WorkspaceContainerHost: View {
                              mode: AppModel.AccountStoreMode) {
         let key = WorkspaceStore.Key(environment: environment, workspaceID: workspaceID, mode: mode)
         app.detachWorkspaceStore()
+        // A pending composer handoff never crosses a workspace boundary: the
+        // client it names lives in the store being switched away from.
+        app.pendingFirstEntryClientID = nil
         if stores[key] == nil {
             do {
                 stores[key] = try WorkspaceStore(key: key)

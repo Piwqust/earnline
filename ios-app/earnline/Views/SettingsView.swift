@@ -134,18 +134,6 @@ struct SettingsView: View {
             }
 
             Section {
-                NavigationLink {
-                    ProjectIconsSettingsView()
-                } label: {
-                    SettingsRowLabel("Project icons", glyph: "folder")
-                }
-            } header: {
-                Text("Projects")
-            } footer: {
-                Text("Choose a familiar SF Symbol for every project already used in the ledger.")
-            }
-
-            Section {
                 currencyPicker("Primary",
                                selection: $app.baseCurrencyCode, options: currencies)
                 currencyPicker("Secondary",
@@ -193,10 +181,29 @@ struct SettingsView: View {
                         SettingsRowLabel("Client badges", glyph: "medal")
                     }
                     .accessibilityIdentifier("settings.clientBadges")
+
+                    NavigationLink {
+                        ProjectIconsSettingsView()
+                    } label: {
+                        SettingsRowLabel("Project icons", glyph: "folder")
+                    }
+                    .accessibilityIdentifier("settings.projectIcons")
+
+                    // Replays the real first-run flow over the ledger. Settings
+                    // closes first so the layer is not trapped behind this
+                    // sheet. It creates a real client and a real line, exactly
+                    // as it does on a fresh install.
+                    Button {
+                        app.showSettings = false
+                        app.isPresentingOnboarding = true
+                    } label: {
+                        SettingsRowLabel("Onboarding", glyph: "sparkles.rectangle.stack")
+                    }
+                    .accessibilityIdentifier("settings.onboarding")
                 } header: {
                     Text("Experimental")
                 } footer: {
-                    Text("Experimental features may change or be removed in a future version.")
+                    Text("Experimental features may change or be removed in a future version. Onboarding replays the two-step introduction; finishing it adds the client you name and the first line you write.")
                 }
 
                 #if DEBUG

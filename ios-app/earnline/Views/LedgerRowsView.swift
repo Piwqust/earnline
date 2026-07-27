@@ -1,10 +1,12 @@
 import SwiftUI
+import SwiftData
 
 /// Renders the heterogeneous ledger rows and owns their row-level interaction
 /// wiring. `LedgerView` keeps screen orchestration and persistence; this view
 /// keeps row presentation and native swipe actions together.
 struct LedgerRowsView: View {
     @Environment(AppModel.self) private var app
+    @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
 
     let rows: [LedgerRow]
     let isSearching: Bool
@@ -66,6 +68,7 @@ struct LedgerRowsView: View {
     private func entryRow(_ entry: Entry) -> some View {
         EntryRow(
             entry: entry,
+            projectSymbol: projectSymbol(for: entry),
             onSetStatus: { onSetStatus(entry, $0) },
             onEdit: { onEditEntry(entry.id) },
             onDelete: { onDeleteEntry(entry.id) }
@@ -85,6 +88,12 @@ struct LedgerRowsView: View {
             }
             .tint(app.accentColor)
         }
+    }
+
+    private func projectSymbol(for entry: Entry) -> ProjectSymbol? {
+        guard let project = entry.project, !project.isEmpty else { return nil }
+        let key = ProjectIconResolver.normalizedKey(for: project)
+        return projectIconPreferences.first { $0.projectKey == key }?.symbol
     }
 
     private func headingRow(_ heading: Heading) -> some View {

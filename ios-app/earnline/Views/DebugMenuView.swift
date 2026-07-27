@@ -164,12 +164,14 @@ struct DebugMenuView: View {
 
     @State private var actionNote: String?
     @State private var flagsNote: String?
+    @State private var onboardingNote: String?
     @State private var confirmingWipe = false
     @State private var confirmingCrash = false
 
     var body: some View {
         Form {
             authenticationSection
+            onboardingSection
             dataSection
             flagsSection
             systemSection
@@ -220,11 +222,11 @@ struct DebugMenuView: View {
             }
             actionRow(
                 "Simulate sign out",
-                "Returns to the signed-out onboarding screen without removing a real credential or changing this device’s local ledger.",
+                "Returns to the signed-out account screen without removing a real credential or changing this device’s local ledger.",
                 accessibilityIdentifier: "debug.auth.signOut"
             ) {
                 dismiss()
-                app.debugShowAuthPreview(.onboarding)
+                app.debugShowAuthPreview(.signedOut)
             }
             actionRow(
                 "Return to ledger",
@@ -235,9 +237,41 @@ struct DebugMenuView: View {
                 app.debugCompleteAuthPreview()
             }
         } header: {
-            Text(verbatim: "Account & onboarding")
+            Text(verbatim: "Account")
         } footer: {
-            Text(verbatim: "Every scenario is local to earnline Dev: no OAuth sheet, Supabase request, session change, or ledger data change occurs. “Onboarding” is the signed-out account screen; “sign out” is its matching local preview.")
+            Text(verbatim: "Every scenario is local to earnline Dev: no OAuth sheet, Supabase request, session change, or ledger data change occurs. These are the account screens only — the first-run flow lives in its own section below.")
+        }
+    }
+
+    /// The first-run flow. Separate from the account previews above: it is a
+    /// real, writing flow rather than a visual state, so replaying it adds a
+    /// client and a line to whatever container is on screen.
+    private var onboardingSection: some View {
+        Section {
+            actionRow(
+                "Replay onboarding",
+                "Shows the two-step first-run flow over the current ledger. It creates a real client and a real line — it is not a mock.",
+                accessibilityIdentifier: "debug.onboarding.replay"
+            ) {
+                dismiss()
+                app.isPresentingOnboarding = true
+            }
+            actionRow(
+                "Reset onboarding flag",
+                "Marks this workspace as never introduced, so the next cold launch opens the flow on its own. Existing clients and lines are left alone.",
+                accessibilityIdentifier: "debug.onboarding.reset"
+            ) {
+                app.onboardingCompleted = false
+                onboardingNote = "Onboarding will run on the next launch."
+            }
+        } header: {
+            Text(verbatim: "Onboarding")
+        } footer: {
+            if let onboardingNote {
+                Text(verbatim: onboardingNote)
+            } else {
+                Text(verbatim: "The flag is stored per workspace, so Production and Test each get their own introduction.")
+            }
         }
     }
 
@@ -284,7 +318,7 @@ struct DebugMenuView: View {
                 flagsNote = "Developer Mode switched off."
             }
             actionRow("Reset experimental features",
-                      "Turns every Experimental toggle (client badges) back off.") {
+                      "Turns every Experimental toggle (client badges) back off. Project icons and Onboarding are routes rather than toggles — use the Onboarding section above to replay or re-arm the first run.") {
                 app.clientBadgesEnabled = false
                 flagsNote = "Experimental features reset."
             }
@@ -409,7 +443,7 @@ extension AppModel {
     /// from `AccountState` so a Dev build cannot accidentally exercise a real
     /// provider, alter the stored Supabase session, or switch a workspace.
     enum DebugAuthPreview: String, CaseIterable, Identifiable {
-        case onboarding
+        case signedOut
         case checking
         case signingIn
         case signInFailure
@@ -421,7 +455,7 @@ extension AppModel {
 
         var title: String {
             switch self {
-            case .onboarding: "Open account onboarding"
+            case .signedOut: "Open the signed-out account screen"
             case .checking: "Show account check"
             case .signingIn: "Show sign-in in progress"
             case .signInFailure: "Show sign-in error"
@@ -433,7 +467,7 @@ extension AppModel {
 
         var caption: String {
             switch self {
-            case .onboarding:
+            case .signedOut:
                 "The signed-out account screen, including the onboarding video and local entry options."
             case .checking:
                 "The minimal loading state while an existing account is being checked."
@@ -463,7 +497,7 @@ extension AppModel {
         debugAuthPreviewProviderName = nil
 
         switch preview {
-        case .onboarding:
+        case .signedOut:
             accountState = .signedOut
         case .checking:
             accountState = .checking

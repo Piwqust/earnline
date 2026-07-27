@@ -18,7 +18,7 @@ final class EarnlineDevUITests: XCTestCase {
         XCTAssertTrue(debugChip.waitForExistence(timeout: 5))
         debugChip.tap()
 
-        let onboarding = app.buttons["debug.auth.onboarding"]
+        let onboarding = app.buttons["debug.auth.signedOut"]
         XCTAssertTrue(onboarding.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["debug.auth.signOut"].exists)
         XCTAssertTrue(app.buttons["debug.auth.signInFailure"].exists)

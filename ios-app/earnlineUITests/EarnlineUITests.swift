@@ -221,12 +221,45 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["insights.sheet"].waitForExistence(timeout: 5))
     }
 
+    func testLedgerSummaryRefreshesAfterDeletingAnIncomeLine() {
+        let app = launchApp(["-demoLedger"])
+
+        let summary = app.descendants(matching: .any)["ledger.earned.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 8))
+        let totalBeforeDelete = summary.value as? String
+        XCTAssertNotNil(totalBeforeDelete)
+
+        let entry = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "entry.row.")
+        ).firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.swipeLeft()
+
+        let delete = app.buttons["Delete"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 3))
+        delete.tap()
+
+        let confirm = app.alerts["Delete income line?"].buttons["Delete"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+
+        let summaryUpdated = NSPredicate(format: "value != %@", totalBeforeDelete!)
+        expectation(for: summaryUpdated, evaluatedWith: summary, handler: nil)
+        waitForExpectations(timeout: 5)
+    }
+
     func testEmptyLedgerCreatesAClientBeforeOpeningIncomeComposer() {
         let app = launchApp()
 
-        let start = app.buttons["ledger.empty.primary"]
-        XCTAssertTrue(start.waitForExistence(timeout: 5))
-        XCTAssertEqual(start.label, "Add client")
+        // Step two is unreachable until step one is done: income belongs to a
+        // client, so the checklist refuses to let the order be taken backwards.
+        let income = app.buttons["ledger.empty.income"]
+        XCTAssertTrue(income.waitForExistence(timeout: 5))
+        XCTAssertFalse(income.isEnabled)
+
+        let start = app.buttons["ledger.empty.client"]
+        XCTAssertTrue(start.exists)
+        XCTAssertTrue(start.isEnabled)
         XCTAssertGreaterThanOrEqual(start.frame.height, 44)
         start.tap()
 
@@ -254,22 +287,41 @@ final class EarnlineUITests: XCTestCase {
     }
 
     func testProjectIconCanBeChosenFromSettings() {
-        let app = launchApp(["-demoInsights", "-demoSettings"])
+        let app = launchApp(["-demoInsights", "-demoDeveloperSettings"])
 
-        let projectIcons = app.buttons["Project icons"]
-        XCTAssertTrue(projectIcons.waitForExistence(timeout: 8))
+        let projectIcons = app.buttons["settings.projectIcons"]
+        XCTAssertTrue(reveal(projectIcons, in: app))
         projectIcons.tap()
 
-        let project = app.buttons["Launch Kit"]
+        let project = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Launch Kit")
+        ).firstMatch
         XCTAssertTrue(project.waitForExistence(timeout: 8))
         project.tap()
 
-        let work = app.buttons["Work"]
+        XCTAssertTrue(app.staticTexts["Work"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Creative"].exists)
+        XCTAssertTrue(app.staticTexts["Digital"].exists)
+        XCTAssertTrue(app.staticTexts["Commerce"].exists)
+        XCTAssertTrue(app.buttons["projectIcon.option.terminal"].exists)
+        XCTAssertTrue(app.buttons["projectIcon.option.creditcard"].exists)
+
+        let work = app.buttons["projectIcon.option.briefcase"]
         XCTAssertTrue(work.waitForExistence(timeout: 5))
         XCTAssertGreaterThanOrEqual(work.frame.width, 44)
         XCTAssertGreaterThanOrEqual(work.frame.height, 44)
         work.tap()
         XCTAssertFalse(app.alerts["Could not save project icon"].exists)
+
+        app.buttons["Project icons"].tap()
+        app.buttons["Settings"].tap()
+        let close = app.buttons["Close"]
+        XCTAssertTrue(returnToSettingsHeader(in: app, close: close))
+        close.tap()
+
+        let ledgerIcon = app.images.matching(identifier: "entry.projectIcon").firstMatch
+        XCTAssertTrue(ledgerIcon.waitForExistence(timeout: 5))
+        XCTAssertEqual(ledgerIcon.label, "Briefcase")
     }
 
     func testClientAchievementCollectionAnd3DDetailAreReachable() {

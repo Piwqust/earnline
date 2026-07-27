@@ -5,6 +5,7 @@ struct EntryRow: View {
     @Environment(AppModel.self) private var app
 
     let entry: Entry
+    var projectSymbol: ProjectSymbol?
     var onSetStatus: (EntryStatus) -> Void = { _ in }
     var onEdit: () -> Void = {}
     var onDelete: () -> Void = {}
@@ -33,6 +34,16 @@ struct EntryRow: View {
 
                 entryAmount
 
+                if let projectSymbol {
+                    Image(systemName: projectSymbol.systemImageName)
+                        .appFont(14, .medium)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 18, height: 24)
+                        .accessibilityHidden(true)
+                        .accessibilityIdentifier("entry.projectIcon")
+                }
+
                 EntryDescriptionText(text: description, expanded: expanded)
 
                 statusMenu
@@ -48,6 +59,7 @@ struct EntryRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
+        .accessibilityIdentifier("entry.row.\(entry.id.uuidString)")
         .accessibilityActions {
             Button("Edit line") { onEdit() }
             ForEach(EntryStatus.allCases) { status in

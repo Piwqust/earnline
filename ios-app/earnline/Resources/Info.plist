@@ -7,52 +7,52 @@
 	<key>CFBundleDisplayName</key>
 	<string>$(PRODUCT_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>$(PRODUCT_NAME)</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>$(MARKETING_VERSION)</string>
-    <key>CFBundleVersion</key>
-    <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-            </array>
-        </dict>
-    </array>
-    <key>EarnlineSupabaseProductionPublishableKey</key>
-    <string>$(EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY)</string>
-    <key>EarnlineSupabaseProductionURL</key>
-    <string>$(EARNLINE_SUPABASE_PRODUCTION_URL)</string>
-    <key>EarnlinePrivacyPolicyURL</key>
-    <string>$(EARNLINE_PRIVACY_POLICY_URL)</string>
-    <key>EarnlineSupabaseTestPublishableKey</key>
-    <string>$(EARNLINE_SUPABASE_TEST_PUBLISHABLE_KEY)</string>
-    <key>EarnlineSupabaseTestURL</key>
-    <string>$(EARNLINE_SUPABASE_TEST_URL)</string>
-    <key>NSCameraUsageDescription</key>
-    <string>Scan an Earnline pairing code to connect this device.</string>
-    <key>NSFaceIDUsageDescription</key>
-    <string>Use Face ID to unlock your income ledger.</string>
-    <key>UIApplicationSceneManifest</key>
-    <dict>
-        <key>UIApplicationSupportsMultipleScenes</key>
-        <false/>
-    </dict>
-    <key>UILaunchScreen</key>
-    <dict/>
-    <key>UISupportedInterfaceOrientations</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-    </array>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>EarnlinePrivacyPolicyURL</key>
+	<string>$(EARNLINE_PRIVACY_POLICY_URL)</string>
+	<key>EarnlineSupabaseProductionPublishableKey</key>
+	<string>$(EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY)</string>
+	<key>EarnlineSupabaseProductionURL</key>
+	<string>$(EARNLINE_SUPABASE_PRODUCTION_URL)</string>
+	<key>EarnlineSupabaseTestPublishableKey</key>
+	<string>$(EARNLINE_SUPABASE_TEST_PUBLISHABLE_KEY)</string>
+	<key>EarnlineSupabaseTestURL</key>
+	<string>$(EARNLINE_SUPABASE_TEST_URL)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan an Earnline pairing code to connect this device.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to unlock your income ledger.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
 </dict>
 </plist>

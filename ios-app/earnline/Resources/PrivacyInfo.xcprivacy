@@ -13,7 +13,7 @@
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
 		<dict>
-			<!-- Email address, from Sign in with Apple / OAuth, stored by Supabase Auth. -->
+			<!-- Email address, from Google or GitHub OAuth, stored by Supabase Auth. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeEmailAddress</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>

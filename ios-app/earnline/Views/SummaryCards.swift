@@ -40,6 +40,10 @@ struct SummaryCards: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(16)
         .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Earned in \(DateFormat.month(month))")
+        .accessibilityValue(app.primaryString(total))
+        .accessibilityIdentifier("ledger.earned.summary")
     }
 
     /// "Earned in July". The split is derived from the localized "Earned in %@"

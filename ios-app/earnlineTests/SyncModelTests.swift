@@ -4,6 +4,26 @@ import Testing
 @testable import earnline
 
 struct SyncModelTests {
+    @Test @MainActor func successfulLedgerSaveAdvancesTheSummaryRevision() throws {
+        let suite = "earnline-summary-revision-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let container = try ModelContainer(
+            for: Client.self,
+            Entry.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let app = AppModel(defaults: defaults)
+        let baseline = app.ledgerDataRevision
+
+        container.mainContext.insert(Client(name: "Acme"))
+
+        #expect(app.save(container.mainContext) == nil)
+        #expect(app.ledgerDataRevision == baseline + 1)
+    }
+
     @Test @MainActor func workspaceCurrencyProfilesStaySeparateAndMigrationPullsCloudFirst() {
         let suite = "earnline-workspace-profile-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

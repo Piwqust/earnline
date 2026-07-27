@@ -178,6 +178,9 @@ final class AppModel {
             loadWorkspaceCurrencyProfile()
             loadWorkspaceSyncState()
             loadWorkspaceProfileSyncState()
+            // Each workspace earns its own introduction: Test having been through
+            // the flow must not silently mark Production as done.
+            onboardingCompleted = defaults.bool(forKey: workspaceDefaultKey("onboardingCompleted"))
             detachWorkspaceStore()
             resetSupabaseClient()
         }
@@ -240,18 +243,39 @@ final class AppModel {
     var requireAppLock: Bool {
         didSet { defaults.set(requireAppLock, forKey: "requireAppLock") }
     }
+    /// The client the onboarding flow just created, handed to the ledger so it
+    /// can open the composer on it. Deliberately *not* persisted: it describes
+    /// one handoff between two views in a single session, and a stale value read
+    /// back on a later launch would reopen a composer nobody asked for.
+    ///
+    /// The ledger clears it as soon as it has acted on it.
+    var pendingFirstEntryClientID: UUID?
+    /// Whether this workspace has been through the first-run flow. Scoped per
+    /// workspace like the currency profile: signing into a second account on the
+    /// same device gets its own introduction rather than inheriting one it never
+    /// saw. Set once, when the owner taps "Let's start".
+    var onboardingCompleted: Bool {
+        didSet { defaults.set(onboardingCompleted, forKey: workspaceDefaultKey("onboardingCompleted")) }
+    }
+    /// Whether the onboarding layer is on screen. In-memory only: it is a
+    /// presentation state, not a preference, and it is derived from
+    /// `onboardingCompleted` at launch. Replaying from Settings or the debug
+    /// menu sets it directly without disturbing the persisted flag.
+    var isPresentingOnboarding = false
     private(set) var isLocked = false
     /// A non-blocking privacy message shown in Settings after the app disables
     /// an impossible legacy lock (for example, after the device passcode was
     /// removed). The ledger is never left behind a cover it cannot unlock.
     var appLockNotice: String?
-    /// A non-blocking warning for an Apple sign-in credential check that could
-    /// not finish. Explicit Apple revocation still signs the account out; a
-    /// transient Keychain or Apple-service problem must not silently weaken
-    /// the check or erase the owner's local ledger.
+    /// A non-blocking warning about account or workspace verification. It
+    /// never replaces the visible recovery path or erases the local ledger.
     var accountSecurityNotice: String?
     var isSyncing = false
     var syncMessage = String(localized: "Offline")
+    /// Increments only after a ledger mutation has reached SwiftData. Views
+    /// with cached derived data use this explicit signal rather than relying
+    /// exclusively on a process-wide save notification.
+    var ledgerDataRevision = 0
     var syncError: String?
     var accountState: AccountState = .checking
     #if DEBUGMENU
@@ -323,7 +347,6 @@ final class AppModel {
     @ObservationIgnored var pathWasSatisfied = true
     @ObservationIgnored private var lockWindow: UIWindow?
     @ObservationIgnored private var isUnlocking = false
-    @ObservationIgnored var appleCredentialRevocationObserver: NSObjectProtocol?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -374,6 +397,9 @@ final class AppModel {
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID")
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID.\(resolvedEnvironment.rawValue)")
         profileNeedsSync = defaults.bool(forKey: "profileNeedsSync.\(resolvedEnvironment.rawValue)")
+        onboardingCompleted = defaults.bool(
+            forKey: Self.workspaceDefaultKey("onboardingCompleted", environment: resolvedEnvironment)
+        )
         let workspaceKeySuffix = resolvedEnvironment.rawValue
         let savedLastSyncAt = defaults.object(forKey: "lastSyncAt.\(workspaceKeySuffix)") as? Date
             ?? defaults.object(forKey: "lastSyncAt") as? Date
@@ -552,6 +578,7 @@ final class AppModel {
         do {
             try undoableDelete.restore(in: context)
             try context.save()
+            ledgerDataRevision &+= 1
             queueSync(context: context)
             return nil
         } catch {

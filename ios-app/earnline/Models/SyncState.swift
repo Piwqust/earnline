@@ -36,9 +36,60 @@ enum ProjectSymbol: String, Codable, CaseIterable, Identifiable, Sendable {
     case sparkles
     case chart = "chart.line.uptrend.xyaxis"
     case building = "building.2"
+    case app
+    case cloud
+    case terminal
+    case bolt
+    case cpu
+    case photo
+    case pencil
+    case theater
+    case creditCard = "creditcard"
+    case banknote
+    case people = "person.2"
+    case calendar
+    case storefront
+    case bag
 
     var id: String { rawValue }
-    var systemImageName: String { rawValue }
+
+    /// The picker and ledger deliberately use the filled SF Symbol family.
+    /// Persisted raw values remain stable across devices; this is presentation
+    /// only, so existing project-icon preferences need no migration.
+    var systemImageName: String {
+        switch self {
+        case .folder: "folder.fill"
+        case .briefcase: "briefcase.fill"
+        case .display: "rectangle.fill"
+        case .paintpalette: "paintpalette.fill"
+        case .camera: "camera.fill"
+        case .video: "video.fill"
+        case .music: "music.note"
+        case .document: "doc.fill"
+        case .megaphone: "megaphone.fill"
+        case .cart: "cart.fill"
+        case .globe: "globe.americas.fill"
+        case .tools: "wrench.and.screwdriver.fill"
+        case .package: "shippingbox.fill"
+        case .sparkles: "sparkles"
+        case .chart: "chart.bar.fill"
+        case .building: "building.2.fill"
+        case .app: "app.fill"
+        case .cloud: "cloud.fill"
+        case .terminal: "terminal.fill"
+        case .bolt: "bolt.fill"
+        case .cpu: "cpu.fill"
+        case .photo: "photo.fill"
+        case .pencil: "pencil.circle.fill"
+        case .theater: "theatermasks.fill"
+        case .creditCard: "creditcard.fill"
+        case .banknote: "banknote.fill"
+        case .people: "person.2.fill"
+        case .calendar: "calendar.circle.fill"
+        case .storefront: "storefront.fill"
+        case .bag: "bag.fill"
+        }
+    }
 
     static func resolved(_ rawValue: String?) -> ProjectSymbol {
         rawValue.flatMap(ProjectSymbol.init(rawValue:)) ?? .folder

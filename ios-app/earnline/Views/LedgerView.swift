@@ -125,6 +125,18 @@ struct LedgerView: View {
                         rate: app.rate)
     }
 
+    /// `ModelContext.didSave` remains a fallback for saves outside AppModel,
+    /// but device saves need a deterministic invalidation signal for the
+    /// cached summary snapshot.
+    private struct LedgerRevision: Hashable {
+        let pricing: PricingRevision
+        let dataRevision: Int
+    }
+
+    private var ledgerRevision: LedgerRevision {
+        LedgerRevision(pricing: pricingRevision, dataRevision: app.ledgerDataRevision)
+    }
+
     /// How many trailing months the ledger materializes. Launch fetches only
     /// this window (a date-scoped SQL fetch — the whole table is never
     /// faulted); scrolling toward the bottom extends it. Eight gives the
@@ -350,6 +362,15 @@ struct LedgerView: View {
             .onChange(of: search.tokens) { _, _ in refreshSearchStats() }
             .onAppear(perform: runDemoIfNeeded)
             .onChange(of: clients.count) { _, _ in runDemoIfNeeded() }
+            // The onboarding flow creates a client and hands the id over here,
+            // so it ends on an open composer rather than on the empty ledger it
+            // just spent three pages explaining. `initial` covers the flow being
+            // dismissed before this view ever appeared.
+            .onChange(of: app.pendingFirstEntryClientID, initial: true) { _, id in
+                guard let id, let client = client(withID: id) else { return }
+                app.pendingFirstEntryClientID = nil
+                openComposer(for: client, month: app.displayedMonth)
+            }
     }
 
     private var bottomToolbar: some ToolbarContent {
@@ -433,7 +454,11 @@ struct LedgerView: View {
                 if isSearching {
                     searchListContent(snapshot)
                 } else if !rowBuilder.hasContent(in: snapshot) {
-                    EmptyStateView(client: mostRecentClient, onStart: startFirstLine)
+                    EmptyStateView(
+                        client: mostRecentClient,
+                        onAddClient: { sheetRoute = .newClient },
+                        onAddIncome: newProject
+                    )
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -501,7 +526,7 @@ struct LedgerView: View {
         // Runs after the first frame commits — the app appears immediately and
         // the ledger fills in a beat later — then again when the currency
         // settings re-price the totals. Data edits arrive via `didSave` below.
-        .task(id: pricingRevision) {
+        .task(id: ledgerRevision) {
             refreshLedgerSnapshot()
         }
         // Every mutation in this app persists through a context save (the
@@ -626,16 +651,14 @@ struct LedgerView: View {
         if let c = mostRecentClient { openComposer(for: c, month: app.displayedMonth) }
     }
 
-    private func startFirstLine() {
-        if clients.isEmpty { sheetRoute = .newClient } else { newProject() }
-    }
-
     private var mostRecentClient: Client? {
         clients
             .filter { !$0.isInvalidated }
             .max { $0.createdAt < $1.createdAt }
     }
 
+    /// Skips invalidated models for the same reason every other client read
+    /// here does: a sync pull can delete one while this body is being evaluated.
     private func client(withID id: UUID) -> Client? {
         clients.first { !$0.isInvalidated && $0.id == id }
     }

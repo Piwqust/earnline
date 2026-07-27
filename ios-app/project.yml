@@ -73,6 +73,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app
         PRODUCT_DISPLAY_NAME: earnline
+        # The primary app must be signed for a physical-device Debug run. The
+        # local Xcode account/team remains in ignored Local.private.xcconfig.
+        CODE_SIGNING_ALLOWED: "YES"
+        CODE_SIGNING_REQUIRED: "YES"
+        CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: earnline/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

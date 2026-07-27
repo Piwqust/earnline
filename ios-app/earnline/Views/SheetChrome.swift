@@ -207,14 +207,18 @@ struct ChromeDivider: View {
 
 /// The client swatch grid shared by the New- and Edit-client sheets: the ten
 /// `Theme.clientPalette` dots laid out in rows of five, justified edge to edge,
-/// with a 2 pt white ring that springs between picks (matched geometry) exactly
-/// as the Figma color card draws its selection.
+/// with the 2 pt white selection ring the Figma color card draws.
+///
+/// The ring appears on the dot that was picked; it does not travel there. Apple's
+/// own color pickers (Reminders' list colors, Calendar's calendar colors) mark
+/// the new selection in place, and `Animation` documents `.smooth`/`.snappy`/
+/// `.bouncy` as the built-in springs — a hand-tuned
+/// `spring(response:dampingFraction:)` driving a `matchedGeometryEffect` flight
+/// across the grid was ours, not the system's.
 struct ClientColorGrid: View {
     @Binding var selection: String
     /// Dots per row — the Figma lays the ten swatches out five and five.
     var perRow = 5
-
-    @Namespace private var ring
 
     private var rows: [[String]] {
         stride(from: 0, to: Theme.clientPalette.count, by: perRow).map { start in
@@ -234,6 +238,9 @@ struct ClientColorGrid: View {
             }
         }
         .padding(16)
+        // One system spring for the whole grid: the ring fades out where it was
+        // and in where it now belongs.
+        .animation(.snappy, value: selection)
         .sensoryFeedback(.selection, trigger: selection)
     }
 
@@ -243,22 +250,18 @@ struct ClientColorGrid: View {
         // system press feedback, focus-engine reachability, and the button
         // accessibility trait come for free.
         return Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.62)) {
-                selection = hex
-            }
+            selection = hex
         } label: {
             Circle()
                 .fill(Color(hex: hex))
                 .frame(width: 30, height: 30)
                 .overlay {
-                    if selected {
-                        // The Figma "selection ring": a 2 pt white ring inset
-                        // inside the dot (22 pt across the 30 pt swatch).
-                        Circle()
-                            .strokeBorder(.white, lineWidth: 2)
-                            .padding(4)
-                            .matchedGeometryEffect(id: "clientSwatchRing", in: ring)
-                    }
+                    // The Figma "selection ring": a 2 pt white ring inset
+                    // inside the dot (22 pt across the 30 pt swatch).
+                    Circle()
+                        .strokeBorder(.white, lineWidth: 2)
+                        .padding(4)
+                        .opacity(selected ? 1 : 0)
                 }
                 .contentShape(.circle)
         }

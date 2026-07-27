@@ -17,6 +17,10 @@ struct SmartComposer: View {
     /// Decorative previews reuse the real composer but must never summon the
     /// keyboard or move VoiceOver focus away from the actual account screen.
     var automaticallyFocus = true
+    /// Called after a line is successfully saved. The ledger does not need it —
+    /// the entry simply appears in the list underneath — but onboarding waits on
+    /// this to advance past its income step.
+    var onCommit: ((Entry) -> Void)?
 
     enum Field: Hashable { case amount, project, task }
     @FocusState private var focus: Field?
@@ -137,6 +141,7 @@ struct SmartComposer: View {
                     .onChange(of: amountText) { _, v in amountText = Validation.sanitizeAmountInput(v) }
                     .onSubmit { focus = .project }
                     .accessibilityLabel("Amount")
+                    .accessibilityIdentifier("composer.amount")
             }
             .appFont(18)
         }
@@ -260,6 +265,7 @@ struct SmartComposer: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.label(0.05), in: .rect(cornerRadius: 8))
             .accessibilityLabel("Task")
+            .accessibilityIdentifier("composer.task")
     }
 
     private var dateChip: some View {
@@ -394,6 +400,7 @@ struct SmartComposer: View {
                 currencyCode = app.baseCurrencyCode
             }
             focus = .amount
+            onCommit?(entry)
         }
     }
 

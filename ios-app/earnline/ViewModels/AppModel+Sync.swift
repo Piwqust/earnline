@@ -164,6 +164,7 @@ extension AppModel {
             lastSyncAt = Date()
             syncMessage = String(localized: "Synced")
             try context.save()
+            ledgerDataRevision &+= 1
             completeAccountStoreMigrationAfterSuccessfulSync()
             refreshPendingReminders(context: context)
             retryAttempt = 0
@@ -275,6 +276,7 @@ extension AppModel {
     func save(_ context: ModelContext) -> String? {
         do {
             try context.save()
+            ledgerDataRevision &+= 1
             queueSync(context: context)
             return nil
         } catch {

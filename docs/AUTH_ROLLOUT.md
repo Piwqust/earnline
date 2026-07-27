@@ -10,7 +10,7 @@ in this repository, an issue, a screenshot, or shell history.
 
 ## 1. Configure Supabase Auth
 
-In the Supabase Dashboard, enable only the Google, GitHub, and Apple providers.
+In the Supabase Dashboard, enable only the Google and GitHub providers.
 Add the provider client secrets in the Dashboard or secret store, never in
 either app. Allow these redirect URLs:
 
@@ -19,14 +19,6 @@ either app. Allow these redirect URLs:
   the side-by-side `earnline-dev` testing build
 - `https://YOUR_DEPLOYED_WEB_ORIGIN/auth/callback`
 - the intentional local-development callback, if one is used
-
-For Apple, iOS uses the native Sign in with Apple flow
-(`signInWithIdToken`), so add the app bundle ID `com.earnline.app` to the
-Apple provider's **Client IDs** field. No Services ID or generated secret key
-is required until the web client also offers Apple; add those separately at
-that point. The app target carries the `com.apple.developer.applesignin`
-entitlement (generated from `ios-app/project.yml`), which release signing
-requires to be present in the App ID configuration.
 
 The iOS guest option ("Continue without an account") is entirely local to the
 device: it creates no Supabase identity and needs no Dashboard configuration.
@@ -118,9 +110,8 @@ the function.
 
 ## 5. Verify and retire the legacy path
 
-1. Verify Google and GitHub sign-in on iOS and the deployed web origin, and
-   native Apple sign-in on an iOS device. Verify the guest option opens an
-   empty local ledger with sync reporting Offline.
+1. Verify Google and GitHub sign-in on iOS and the deployed web origin. Verify
+   the guest option opens an empty local ledger with sync reporting Offline.
 2. Generate a QR code from an owner device; redeem it once on a clean device;
    verify expiry and second redemption fail. Revoke it from Settings and verify
    that its refresh token can no longer restore access.

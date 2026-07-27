@@ -1,17 +1,32 @@
 # What's new
 
+## July 27, 2026
+
+### Ledger reliability
+- The **Earned in month** and **Stats** cards now update immediately after you delete or change an income line, import income, or receive synced changes.
+
+### Account access
+- Removed **Sign in with Apple** from the iPhone app. Cloud access continues through Google or GitHub; local-only mode and device pairing are unchanged.
+
 ## July 26, 2026
+
+### Project icons
+- **Project icons** now uses a native filled-symbol palette, grouped by job, with a live `EntryRow` preview rather than a separate mock row. Assigned icons stay subtle beside their project name in the ledger, without adding default folder icons to every row.
+
+### Getting started
+- Signing in is back, and it is now the whole of the opening: Earnline starts on the account screen with **Continue with Apple**, Google, and GitHub, plus **Continue without an account** and **Pair a device** below. Choosing a local-only route no longer happens silently — it is your choice to make. Once you are in, you land on the ledger with nothing in the way.
+- A three-screen illustrated introduction to the ledger's order — first a client, then the money they paid — now lives in **Settings › Experimental › Onboarding** rather than running by itself. Its last screen is real: name a client and pick their colour, the illustration fills in as you type, and finishing creates them and opens the income composer on them.
+- **Project icons** has moved into Experimental alongside it.
 
 ### Simplified ledger
 - Removed report and recap creation, previews, and sharing from Insights, client profiles, and the ledger.
 - The Stats card is now a static monthly summary. Open **Insights** from the **…** menu when you want charts.
-- Earnline now opens directly to the ledger; account setup and modal first-entry tours no longer appear.
 - Delete actions in contextual menus now show a matching red trash icon.
 
 ### First earnings
 - An empty ledger now makes the required order explicit: first add a client, then record income for that client. Saving the client opens the existing income composer with that client already selected.
 - The first-ledger header uses one calm month-and-total summary instead of empty Stats cards, and the bottom add control creates a client directly until one exists.
-- The first-action guide is now a quiet client-to-income path with one clear button, replacing the large checklist card.
+- An empty ledger now shows a two-step setup checklist instead of a diagram of the workflow: **Add your first client** and **Write your first income**, each its own Liquid Glass card you can tap. Step one ticks off once the client exists, and step two stays out of reach until it does — income has to belong to someone. It is the only guide the ledger carries; the separate floating checklist card has been removed.
 
 ### Dev testing
 - **earnline Dev** now has local account and onboarding previews for signed out, signing in, sign-in errors, offline errors, workspace setup, paired-device setup, and simulated sign out. These previews never contact a provider or Supabase, change a session, or modify ledger data.
