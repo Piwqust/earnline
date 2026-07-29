@@ -5,6 +5,7 @@ import SwiftUI
 /// with a faded sparkline and the month-over-month change on the right.
 struct SummaryCards: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let month: Date
     let total: Decimal
     /// Earned base-currency totals ending at `month`, oldest first — drives the
@@ -23,6 +24,11 @@ struct SummaryCards: View {
             }
         }
         .frame(height: 112)
+        // Editing a line may update the same visible month outside the
+        // scroll-boundary transaction. Keep that numeric change alive here;
+        // month changes themselves are animated at the owning mutation in
+        // `LedgerView` so a scrolling List never inherits an animation.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.34), value: total)
         .onChange(of: total) { oldValue, _ in previousTotal = oldValue }
     }
 
@@ -46,14 +52,15 @@ struct SummaryCards: View {
         .accessibilityIdentifier("ledger.earned.summary")
     }
 
-    /// "Earned in July". The split is derived from the localized "Earned in %@"
-    /// template (the month is last in every supported locale), so there's no
-    /// separate label string to translate.
+    /// "Earned in July" where the stable label stays put and the month rolls
+    /// in the scroll direction with the amount. The split remains derived from
+    /// the localized template, so it needs no second translation.
     private var earnedTitle: some View {
         let parts = Self.earnedTitleParts
         return HStack(spacing: 0) {
             if !parts.prefix.isEmpty { Text(parts.prefix) }
             Text(DateFormat.month(month))
+                .contentTransition(.numericText(value: Self.monthValue(month)))
             if !parts.suffix.isEmpty { Text(parts.suffix) }
         }
         .appFont(14, .medium)
@@ -66,6 +73,13 @@ struct SummaryCards: View {
         let template = String(localized: "Earned in %@")
         guard let range = template.range(of: "%@") else { return (template, "") }
         return (String(template[..<range.lowerBound]), String(template[range.upperBound...]))
+    }
+
+    /// A monotonic month ordinal provides `numericText` with direction for a
+    /// localized month name, matching the amount's upward/downward roll.
+    private static func monthValue(_ date: Date) -> Double {
+        let components = Calendar.current.dateComponents([.year, .month], from: date)
+        return Double((components.year ?? 0) * 12 + (components.month ?? 0))
     }
 
     // MARK: Stats
@@ -130,10 +144,12 @@ struct SummaryCards: View {
 /// A decorative monochrome area sparkline — the peaks-and-valleys line behind
 /// the Stats headline. The line is a smooth Catmull-Rom curve (not raw
 /// polyline segments) with a soft gradient fill and a dot on the latest point.
-/// It updates as static content as the ledger crosses a month, avoiding a
-/// path-morph animation in the hot scroll path.
+/// Its shapes interpolate only when the displayed month crosses a boundary,
+/// alongside the title and totals; ordinary scroll movement does no animation.
 private struct Sparkline: View {
     var values: [Double]
+
+    private var vector: AnimatableVector { AnimatableVector(values: values) }
 
     /// Left-to-right fade shared by the stroke and its fill — the oldest point
     /// dissolves to nothing, easing in quickly so only the most recent stretch
@@ -151,7 +167,7 @@ private struct Sparkline: View {
             // Soft fill under the curve, faded on both axes: brightest just
             // beneath the line's solid (recent) end, dissolving to nothing at
             // the baseline and toward the oldest point on the left.
-            SparkArea(values: values)
+            SparkArea(vector: vector)
                 .fill(
                     LinearGradient(colors: [Theme.label(0.18), Theme.label(0.0)],
                                    startPoint: .top, endPoint: .bottom)
@@ -164,7 +180,7 @@ private struct Sparkline: View {
             // The curve itself dissolves toward the past (left) and solidifies
             // toward the present (right), so the eye lands on where the trend
             // ends up.
-            SparkCurve(values: values)
+            SparkCurve(vector: vector)
                 .stroke(
                     LinearGradient(gradient: horizontalFade,
                                    startPoint: .leading, endPoint: .trailing),
@@ -172,9 +188,9 @@ private struct Sparkline: View {
                 )
 
             // A dot anchors the latest value, with a faint halo to lift it off
-            // the line.
-            SparkDot(values: values, radius: 5.5).fill(Theme.label(0.12))
-            SparkDot(values: values, radius: 2.5).fill(Theme.label(0.7))
+            // the line. Both follow the morphing endpoint.
+            SparkDot(vector: vector, radius: 5.5).fill(Theme.label(0.12))
+            SparkDot(vector: vector, radius: 2.5).fill(Theme.label(0.7))
         }
     }
 }
@@ -221,20 +237,30 @@ private func sparkSmoothLine(_ pts: [CGPoint]) -> Path {
 }
 
 private struct SparkCurve: Shape {
-    let values: [Double]
+    var vector: AnimatableVector
+
+    var animatableData: AnimatableVector {
+        get { vector }
+        set { vector = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
-        let pts = sparkPoints(values, in: rect.size)
+        let pts = sparkPoints(vector.values, in: rect.size)
         guard pts.count >= 2 else { return Path() }
         return sparkSmoothLine(pts)
     }
 }
 
 private struct SparkArea: Shape {
-    let values: [Double]
+    var vector: AnimatableVector
+
+    var animatableData: AnimatableVector {
+        get { vector }
+        set { vector = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
-        let pts = sparkPoints(values, in: rect.size)
+        let pts = sparkPoints(vector.values, in: rect.size)
         guard pts.count >= 2 else { return Path() }
         var path = sparkSmoothLine(pts)
         path.addLine(to: CGPoint(x: pts[pts.count - 1].x, y: rect.height))
@@ -245,12 +271,51 @@ private struct SparkArea: Shape {
 }
 
 private struct SparkDot: Shape {
-    let values: [Double]
+    var vector: AnimatableVector
     var radius: CGFloat
 
+    var animatableData: AnimatableVector {
+        get { vector }
+        set { vector = newValue }
+    }
+
     func path(in rect: CGRect) -> Path {
-        guard let last = sparkPoints(values, in: rect.size).last else { return Path() }
+        guard let last = sparkPoints(vector.values, in: rect.size).last else { return Path() }
         return Path(ellipseIn: CGRect(x: last.x - radius, y: last.y - radius,
                                       width: radius * 2, height: radius * 2))
+    }
+}
+
+/// A fixed-order vector that SwiftUI can interpolate point-by-point when the
+/// six-month sparkline advances or rewinds. All monthly trends have six values;
+/// the tolerant arithmetic also keeps the first render well-defined.
+private struct AnimatableVector: VectorArithmetic {
+    var values: [Double]
+
+    static let zero = AnimatableVector(values: [])
+
+    static func + (lhs: AnimatableVector, rhs: AnimatableVector) -> AnimatableVector {
+        AnimatableVector(values: combine(lhs.values, rhs.values, +))
+    }
+
+    static func - (lhs: AnimatableVector, rhs: AnimatableVector) -> AnimatableVector {
+        AnimatableVector(values: combine(lhs.values, rhs.values, -))
+    }
+
+    mutating func scale(by rhs: Double) {
+        values = values.map { $0 * rhs }
+    }
+
+    var magnitudeSquared: Double {
+        values.reduce(0) { $0 + $1 * $1 }
+    }
+
+    private static func combine(_ lhs: [Double], _ rhs: [Double],
+                                _ operation: (Double, Double) -> Double) -> [Double] {
+        let count = max(lhs.count, rhs.count)
+        return (0..<count).map { index in
+            operation(index < lhs.count ? lhs[index] : 0,
+                      index < rhs.count ? rhs[index] : 0)
+        }
     }
 }

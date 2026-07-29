@@ -75,6 +75,7 @@ struct SupabaseConnectionSettingsView: View {
                 } header: {
                     Text("Personal database")
                 } footer: {
+                    // swiftlint:disable:next line_length
                     Text("Use the Project URL and publishable key from your Supabase project. Never paste a service-role or secret key into Earnline.")
                 }
 
@@ -179,8 +180,10 @@ struct SupabaseConnectionSettingsView: View {
     private var confirmationMessage: String {
         switch pendingAction {
         case .beginPersonalSetup:
+            // swiftlint:disable:next line_length
             "Earnline will ask for a Project URL and publishable key, check them, then wait for your final confirmation before changing the active sync project."
         case .applyPersonalConnection:
+            // swiftlint:disable:next line_length
             "The active sync client will switch to this project. Earnline does not delete your current local ledger or data in either cloud project."
         case .restoreBuiltInConnection:
             "The personal project remains unchanged. Earnline will only switch its active sync client back to the built-in project."

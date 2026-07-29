@@ -50,14 +50,34 @@ final class EarnlineUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Primary"].exists)
-        XCTAssertTrue(app.staticTexts["Display conversion rate"].exists)
+        XCTAssertTrue(reveal(app.staticTexts["Display conversion rate"], in: app))
     }
 
-    func testSearchOpensFromDockedBottomToolbarFieldWithNativeFiltersMenu() {
+    func testSummaryCardsFollowTheTopVisibleLedgerMonth() {
+        let app = launchApp(["-demoLedger"])
+        let summary = app.descendants(matching: .any)["ledger.earned.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+
+        let initialMonth = summary.label
+        for _ in 0..<8 {
+            // On the iOS 27 runtime SwiftUI's `List` is not consistently
+            // exposed as an XCUIElementTypeTable. The screen-level gesture
+            // still targets the visible ledger and verifies the real
+            // scroll-driven month handoff without depending on that UIKit
+            // implementation detail.
+            app.swipeUp()
+        }
+
+        let changedMonth = NSPredicate(format: "label != %@", initialMonth)
+        expectation(for: changedMonth, evaluatedWith: summary)
+        waitForExpectations(timeout: 3)
+    }
+
+    func testSearchOpensWithNativeFiltersMenu() {
         let app = launchApp()
 
-        // The resting search field is docked in the bottom toolbar between
-        // the "…" and "+" circles, Notes/Mail-style.
+        // Search remains system-owned; the command controls are in the
+        // navigation bar to avoid the iOS 26 bottom-toolbar hierarchy fault.
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
@@ -101,51 +121,65 @@ final class EarnlineUITests: XCTestCase {
     }
 
     func testDeveloperModeRevealsAdvancedSettingsOnlyWhenEnabled() {
-        let app = launchApp(["-demoSettings"])
-
-        let developerMode = app.switches["Developer Mode"]
-        for _ in 0..<3 where !developerMode.exists {
-            app.swipeUp()
-        }
-        XCTAssertTrue(developerMode.waitForExistence(timeout: 3))
-        XCTAssertTrue(developerMode.isHittable)
-        XCTAssertFalse(app.staticTexts["Status"].exists)
-        XCTAssertFalse(app.switches["Client badges"].exists)
-        developerMode.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-
-        XCTAssertEqual(app.switches["Developer Mode"].value as? String, "1")
-        XCTAssertTrue(reveal(app.staticTexts["Experimental"], in: app))
-        let clientBadges = app.switches["Client badges"]
-        XCTAssertTrue(reveal(clientBadges, in: app))
-        XCTAssertEqual(clientBadges.value as? String, "0")
-        clientBadges.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertEqual(clientBadges.value as? String, "1")
-        XCTAssertTrue(reveal(app.staticTexts["Connection"], in: app))
-        XCTAssertTrue(reveal(app.staticTexts["Sync"], in: app))
-        XCTAssertTrue(reveal(app.staticTexts["Data"], in: app))
-        XCTAssertTrue(reveal(app.staticTexts["About"], in: app))
-
-        let close = app.buttons["Close"].firstMatch
-        XCTAssertTrue(returnToSettingsHeader(in: app, close: close))
-        close.tap()
-
+        let app = launchApp()
         let menu = app.buttons["ledger.menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
         menu.tap()
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 2))
         settings.tap()
 
-        let restoredDeveloperMode = app.switches["Developer Mode"]
-        for _ in 0..<3 where !restoredDeveloperMode.exists {
+        let developerModeRow = app.switches["settings.developerMode"]
+        for _ in 0..<3 where !developerModeRow.exists {
             app.swipeUp()
         }
+        XCTAssertTrue(developerModeRow.waitForExistence(timeout: 3))
+        let developerMode = developerModeRow.descendants(matching: .switch).firstMatch
+        XCTAssertTrue(developerMode.waitForExistence(timeout: 3))
+        XCTAssertTrue(developerMode.isHittable)
+        XCTAssertFalse(app.staticTexts["Status"].exists)
+        XCTAssertFalse(app.switches["Client badges"].exists)
+        developerMode.tap()
+        let developerEnabled = NSPredicate(format: "value == %@", "1")
+        expectation(for: developerEnabled, evaluatedWith: developerMode)
+        waitForExpectations(timeout: 3)
+        XCTAssertTrue(reveal(app.staticTexts["Experimental"], in: app))
+        let clientBadgesRow = app.switches["settings.clientBadges"]
+        XCTAssertTrue(reveal(clientBadgesRow, in: app))
+        let clientBadges = clientBadgesRow.descendants(matching: .switch).firstMatch
+        XCTAssertTrue(clientBadges.waitForExistence(timeout: 3))
+        XCTAssertEqual(clientBadges.value as? String, "0")
+        clientBadges.tap()
+        let badgesEnabled = NSPredicate(format: "value == %@", "1")
+        expectation(for: badgesEnabled, evaluatedWith: clientBadges)
+        waitForExpectations(timeout: 3)
+        XCTAssertTrue(reveal(app.staticTexts["Connection"], in: app))
+        XCTAssertTrue(reveal(app.staticTexts["Sync"], in: app))
+        XCTAssertTrue(reveal(app.staticTexts["Data"], in: app))
+
+        let close = app.buttons["Close"].firstMatch
+        XCTAssertTrue(returnToSettingsHeader(in: app, close: close))
+        close.tap()
+
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        menu.tap()
+        XCTAssertTrue(settings.waitForExistence(timeout: 2))
+        settings.tap()
+
+        let restoredDeveloperModeRow = app.switches["settings.developerMode"]
+        for _ in 0..<3 where !restoredDeveloperModeRow.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(restoredDeveloperModeRow.waitForExistence(timeout: 3))
+        let restoredDeveloperMode = restoredDeveloperModeRow.descendants(matching: .switch).firstMatch
         XCTAssertTrue(restoredDeveloperMode.waitForExistence(timeout: 3))
         XCTAssertEqual(restoredDeveloperMode.value as? String, "1")
-        let restoredClientBadges = app.switches["Client badges"]
-        for _ in 0..<3 where !restoredClientBadges.exists {
+        let restoredClientBadgesRow = app.switches["settings.clientBadges"]
+        for _ in 0..<3 where !restoredClientBadgesRow.exists {
             app.swipeUp()
         }
+        XCTAssertTrue(restoredClientBadgesRow.waitForExistence(timeout: 3))
+        let restoredClientBadges = restoredClientBadgesRow.descendants(matching: .switch).firstMatch
         XCTAssertTrue(restoredClientBadges.waitForExistence(timeout: 3))
         XCTAssertEqual(restoredClientBadges.value as? String, "1")
     }
@@ -180,22 +214,35 @@ final class EarnlineUITests: XCTestCase {
 
         let sheet = app.descendants(matching: .any)["insights.sheet"]
         XCTAssertTrue(sheet.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["3M"].exists)
         XCTAssertFalse(app.buttons["insights.report.share"].exists)
 
         let chart = app.descendants(matching: .any)["insights.monthlyIncomeChart"]
         XCTAssertTrue(chart.waitForExistence(timeout: 8))
 
-        // The range control lives inside the Monthly income card now.
-        app.buttons["1Y"].tap()
+        // The range control belongs to the one yearly income chart. Changing
+        // it must not reload the full Insights dashboard below.
+        let threeMonths = app.buttons["3M"]
+        let oneYear = app.buttons["1Y"]
+        XCTAssertTrue(threeMonths.exists)
+        XCTAssertTrue(oneYear.isSelected)
+        threeMonths.tap()
+        XCTAssertTrue(threeMonths.isSelected)
+        oneYear.tap()
+        XCTAssertTrue(oneYear.isSelected)
         XCTAssertTrue(chart.waitForExistence(timeout: 3))
 
-        // The income chart leads the sheet; expand to the large detent to
-        // bring the heatmap card into view before touching it.
-        sheet.swipeUp()
+        // The income chart now leads the sheet, so make the calendar actually
+        // hittable before tapping a day rather than treating an off-screen AX
+        // element as visible.
         let heatmap = app.descendants(matching: .any)["insights.heatmap"]
+        for _ in 0..<6 where !heatmap.isHittable {
+            sheet.swipeUp()
+        }
         XCTAssertTrue(heatmap.waitForExistence(timeout: 3))
-        heatmap.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.55)).tap()
+        XCTAssertTrue(heatmap.isHittable)
+        // Exercise the card's accessible day movement rather than guessing a
+        // physical cell inside its horizontally scrollable calendar.
+        heatmap.swipeUp()
         XCTAssertTrue(app.descendants(matching: .any)["insights.selectedDay"].waitForExistence(timeout: 3))
 
         let clear = app.buttons["insights.clearDaySelection"]
@@ -248,20 +295,12 @@ final class EarnlineUITests: XCTestCase {
         waitForExpectations(timeout: 5)
     }
 
-    func testEmptyLedgerCreatesAClientBeforeOpeningIncomeComposer() {
+    func testEmptyLedgerAddButtonCreatesAClientBeforeOpeningIncomeComposer() {
         let app = launchApp()
 
-        // Step two is unreachable until step one is done: income belongs to a
-        // client, so the checklist refuses to let the order be taken backwards.
-        let income = app.buttons["ledger.empty.income"]
-        XCTAssertTrue(income.waitForExistence(timeout: 5))
-        XCTAssertFalse(income.isEnabled)
-
-        let start = app.buttons["ledger.empty.client"]
-        XCTAssertTrue(start.exists)
-        XCTAssertTrue(start.isEnabled)
-        XCTAssertGreaterThanOrEqual(start.frame.height, 44)
-        start.tap()
+        let add = app.buttons["ledger.fab"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
 
         let clientName = app.textFields["Client name"]
         XCTAssertTrue(clientName.waitForExistence(timeout: 3))
@@ -287,7 +326,7 @@ final class EarnlineUITests: XCTestCase {
     }
 
     func testProjectIconCanBeChosenFromSettings() {
-        let app = launchApp(["-demoInsights", "-demoDeveloperSettings"])
+        let app = launchApp(["-demoSettings", "-demoInsights"])
 
         let projectIcons = app.buttons["settings.projectIcons"]
         XCTAssertTrue(reveal(projectIcons, in: app))
@@ -299,29 +338,52 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(project.waitForExistence(timeout: 8))
         project.tap()
 
-        XCTAssertTrue(app.staticTexts["Work"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Creative"].exists)
-        XCTAssertTrue(app.staticTexts["Digital"].exists)
-        XCTAssertTrue(app.staticTexts["Commerce"].exists)
-        XCTAssertTrue(app.buttons["projectIcon.option.terminal"].exists)
-        XCTAssertTrue(app.buttons["projectIcon.option.creditcard"].exists)
+        let receipt = app.buttons["projectIcon.option.receipt"]
+        let preview = app.descendants(matching: .any)["projectIcon.preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
 
-        let work = app.buttons["projectIcon.option.briefcase"]
-        XCTAssertTrue(work.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(work.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(work.frame.height, 44)
-        work.tap()
+        let outline = app.segmentedControls["projectIcon.appearance"].buttons["Outline"]
+        XCTAssertTrue(outline.exists)
+        outline.tap()
+        XCTAssertTrue(outline.isSelected)
+        XCTAssertEqual(preview.value as? String, "Folder, Outline")
+
+        XCTAssertTrue(reveal(receipt, in: app))
+        XCTAssertGreaterThanOrEqual(receipt.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(receipt.frame.height, 44)
+        receipt.tap()
         XCTAssertFalse(app.alerts["Could not save project icon"].exists)
+        XCTAssertEqual(receipt.value as? String, "Selected")
+        XCTAssertEqual(preview.value as? String, "Invoice, Outline")
 
-        app.buttons["Project icons"].tap()
-        app.buttons["Settings"].tap()
+        let projectIconsBack = app.buttons["Project icons"]
+        XCTAssertTrue(projectIconsBack.waitForExistence(timeout: 3))
+        projectIconsBack.tap()
+
+        let settingsBack = app.buttons["Settings"]
+        XCTAssertTrue(settingsBack.waitForExistence(timeout: 3))
+        settingsBack.tap()
+
         let close = app.buttons["Close"]
         XCTAssertTrue(returnToSettingsHeader(in: app, close: close))
         close.tap()
 
         let ledgerIcon = app.images.matching(identifier: "entry.projectIcon").firstMatch
         XCTAssertTrue(ledgerIcon.waitForExistence(timeout: 5))
-        XCTAssertEqual(ledgerIcon.label, "Briefcase")
+        XCTAssertEqual(ledgerIcon.value as? String, "receipt")
+    }
+
+    func testAboutIsAvailableOutsideDeveloperMode() {
+        let app = launchApp(["-demoSettings"])
+
+        let version = app.descendants(matching: .any)["settings.version"]
+        XCTAssertTrue(reveal(version, in: app))
+        XCTAssertTrue(version.exists)
+
+        let whatsNew = app.buttons["settings.whatsNew"]
+        XCTAssertTrue(reveal(whatsNew, in: app))
+        whatsNew.tap()
+        XCTAssertTrue(app.navigationBars["What's new"].waitForExistence(timeout: 5))
     }
 
     func testClientAchievementCollectionAnd3DDetailAreReachable() {

@@ -20,6 +20,7 @@ struct EditEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @AppStorage(ProjectIconAppearance.userDefaultsKey) private var projectIconAppearanceRaw = ProjectIconAppearance.fill.rawValue
     @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
     @Bindable var entry: Entry
     let clients: [Client]
@@ -49,6 +50,9 @@ struct EditEntrySheet: View {
         return Validation.clampAmount(d)
     }
     private var symbol: String { CurrencyFormatter.symbol(for: currencyCode) }
+    private var projectIconAppearance: ProjectIconAppearance {
+        ProjectIconAppearance(rawValue: projectIconAppearanceRaw) ?? .fill
+    }
     private var canSave: Bool {
         amountDecimal != nil
             && selectedClient != nil
@@ -182,7 +186,8 @@ struct EditEntrySheet: View {
 
     private var detailsCard: some View {
         ChromeCard {
-            ChromeRow(icon: ProjectIconResolver.symbol(for: project, in: projectIconPreferences).systemImageName) {
+            ChromeRow(icon: ProjectIconResolver.symbol(for: project, in: projectIconPreferences)
+                .systemImageName(for: projectIconAppearance)) {
                 TextField("Project", text: $project)
                     .foregroundStyle(Theme.label)
                     .onChange(of: project) { _, v in project = Validation.capped(v, max: Limits.maxProjectLength) }

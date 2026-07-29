@@ -75,7 +75,7 @@ extension Notification.Name {
 extension UIWindow {
     /// UIResponder's default does nothing, so providing the override in an
     /// extension is safe; every key window in the dev build reports shakes.
-    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+    override open func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
             NotificationCenter.default.post(name: .earnlineDebugShake, object: nil)
         }
@@ -191,6 +191,7 @@ struct DebugMenuView: View {
                 Text(verbatim: "Wipe local store")
             }
         } message: {
+            // swiftlint:disable:next line_length
             Text(verbatim: "Deletes every client, entry, heading, tombstone, and icon preference from the CURRENT local container only. The server is not touched; a later sync pulls server rows back.")
         }
         .confirmationDialog(Text(verbatim: "Crash the app?"),
@@ -239,6 +240,7 @@ struct DebugMenuView: View {
         } header: {
             Text(verbatim: "Account")
         } footer: {
+            // swiftlint:disable:next line_length
             Text(verbatim: "Every scenario is local to earnline Dev: no OAuth sheet, Supabase request, session change, or ledger data change occurs. These are the account screens only — the first-run flow lives in its own section below.")
         }
     }
@@ -254,14 +256,15 @@ struct DebugMenuView: View {
                 accessibilityIdentifier: "debug.onboarding.replay"
             ) {
                 dismiss()
-                app.isPresentingOnboarding = true
+                app.startOnboardingReplay()
             }
             actionRow(
                 "Reset onboarding flag",
+                // swiftlint:disable:next line_length
                 "Marks this workspace as never introduced, so the next cold launch opens the flow on its own. Existing clients and lines are left alone.",
                 accessibilityIdentifier: "debug.onboarding.reset"
             ) {
-                app.onboardingCompleted = false
+                app.resetOnboardingForNextLaunch()
                 onboardingNote = "Onboarding will run on the next launch."
             }
         } header: {
@@ -318,7 +321,8 @@ struct DebugMenuView: View {
                 flagsNote = "Developer Mode switched off."
             }
             actionRow("Reset experimental features",
-                      "Turns every Experimental toggle (client badges) back off. Project icons and Onboarding are routes rather than toggles — use the Onboarding section above to replay or re-arm the first run.") {
+                      // swiftlint:disable:next line_length
+                      "Turns every Experimental toggle (client badges) back off. Onboarding is a route rather than a toggle — use the Onboarding section above to replay or re-arm the first run.") {
                 app.clientBadgesEnabled = false
                 flagsNote = "Experimental features reset."
             }
@@ -359,6 +363,7 @@ struct DebugMenuView: View {
     private var diagnosticsSection: some View {
         Section {
             diagnosticRow("Bundle", Bundle.main.bundleIdentifier ?? "?")
+            // swiftlint:disable:next line_length
             diagnosticRow("Version", "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
             diagnosticRow("Environment", app.workspaceEnvironment.rawValue)
             diagnosticRow("Workspace ID", app.workspaceID)
@@ -370,6 +375,7 @@ struct DebugMenuView: View {
         } header: {
             Text(verbatim: "Diagnostics")
         } footer: {
+            // swiftlint:disable:next line_length
             Text(verbatim: "Live values, selectable for copying. Open from anywhere: tap the floating ladybug chip (drag it if it covers something) or shake the device — ⌃⌘Z in the simulator.")
         }
     }

@@ -115,10 +115,10 @@ private struct AuthVideoLayer: UIViewRepresentable {
 }
 
 private final class AuthVideoLayerView: UIView {
-    override class var layerClass: AnyClass { AVPlayerLayer.self }
+    override static var layerClass: AnyClass { AVPlayerLayer.self }
 
-    /// Guaranteed by `layerClass` above — UIKit builds this view's backing
-    /// layer from that type, so the cast cannot fail.
+    // Guaranteed by `layerClass` above — UIKit builds this view's backing
+    // layer from that type, so the cast cannot fail.
     // swiftlint:disable:next force_cast
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 

@@ -229,6 +229,7 @@ private enum ClientBadgeFactory {
             )
         }
 
+        // swiftlint:disable:next large_tuple
         let colors: (UInt32, UInt32, UInt32, UInt32, UInt32) = switch material {
         case .bronze: (0x6F321E, 0xB96737, 0x7D3E24, 0xF0A36B, 0xFFD0A1)
         case .copper: (0x6A2A22, 0xC45A42, 0x87342B, 0xFF9575, 0xFFD0BD)

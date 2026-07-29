@@ -75,6 +75,7 @@ struct SettingsView: View {
                     Text("On-device ledger")
                 } footer: {
                     VStack(alignment: .leading, spacing: 6) {
+                        // swiftlint:disable:next line_length
                         Text("Bring the \(guestLedgerCountText) you saved with “Continue without an account” into this account and sync them. The on-device copy stays on this device.")
                         if let guestImportNote {
                             Label(guestImportNote, systemImage: "checkmark.circle.fill")
@@ -98,6 +99,19 @@ struct SettingsView: View {
                 } label: {
                     SettingsRowLabel("Accent color", glyph: "drop")
                 }
+            }
+
+            Section {
+                NavigationLink {
+                    ProjectIconsSettingsView()
+                } label: {
+                    SettingsRowLabel("Project icons", glyph: "folder")
+                }
+                .accessibilityIdentifier("settings.projectIcons")
+            } header: {
+                Text("Projects")
+            } footer: {
+                Text("Choose one quiet marker for each project. It appears beside the project name in your ledger.")
             }
 
             Section {
@@ -148,11 +162,16 @@ struct SettingsView: View {
                               systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.statusProgress)
                     }
+                    // swiftlint:disable:next line_length
                     Text("Amounts stay in their original currency. Only the primary and secondary currencies are converted for consolidated totals.")
                 }
             }
 
             conversionRateSection
+
+            Section("About") {
+                aboutContent
+            }
 
             #if DEBUGMENU
             Section {
@@ -171,6 +190,7 @@ struct SettingsView: View {
                 Toggle(isOn: $app.developerModeEnabled) {
                     SettingsRowLabel("Developer Mode", glyph: "wrench.and.screwdriver")
                 }
+                .accessibilityIdentifier("settings.developerMode")
             } footer: {
                 Text("Sync controls, workspace diagnostics, and data-recovery tools stay out of the everyday settings path.")
             }
@@ -182,20 +202,13 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings.clientBadges")
 
-                    NavigationLink {
-                        ProjectIconsSettingsView()
-                    } label: {
-                        SettingsRowLabel("Project icons", glyph: "folder")
-                    }
-                    .accessibilityIdentifier("settings.projectIcons")
-
                     // Replays the real first-run flow over the ledger. Settings
                     // closes first so the layer is not trapped behind this
                     // sheet. It creates a real client and a real line, exactly
                     // as it does on a fresh install.
                     Button {
                         app.showSettings = false
-                        app.isPresentingOnboarding = true
+                        app.startOnboardingReplay()
                     } label: {
                         SettingsRowLabel("Onboarding", glyph: "sparkles.rectangle.stack")
                     }
@@ -203,6 +216,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Experimental")
                 } footer: {
+                    // swiftlint:disable:next line_length
                     Text("Experimental features may change or be removed in a future version. Onboarding replays the two-step introduction; finishing it adds the client you name and the first line you write.")
                 }
 
@@ -248,9 +262,6 @@ struct SettingsView: View {
                 }
                 #endif
 
-                Section("About") {
-                    developerAboutContent
-                }
             }
 
             Section {
@@ -267,6 +278,7 @@ struct SettingsView: View {
             } header: {
                 Text("Data")
             } footer: {
+                // swiftlint:disable:next line_length
                 Text("Export or import ledger income lines in a standard CSV file. This is not a backup and does not include notes, settings, or sync history.")
             }
         }
@@ -323,6 +335,7 @@ struct SettingsView: View {
             Button("Import and sync") { importGuestLedger() }
             Button("Cancel", role: .cancel) {}
         } message: {
+            // swiftlint:disable:next line_length
             Text("The \(guestLedgerCountText) you saved with “Continue without an account” will be added to this account and synced. Your on-device copy is left untouched, and importing again won’t create duplicates.")
         }
         .saveErrorAlert($saveError)
@@ -372,6 +385,7 @@ struct SettingsView: View {
                           systemImage: rateFetchFailed ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                         .foregroundStyle(rateFetchFailed ? Theme.statusProgress : .secondary)
                 }
+                // swiftlint:disable:next line_length
                 Text("Example: \(CurrencyFormatter.string(100, code: appModel.baseCurrencyCode)) = \(appModel.secondaryString(100)). Changing this rate updates converted displays; original entry amounts do not change.")
             }
         }
@@ -457,13 +471,15 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var developerAboutContent: some View {
+    private var aboutContent: some View {
         valueRow("Version", value: appVersion)
+            .accessibilityIdentifier("settings.version")
         NavigationLink {
             ChangelogView()
         } label: {
             SettingsRowLabel("What's new", glyph: "sparkles")
         }
+        .accessibilityIdentifier("settings.whatsNew")
     }
 
     /// Read-only row: title in ink, value trailing in gray — the system
@@ -586,8 +602,10 @@ struct SettingsView: View {
     private var syncRecoveryConfirmationMessage: String {
         switch pendingSyncRecoveryAction {
         case .useCloudCopy:
+            // swiftlint:disable:next line_length
             return String(localized: "Unsynced changes on this iPhone will be discarded and replaced by the cloud copy. Remote rows are not deleted.")
         case .reloadCurrent, nil:
+            // swiftlint:disable:next line_length
             return String(localized: "Only the selected local store on this iPhone will be removed. Supabase rows and the other workspace store will not be deleted.")
         }
     }
@@ -716,7 +734,14 @@ struct SettingsView: View {
     /// account, so a signed-out or guest session never opens the guest store.
     private func refreshGuestLedger() {
         guard appModel.isSupabaseConfigured else { guestLedger = nil; return }
-        guestLedger = GuestLedgerMigration.guestLedgerSummary()
+        do {
+            guestLedger = try GuestLedgerMigration.guestLedgerSummary()
+        } catch {
+            guestLedger = nil
+            saveError = String(
+                localized: "Could not inspect the on-device ledger. It has not been changed. \(error.localizedDescription)"
+            )
+        }
     }
 
     /// Copy the on-device guest ledger into this account and kick a sync. Safe

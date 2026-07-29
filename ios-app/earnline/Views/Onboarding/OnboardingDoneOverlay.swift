@@ -18,6 +18,7 @@ struct OnboardingDoneOverlay: View {
             scrim
             content
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding.step.done")
     }
 
@@ -53,6 +54,7 @@ struct OnboardingDoneOverlay: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 208, height: 194)
+                    .onboardingArtworkStyle()
                     .accessibilityHidden(true)
 
                 Text("You’re all set!")

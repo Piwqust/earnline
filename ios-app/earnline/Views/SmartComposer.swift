@@ -20,6 +20,7 @@ struct SmartComposer: View {
     /// Called after a line is successfully saved. The ledger does not need it —
     /// the entry simply appears in the list underneath — but onboarding waits on
     /// this to advance past its income step.
+    var usesDashedOutline = true
     var onCommit: ((Entry) -> Void)?
 
     enum Field: Hashable { case amount, project, task }
@@ -99,7 +100,12 @@ struct SmartComposer: View {
         .background(Theme.label(0.02), in: .rect(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                .strokeBorder(
+                    style: StrokeStyle(
+                        lineWidth: 1,
+                        dash: usesDashedOutline ? [5, 4] : []
+                    )
+                )
                 .foregroundStyle(Theme.label(0.18))
         )
         .onAppear(perform: prime)

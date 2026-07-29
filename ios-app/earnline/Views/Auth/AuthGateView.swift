@@ -45,6 +45,14 @@ struct AuthGateView: View {
                         .padding(.trailing, 20)
                 }
             }
+            #if DEBUGMENU
+            // The Dev build shows this exact screen — never a replica. Every
+            // action already short-circuits inside `AppModel` while a preview is
+            // active (see the `isDebugAuthGatePreview` guards in
+            // `AppModel+Auth`), so no provider, session, or workspace is
+            // touched. All the preview needs on top is a way back out.
+            .overlay(alignment: .top) { debugPreviewBar }
+            #endif
         }
         .sheet(isPresented: $showingPairDevice) {
             PairDeviceRedeemSheet()
@@ -81,6 +89,47 @@ struct AuthGateView: View {
         if case .signedOut = app.accountState { return true }
         return false
     }
+
+    #if DEBUGMENU
+    /// Dev-only chrome laid over the real gate while a debug account preview is
+    /// running: a badge so the state on screen is never mistaken for a real
+    /// session, and the way back to the ledger. Scenarios are chosen from the
+    /// debug menu, not from here.
+    @ViewBuilder
+    private var debugPreviewBar: some View {
+        if app.isDebugAuthGatePreview {
+            HStack(spacing: 12) {
+                Button {
+                    app.debugCompleteAuthPreview()
+                } label: {
+                    Image(systemName: "xmark")
+                        .appFont(15, .semibold)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel(Text(verbatim: "Close the debug preview"))
+                .accessibilityIdentifier("debug.auth.close")
+
+                Text(verbatim: "DEBUG · LOCAL AUTH PREVIEW")
+                    .appFont(12, .semibold, relativeTo: .caption)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(.black.opacity(0.55), in: .capsule)
+                    .accessibilityIdentifier("debug.auth.badge")
+
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 8)
+            .padding(.leading, 20)
+            // The sound toggle already owns the trailing corner.
+            .padding(.trailing, 76)
+            .environment(\.colorScheme, .dark)
+        }
+    }
+    #endif
 }
 
 // MARK: - Bottom panel

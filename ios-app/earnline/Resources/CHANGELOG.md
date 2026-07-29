@@ -1,9 +1,43 @@
 # What's new
 
+## July 29, 2026
+
+### Sync and account safety
+- Ledger commands now use the navigation bar instead of the iOS 26 bottom
+  toolbar, removing a system runtime hierarchy warning while retaining native
+  menus and search.
+- Importing an on-device ledger now also brings over month-close notes. If that older local copy cannot be read, Earnline shows the problem and leaves it untouched instead of pretending there is nothing to import.
+- Project-icon checks now use a stable accessibility value across supported iOS versions.
+- Device pairing can safely retry after an interrupted connection without creating a second device identity.
+- Sign-in data now uses an explicit, device-only secure-storage policy. If iPhone Keychain cannot remove it during sign out, Earnline keeps the session visible and tells you to unlock the device and retry.
+
+## July 28, 2026
+
+### Getting started
+- The first-run illustration now stays fixed behind the form when the keyboard opens, while the controls continue to move above the keyboard.
+- Interrupted setup resumes from the client or completed earning already saved instead of creating duplicate ledger data.
+- Existing synced ledgers skip first-run setup, and the decision waits for the initial cloud pull when the remote ledger is not yet known.
+- Removed the old setup checklist from the empty ledger; first-time setup now has one onboarding flow, and the normal add button remains the entry point afterward.
+- The supplied onboarding artwork is softened in Dark Mode.
+
+### Project icons
+- Project icon selection now shows the real ledger row before you save it, so the preview matches the component used in the ledger.
+- Symbols are grouped into work, creative, digital, and commerce categories. A compact native control switches every project icon between **Outline** and **Fill**.
+- Project icons now live in the regular Settings path. The selected symbol uses a quieter outlined state and a brief motion confirmation that respects Reduce Motion.
+
+### Settings
+- **Version** and **What’s new** now appear in the regular Settings path.
+- **Import sample ledger** now imports an entirely fictional creative ledger instead of personal work data.
+
+### Insights
+- **Insights** now opens with one year-at-a-glance income chart: the total and covered dates sit above a smooth blue trend with its restrained diagonal band, a dotted divider, and month labels. The 3M / 6M / 1Y control now changes only that chart; the previous axis-heavy chart is removed.
+
 ## July 27, 2026
 
 ### Ledger reliability
 - The **Earned in month** and **Stats** cards now update immediately after you delete or change an income line, import income, or receive synced changes.
+- The **Earned in month** and **Stats** cards now follow the month at the top of the ledger while you scroll through history.
+- Crossing a month boundary restores the summary's rolling month and amount, changing Stats figure, and smoothly reshaped six-month graph. Reduce Motion keeps these changes instant.
 
 ### Account access
 - Removed **Sign in with Apple** from the iPhone app. Cloud access continues through Google or GitHub; local-only mode and device pairing are unchanged.
@@ -24,9 +58,7 @@
 - Delete actions in contextual menus now show a matching red trash icon.
 
 ### First earnings
-- An empty ledger now makes the required order explicit: first add a client, then record income for that client. Saving the client opens the existing income composer with that client already selected.
 - The first-ledger header uses one calm month-and-total summary instead of empty Stats cards, and the bottom add control creates a client directly until one exists.
-- An empty ledger now shows a two-step setup checklist instead of a diagram of the workflow: **Add your first client** and **Write your first income**, each its own Liquid Glass card you can tap. Step one ticks off once the client exists, and step two stays out of reach until it does — income has to belong to someone. It is the only guide the ledger carries; the separate floating checklist card has been removed.
 
 ### Dev testing
 - **earnline Dev** now has local account and onboarding previews for signed out, signing in, sign-in errors, offline errors, workspace setup, paired-device setup, and simulated sign out. These previews never contact a provider or Supabase, change a session, or modify ledger data.

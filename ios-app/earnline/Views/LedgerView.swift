@@ -5,6 +5,7 @@ struct LedgerView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     @Query(sort: \Heading.date, order: .reverse) private var headings: [Heading]
 
@@ -20,10 +21,6 @@ struct LedgerView: View {
     @State private var ledgerSnapshot: Insights.LedgerSnapshot?
     /// Trailing months currently materialized — see `refreshLedgerSnapshot`.
     @State private var windowMonthCount = LedgerView.initialWindowMonths
-    /// The native List reports its top visible target. Its ID contains the
-    /// represented month, so scrolling never needs a geometry preference from
-    /// every row.
-    @State private var topVisibleLedgerTarget: LedgerScrollTarget?
     /// Coalesces sentinel and month-boundary prefetch requests. SwiftData work
     /// happens in a later task, never inside a scroll-position callback.
     @State private var isExtendingLedgerWindow = false
@@ -323,15 +320,14 @@ struct LedgerView: View {
     /// The inner navigation surface is kept separate from the sheet tree so
     /// SwiftUI can type-check toolbar and search modifiers independently.
     ///
-    /// Bottom chrome replicates Apple's iOS 26 list screens (Notes, Mail):
-    /// the system bottom toolbar carries a "…" circle, the resting search
-    /// field, and a "+" circle. `.searchable` stays attached so the field
-    /// docks into the toolbar's search slot; the system owns its focus,
-    /// cancel affordance, keyboard, and expand/collapse choreography.
+    /// The command menu and add control live in the navigation bar, while the
+    /// system owns search's placement and focus. iOS 26 currently logs a
+    /// UIKit hierarchy fault when a `Menu` and `DefaultToolbarItem(.search)`
+    /// share a `.bottomBar`; this supported SwiftUI composition avoids that
+    /// faulty toolbar injection without custom controls.
     private var ledgerNavigationContent: some View {
         ledgerCore
             .navigationDestination(for: LedgerRoute.self, destination: navigationDestination)
-            .toolbar(.hidden, for: .navigationBar)
             .searchable(text: $search.query,
                         tokens: $search.tokens,
                         isPresented: $search.isPresented,
@@ -339,7 +335,7 @@ struct LedgerView: View {
                         prompt: "Search income") { token in
                 Label(token.label, systemImage: token.systemImage)
             }
-            .toolbar { bottomToolbar }
+            .toolbar { navigationToolbar }
             .onChange(of: search.isPresented) { _, searching in
                 if searching {
                     composerRoute = nil
@@ -362,18 +358,9 @@ struct LedgerView: View {
             .onChange(of: search.tokens) { _, _ in refreshSearchStats() }
             .onAppear(perform: runDemoIfNeeded)
             .onChange(of: clients.count) { _, _ in runDemoIfNeeded() }
-            // The onboarding flow creates a client and hands the id over here,
-            // so it ends on an open composer rather than on the empty ledger it
-            // just spent three pages explaining. `initial` covers the flow being
-            // dismissed before this view ever appeared.
-            .onChange(of: app.pendingFirstEntryClientID, initial: true) { _, id in
-                guard let id, let client = client(withID: id) else { return }
-                app.pendingFirstEntryClientID = nil
-                openComposer(for: client, month: app.displayedMonth)
-            }
     }
 
-    private var bottomToolbar: some ToolbarContent {
+    private var navigationToolbar: some ToolbarContent {
         LedgerBottomBarItems(
             clients: clients,
             pendingCount: ledgerSnapshot?.pendingCount ?? 0,
@@ -453,16 +440,7 @@ struct LedgerView: View {
             if let snapshot = ledgerSnapshot {
                 if isSearching {
                     searchListContent(snapshot)
-                } else if !rowBuilder.hasContent(in: snapshot) {
-                    EmptyStateView(
-                        client: mostRecentClient,
-                        onAddClient: { sheetRoute = .newClient },
-                        onAddIncome: newProject
-                    )
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                } else {
+                } else if rowBuilder.hasContent(in: snapshot) {
                     rowsView(ledgerRows(snapshot))
                     // Load-older sentinel: scrolling it into view requests the
                     // next chunk after the current scroll update completes.
@@ -483,7 +461,7 @@ struct LedgerView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 1)
-        .scrollPosition(id: $topVisibleLedgerTarget, anchor: .top)
+        .coordinateSpace(name: "ledger")
         // Pull-to-refresh mirrors the standard syncable-list affordance; a
         // no-op while Supabase isn't configured. Disabled in search mode so
         // a pull doesn't fight the keyboard.
@@ -519,9 +497,9 @@ struct LedgerView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: topVisibleLedgerTarget) { _, target in
+        .onPreferenceChange(MonthAnchorKey.self) { anchors in
             guard !isSearching else { return }
-            updateDisplayedMonth(target?.representedMonth)
+            updateDisplayedMonth(anchors)
         }
         // Runs after the first frame commits — the app appears immediately and
         // the ledger fills in a beat later — then again when the currency
@@ -679,6 +657,7 @@ struct LedgerView: View {
     /// Launch-argument hooks for UI automation: each opens one surface
     /// directly so visual checks don't depend on scripted taps.
     private func runDemoIfNeeded() {
+        #if DEBUG
         guard !didRunDemo else { return }
         if AppModel.hasUIAutomationLaunchFlag("-demoComposer"), let client = clients.first {
             // The fixture is inserted by the root store task. Wait for its
@@ -709,6 +688,7 @@ struct LedgerView: View {
             didRunDemo = true
             navigationPath.append(.client(stressClient.id))
         }
+        #endif
     }
 
     // MARK: Event notes (persisted as Heading for sync compatibility)
@@ -747,11 +727,20 @@ struct LedgerView: View {
 
     // MARK: Month tracking
 
-    private func updateDisplayedMonth(_ month: Date?) {
-        guard let month else { return }
-        let m = DateFormat.monthStart(of: month)
+    private func updateDisplayedMonth(_ anchors: [MonthAnchor]) {
+        guard !anchors.isEmpty else { return }
+        let anchorsAboveHeader = anchors.filter { $0.y <= 44 }
+        guard let anchor = anchorsAboveHeader.max(by: { $0.y < $1.y })
+            ?? anchors.min(by: { $0.y < $1.y }) else { return }
+        let m = DateFormat.monthStart(of: anchor.month)
         if !Calendar.current.isDate(m, equalTo: app.displayedMonth, toGranularity: .month) {
-            app.displayedMonth = m
+            // The month only changes once after crossing a boundary, not for
+            // every scroll tick. Owning the transaction here lets the pinned
+            // summary preserve its rolling title, amount, and graph transition
+            // without making the List itself animate.
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.34)) {
+                app.displayedMonth = m
+            }
             // Preload the next twelve months before the six-month summary trend
             // reaches the edge of the materialized data. The task itself runs
             // after this scroll callback returns.

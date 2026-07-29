@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Shared chrome for the two wizard steps: the step rule, the wordmark, the
-/// two-tone title, and the bottom panel they sit above.
-///
-/// Every metric here is the Figma value (node `471:4904`). The colors are
-/// `Theme` tokens rather than the literal light-mode hexes the Figma carries,
-/// so the flow follows the app's Light/Dark setting — `Theme.background`
-/// already *is* the Figma `#F2F2F7`, and `Theme.label` already *is* `#1A1A1A`.
+// Shared chrome for the two wizard steps: the step rule, the wordmark, the
+// two-tone title, and the bottom panel they sit above.
+//
+// Every metric here is the Figma value (node `471:4904`). The colors are
+// `Theme` tokens rather than the literal light-mode hexes the Figma carries,
+// so the flow follows the app's Light/Dark setting — `Theme.background`
+// already *is* the Figma `#F2F2F7`, and `Theme.label` already *is* `#1A1A1A`.
 
 // MARK: - Step header
 
@@ -21,7 +21,6 @@ struct OnboardingStepHeader: View {
     let titleSubject: String.LocalizationValue
 
     @Environment(AppModel.self) private var app
-
     /// Two steps, so two segments. Kept as a constant rather than a parameter:
     /// the copy ("Step 1", "Step 2") is localized per segment, not generated.
     private static let stepCount = 2
@@ -118,7 +117,7 @@ struct OnboardingPanel<Content: View>: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 16)
         .padding(.bottom, 36)
         .background {
             UnevenRoundedRectangle(
@@ -131,6 +130,29 @@ struct OnboardingPanel<Content: View>: View {
             .shadow(color: .black.opacity(0.12), radius: 22, y: -47)
             .ignoresSafeArea(edges: .bottom)
         }
+    }
+
+}
+
+// MARK: - Artwork
+
+/// The supplied artwork is intentionally bright. Reduce its luminance in Dark
+/// Mode so the white glass surfaces do not flare against the near-black canvas;
+/// the source asset and its Figma geometry remain unchanged.
+private struct OnboardingArtworkStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(colorScheme == .dark ? 0.84 : 1)
+            .brightness(colorScheme == .dark ? -0.08 : 0)
+            .contrast(colorScheme == .dark ? 0.92 : 1)
+    }
+}
+
+extension View {
+    func onboardingArtworkStyle() -> some View {
+        modifier(OnboardingArtworkStyle())
     }
 }
 

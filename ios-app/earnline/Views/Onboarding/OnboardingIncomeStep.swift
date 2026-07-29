@@ -29,8 +29,14 @@ struct OnboardingIncomeStep: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
 
-            SmartComposer(client: client, month: month, onCommit: onCommit)
+            SmartComposer(
+                client: client,
+                month: month,
+                usesDashedOutline: false,
+                onCommit: onCommit
+            )
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding.step.income")
     }
 }

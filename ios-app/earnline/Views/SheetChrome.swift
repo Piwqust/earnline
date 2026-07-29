@@ -1,14 +1,12 @@
 import SwiftUI
 
-/// The shared sheet vocabulary: a gray sheet with grouped cards at the large
-/// concentric radius, sentence-case gray section labels, bare monochrome row
-/// glyphs, hairlines inset to the text, the *system* sheet header (an inline
-/// navigation title with `Button(role:)` toolbar buttons — Mail's compose
-/// chrome), and a full-width glass-prominent pill as the single primary
-/// action.
-///
-/// Every sheet and menu-like surface in the app composes these pieces so the
-/// whole app speaks one dialect.
+// The shared sheet vocabulary: a gray sheet with grouped cards at the large
+// concentric radius, sentence-case gray section labels, bare monochrome row
+// glyphs, hairlines inset to the text, the *system* sheet header (an inline
+// navigation title with `Button(role:)` toolbar buttons — Mail's compose
+// chrome), and a full-width glass-prominent pill as the single primary action.
+// Every sheet and menu-like surface in the app composes these pieces so the
+// whole app speaks one dialect.
 
 // MARK: - Title bar
 

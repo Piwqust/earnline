@@ -49,6 +49,7 @@ struct PasteLinesSheet: View {
                             .accessibilityLabel("Lines to import")
                     }
                     CardFootnote {
+                        // swiftlint:disable:next line_length
                         Text("One income line per row — e.g. \u{201C}+$240 Project: task\u{201D}. A heading like \u{201C}— Income for April\u{201D} dates the lines under it to that month. Rows without an amount are skipped.")
                     }
                 }

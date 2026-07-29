@@ -143,11 +143,11 @@ struct InsightsDashboardInput: Sendable {
         )
     }
 
-    private nonisolated func monthStart(_ date: Date, calendar: Calendar) -> Date {
+    nonisolated private func monthStart(_ date: Date, calendar: Calendar) -> Date {
         calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
     }
 
-    private nonisolated func monthKey(_ date: Date, calendar: Calendar) -> Int {
+    nonisolated private func monthKey(_ date: Date, calendar: Calendar) -> Int {
         let components = calendar.dateComponents([.year, .month], from: date)
         return (components.year ?? 0) * 12 + (components.month ?? 1) - 1
     }
@@ -274,11 +274,12 @@ struct Insights {
 
     // MARK: Daily heatmap
 
-    /// How a single line lands on the calendar: the base-currency amount it
-    /// contributes per day and the span of days it covers. A *held* line
-    /// spreads its amount evenly across every day from its own date through the
-    /// hold-release day (inclusive) — the money is "earning" across the wait —
-    /// while every other line lands wholly on its date.
+    // How a single line lands on the calendar: the base-currency amount it
+    // contributes per day and the span of days it covers. A *held* line
+    // spreads its amount evenly across every day from its own date through the
+    // hold-release day (inclusive) — the money is "earning" across the wait —
+    // while every other line lands wholly on its date.
+    // swiftlint:disable:next large_tuple
     private func heatSpan(of entry: Entry) -> (start: Date, end: Date, perDay: Decimal, dayCount: Int) {
         let base = converter.toBase(entry.amount, code: entry.currencyCode)
         let start = calendar.startOfDay(for: entry.date)

@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// A stable List target which carries the month represented by a row. Keeping
-/// the month in the identifier lets `List.scrollPosition` report the top row
-/// without every rendered row measuring itself with `GeometryReader`.
+/// A stable row identifier which also retains the represented month for tests
+/// and other value-only ledger projections.
 struct LedgerScrollTarget: Hashable {
     let rawValue: String
     let representedMonth: Date
@@ -51,10 +50,6 @@ enum LedgerRow: Identifiable {
         }
     }
 
-    /// Every rendered row belongs to a calendar month, including an expanded
-    /// composer and an event note. This is deliberately value data captured by
-    /// the row builder, so a SwiftData model invalidated by a sync pull never
-    /// has to be read from the scroll-position callback.
     var representedMonth: Date { id.representedMonth }
 
     /// A sync pull can invalidate a model while a recycled List row still
@@ -88,4 +83,17 @@ enum LedgerBlock: Identifiable {
         }
     }
 
+}
+
+struct MonthAnchor: Equatable {
+    let month: Date
+    let y: CGFloat
+}
+
+struct MonthAnchorKey: PreferenceKey {
+    static let defaultValue: [MonthAnchor] = []
+
+    static func reduce(value: inout [MonthAnchor], nextValue: () -> [MonthAnchor]) {
+        value.append(contentsOf: nextValue())
+    }
 }

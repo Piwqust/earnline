@@ -19,6 +19,7 @@ struct ClientOrbChart: View {
     private var blobDiameter: CGFloat { diameter - 2 * (ringWidth + ringGap) }
     private var total: Decimal { segments.reduce(Decimal.zero) { $0 + $1.value } }
 
+    // swiftlint:disable:next large_tuple
     private var slices: [(color: Color, start: Double, end: Double, isMuted: Bool)] {
         guard total > 0 else { return [(Theme.label(0.12), 0, 1, true)] }
         var cursor = 0.0
@@ -50,6 +51,7 @@ struct ClientOrbChart: View {
         segments.max { doubleValue($0.value) < doubleValue($1.value) }?.color ?? Theme.label(0.12)
     }
 
+    // swiftlint:disable:next large_tuple
     private var glowSlices: [(color: Color, start: Double, end: Double, isMuted: Bool)] {
         guard let dominantIndex = slices.indices.max(by: {
             (slices[$0].end - slices[$0].start) < (slices[$1].end - slices[$1].start)

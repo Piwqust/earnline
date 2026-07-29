@@ -46,8 +46,10 @@ struct LedgerRowsView: View {
         switch row {
         case .month(let month, let total):
             MonthDivider(title: DateFormat.month(month), total: total)
-        case .heading(let heading, _):
+                .background(monthAnchorReader(month))
+        case .heading(let heading, let month):
             headingRow(heading)
+                .background(monthAnchorReader(month))
         case .client(let client, let month, let total):
             ClientChip(
                 client: client,
@@ -57,11 +59,14 @@ struct LedgerRowsView: View {
                 onOpen: { onOpenClient(client.id) },
                 onAdd: { onToggleComposer(client, month) }
             )
-        case .composer(let client, _):
-            SmartComposer(client: client, month: composerMonth ?? .now)
+            .background(monthAnchorReader(month))
+        case .composer(let client, let month):
+            SmartComposer(client: client, month: composerMonth ?? month)
                 .transition(.opacity)
-        case .entry(let entry, _):
+                .background(monthAnchorReader(month))
+        case .entry(let entry, let month):
             entryRow(entry)
+                .background(monthAnchorReader(month))
         }
     }
 
@@ -138,6 +143,22 @@ struct LedgerRowsView: View {
         }
         .accessibilityLabel("\(noteLabel): \(title), \(date)")
         .accessibilityHint("Edits note")
+    }
+
+    /// List does not currently report changing row identities through
+    /// `scrollPosition` on the iOS 27 runtime. Emit the month for the rows
+    /// already on screen instead; the ledger chooses the row nearest its top
+    /// edge, so both summary cards track the visible month.
+    private func monthAnchorReader(_ month: Date) -> some View {
+        GeometryReader { geometry in
+            Color.clear.preference(
+                key: MonthAnchorKey.self,
+                value: [MonthAnchor(
+                    month: month,
+                    y: geometry.frame(in: .named("ledger")).minY
+                )]
+            )
+        }
     }
 
     private func insets(for row: LedgerRow) -> EdgeInsets {

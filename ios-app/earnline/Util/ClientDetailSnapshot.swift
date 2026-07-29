@@ -128,11 +128,11 @@ struct ClientDetailSnapshotInput: Sendable {
         )
     }
 
-    private nonisolated static func monthStart(_ date: Date, calendar: Calendar) -> Date {
+    nonisolated private static func monthStart(_ date: Date, calendar: Calendar) -> Date {
         calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
     }
 
-    private nonisolated static func monthKey(_ date: Date, calendar: Calendar) -> Int {
+    nonisolated private static func monthKey(_ date: Date, calendar: Calendar) -> Int {
         let components = calendar.dateComponents([.year, .month], from: date)
         return (components.year ?? 0) * 12 + (components.month ?? 1) - 1
     }

@@ -23,11 +23,7 @@ struct OnboardingFlowView: View {
     /// and marks this workspace as introduced.
     let finish: () -> Void
 
-    private enum Step: Int {
-        case client, income, done
-    }
-
-    @State private var step: Step = .client
+    @State private var step: AppModel.OnboardingCheckpointStep = .client
     @State private var name = ""
     /// Blue, as the design draws it — and the same tone the live chip takes.
     @State private var colorHex = Theme.blue.hexString
@@ -65,6 +61,7 @@ struct OnboardingFlowView: View {
         .sensoryFeedback(.selection, trigger: stepFeedback)
         .sensoryFeedback(.success, trigger: doneFeedback)
         .saveErrorAlert($saveError, title: "Could not create client")
+        .task(restoreCheckpoint)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding.flow")
     }
@@ -74,18 +71,24 @@ struct OnboardingFlowView: View {
     private var wizard: some View {
         ZStack(alignment: .top) {
             Theme.background.ignoresSafeArea()
-            hero
+            GeometryReader { proxy in
+                let illustrationWidth = min(383, max(0, proxy.size.width - 20))
+                hero(illustrationWidth: illustrationWidth)
+            }
         }
-        // The panel rides the bottom safe area, so it lifts above the keyboard
-        // on the income step exactly as the design draws it.
-        .safeAreaInset(edge: .bottom, spacing: 0) { panel }
+        // The panel responds to the keyboard, but the artwork has an explicit
+        // width/height and therefore remains the same background object instead
+        // of accepting the inset's reduced height proposal.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            panel
+        }
     }
 
     /// Illustration behind, header in front — the design runs the title across
     /// the top of the artwork.
-    private var hero: some View {
+    private func hero(illustrationWidth: CGFloat) -> some View {
         ZStack(alignment: .top) {
-            illustration
+            illustration(width: illustrationWidth)
                 .padding(.top, 34)
 
             OnboardingStepHeader(
@@ -98,14 +101,27 @@ struct OnboardingFlowView: View {
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    private var illustration: some View {
-        Image(step == .client ? "OnboardingClient" : "OnboardingIncome")
+    private func illustration(width: CGFloat) -> some View {
+        let height = step == .client ? width * (390 / 383) : width
+
+        return Image(step == .client ? "OnboardingClient" : "OnboardingIncome")
             .resizable()
             .scaledToFit()
-            .frame(maxWidth: 383)
+            .frame(width: width, height: height)
+            .fixedSize()
+            .onboardingArtworkStyle()
             .id(step)
             .transition(.opacity)
             .accessibilityHidden(true)
+            #if DEBUG
+            .overlay {
+                if AppModel.isRunningUIAutomation {
+                    Color.clear
+                    .accessibilityElement()
+                    .accessibilityIdentifier("onboarding.illustration")
+                }
+            }
+            #endif
     }
 
     @ViewBuilder
@@ -123,6 +139,9 @@ struct OnboardingFlowView: View {
                 PillCTA("Create client",
                         isEnabled: clientValidation.validName != nil,
                         action: createClient)
+                    // Figma: 16 pt panel content inset plus another 20 pt for
+                    // the 330 pt CTA on a 402 pt canvas.
+                    .padding(.horizontal, 20)
                     .accessibilityIdentifier("onboarding.primary")
             case .income:
                 if let createdClient, !createdClient.isInvalidated {
@@ -150,13 +169,48 @@ struct OnboardingFlowView: View {
             return
         }
         createdClient = client
+        app.stageOnboardingClient(client.id)
         stepFeedback += 1
         step = .income
     }
 
     private func recordFirstEntry(_ entry: Entry) {
         firstEntryAmount = CurrencyFormatter.string(entry.amount, code: entry.currencyCode)
+        app.stageOnboardingEntry(entry.id)
         doneFeedback += 1
         step = .done
+    }
+
+    @MainActor
+    private func restoreCheckpoint() async {
+        guard step == .client,
+              app.onboardingCheckpointStep != .client,
+              let clientID = app.onboardingClientID else { return }
+
+        var clientDescriptor = FetchDescriptor<Client>(
+            predicate: #Predicate { $0.id == clientID }
+        )
+        clientDescriptor.fetchLimit = 1
+        guard let client = try? context.fetch(clientDescriptor).first else {
+            app.resetOnboardingForNextLaunch()
+            app.isPresentingOnboarding = true
+            return
+        }
+
+        createdClient = client
+        step = app.onboardingCheckpointStep
+
+        if step == .done, let entryID = app.onboardingEntryID {
+            var entryDescriptor = FetchDescriptor<Entry>(
+                predicate: #Predicate { $0.id == entryID }
+            )
+            entryDescriptor.fetchLimit = 1
+            if let entry = try? context.fetch(entryDescriptor).first {
+                firstEntryAmount = CurrencyFormatter.string(entry.amount, code: entry.currencyCode)
+            } else {
+                app.stageOnboardingClient(client.id)
+                step = .income
+            }
+        }
     }
 }

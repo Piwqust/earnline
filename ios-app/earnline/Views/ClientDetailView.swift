@@ -6,6 +6,7 @@ import SwiftData
 /// Renaming, recoloring, and deletion stay behind the toolbar edit action.
 struct ClientDetailView: View {
     @Environment(AppModel.self) private var app
+    @AppStorage(ProjectIconAppearance.userDefaultsKey) private var projectIconAppearanceRaw = ProjectIconAppearance.fill.rawValue
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -25,6 +26,10 @@ struct ClientDetailView: View {
     @State private var snapshotError: String?
     @State private var dataRevision = 0
     @State private var rendersAchievementPreview = true
+
+    private var projectIconAppearance: ProjectIconAppearance {
+        ProjectIconAppearance(rawValue: projectIconAppearanceRaw) ?? .fill
+    }
 
     private struct SnapshotRevision: Hashable {
         let baseCurrencyCode: String
@@ -329,7 +334,8 @@ struct ClientDetailView: View {
                     )
                 } label: {
                     ChromeRow(icon: nil) {
-                        Image(systemName: projectSymbol(for: total.name).systemImageName)
+                        Image(systemName: projectSymbol(for: total.name)
+                            .systemImageName(for: projectIconAppearance))
                             .font(.system(size: 17, weight: .regular))
                             .foregroundStyle(.secondary)
                             .frame(width: 18)

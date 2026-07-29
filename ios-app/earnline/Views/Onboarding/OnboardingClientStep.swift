@@ -32,6 +32,10 @@ struct OnboardingClientStep: View {
                     .padding(.leading, 16)
             }
         }
+        // `.contain` makes this a real container element. Without it the
+        // identifier is stamped onto every descendant instead, which would
+        // overwrite the name field's own.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding.step.client")
     }
 

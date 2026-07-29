@@ -107,6 +107,7 @@ struct CSVTransferView: View {
             }
             .accessibilityIdentifier("settings.csv.export")
         } footer: {
+            // swiftlint:disable:next line_length
             Text("Exports ledger income lines only: date, client, project, task, original amount, currency, status, and hold date. This is not a backup and does not include notes, settings, or sync IDs.")
         }
 
@@ -127,6 +128,7 @@ struct CSVTransferView: View {
             }
             .accessibilityIdentifier("settings.csv.import")
         } footer: {
+            // swiftlint:disable:next line_length
             Text("Review every row before importing. Invalid rows and duplicates stop the whole import; unknown clients are created only after you confirm.")
         }
 
@@ -171,6 +173,7 @@ struct CSVTransferView: View {
                 } header: {
                     Text("Duplicates")
                 } footer: {
+                    // swiftlint:disable:next line_length
                     Text("Duplicates may already exist in this ledger or appear more than once in this file. Remove them from the CSV and choose the file again.")
                 }
             }

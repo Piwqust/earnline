@@ -1,11 +1,10 @@
 import SwiftUI
 
-/// The ledger's bottom chrome, laid out the way Apple's own list screens do
-/// it on iOS 26 (Notes, Mail): a leading "…" circle, the system search field
-/// docked in the middle, and a trailing "+" circle. Everything is a native
-/// bottom-bar toolbar item, so the system supplies the Liquid Glass surfaces,
-/// the floating capsule grouping, and the search field's expand/collapse
-/// choreography — no custom glass and no custom text field.
+/// Ledger navigation commands. Search remains the system `.searchable` field;
+/// these two commands deliberately use the navigation bar rather than
+/// `.bottomBar`. On iOS 26 a bottom-bar `Menu` combined with the system search
+/// item causes SwiftUI to inject a `UIKitToolbar` into an unsupported hosting
+/// hierarchy, which emits a runtime fault and can break after an OS update.
 struct LedgerBottomBarItems: ToolbarContent {
     let clients: [Client]
     let pendingCount: Int
@@ -21,13 +20,8 @@ struct LedgerBottomBarItems: ToolbarContent {
     let onPasteLines: () -> Void
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .bottomBar) { leadingMenu }
-        ToolbarSpacer(.fixed, placement: .bottomBar)
-        // The `.searchable` field rests here, Mail-style, instead of
-        // floating in its own detached bar.
-        DefaultToolbarItem(kind: .search, placement: .bottomBar)
-        ToolbarSpacer(.fixed, placement: .bottomBar)
-        ToolbarItem(placement: .bottomBar) { addMenu }
+        ToolbarItem(placement: .topBarLeading) { leadingMenu }
+        ToolbarItem(placement: .topBarTrailing) { addMenu }
     }
 
     @ViewBuilder
@@ -75,8 +69,8 @@ struct LedgerBottomBarItems: ToolbarContent {
         }
     }
 
-    /// Search no longer needs a menu entry — the field itself rests in the
-    /// toolbar, exactly like Notes and Mail.
+    /// Search uses the system `.searchable` field, so it does not need a
+    /// duplicate menu entry.
     private var moreMenu: some View {
         Menu {
             Button(action: onInsights) {

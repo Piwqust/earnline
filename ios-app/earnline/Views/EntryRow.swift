@@ -3,21 +3,29 @@ import SwiftUI
 /// One income line. Tap to expand the task; tap the dot to change status.
 struct EntryRow: View {
     @Environment(AppModel.self) private var app
+    @AppStorage(ProjectIconAppearance.userDefaultsKey) private var projectIconAppearanceRaw = ProjectIconAppearance.fill.rawValue
 
     let entry: Entry
     var projectSymbol: ProjectSymbol?
+    /// Picker previews use a deliberately transient, uninserted `Entry` so
+    /// they render the same ledger row without touching the user's data.
+    var rendersTransientEntry = false
     var onSetStatus: (EntryStatus) -> Void = { _ in }
     var onEdit: () -> Void = {}
     var onDelete: () -> Void = {}
 
     @State private var expanded = false
 
+    private var projectIconAppearance: ProjectIconAppearance {
+        ProjectIconAppearance(rawValue: projectIconAppearanceRaw) ?? .fill
+    }
+
     var body: some View {
         // A sync pull (remote tombstone, store reset) can delete this entry
         // while the row is still on screen; one more render before List drops
         // the row would trap in the model's getters (the crash log's
         // `Entry.amount.getter` assertion). Render nothing instead.
-        if entry.isInvalidated {
+        if entry.isInvalidated && !rendersTransientEntry {
             EmptyView()
         } else {
             rowBody
@@ -35,12 +43,18 @@ struct EntryRow: View {
                 entryAmount
 
                 if let projectSymbol {
-                    Image(systemName: projectSymbol.systemImageName)
+                    Image(systemName: projectSymbol.systemImageName(for: projectIconAppearance))
                         .appFont(14, .medium)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tertiary)
                         .frame(width: 18, height: 24)
                         .accessibilityHidden(true)
+                        // SF Symbols' spoken labels vary by OS version (for
+                        // example `receipt` differs between iOS 26 and 27).
+                        // Keep the icon out of VoiceOver's combined row while
+                        // exposing a stable semantic value for UI automation.
+                        .accessibilityLabel("Project icon")
+                        .accessibilityValue(projectSymbol.rawValue)
                         .accessibilityIdentifier("entry.projectIcon")
                 }
 

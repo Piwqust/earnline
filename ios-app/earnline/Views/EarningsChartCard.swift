@@ -258,7 +258,32 @@ struct EarningsChartCard: View {
                     .frame(height: 1)
             }
         }
-        .chartXSelection(value: $selection)
+        // iOS 27's native chart-selection recognizer can decline a drag when
+        // this chart is embedded in a sheet scroll view. Translate the drag
+        // through the chart proxy instead, keeping the selection dependable
+        // without changing the chart's accessible data marks.
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                if let plotFrame = proxy.plotFrame {
+                    let plotArea = geometry[plotFrame]
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(.rect)
+                        .frame(width: plotArea.width, height: plotArea.height)
+                        .position(x: plotArea.midX, y: plotArea.midY)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    let x = value.location.x - plotArea.origin.x
+                                    guard x >= 0,
+                                          x <= plotArea.width,
+                                          let date: Date = proxy.value(atX: x) else { return }
+                                    selection = date
+                                }
+                        )
+                }
+            }
+        }
         .frame(height: chartHeight)
         .overlay {
             if !hasData {
