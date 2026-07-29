@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct GuestLedgerMigrationTests {
     private func makeContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
+        let schema = Schema(versionedSchema: EarnlineSchemaV3.self)
         return try ModelContainer(for: schema,
                                   configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     }
@@ -37,6 +37,7 @@ struct GuestLedgerMigrationTests {
         #expect(summary.clients == 1)
         #expect(summary.entries == 1)
         #expect(summary.headings == 1)
+        #expect(summary.monthReviews == 0)
         #expect(summary.total == 3)
 
         let copiedEntries = try destination.fetch(FetchDescriptor<Entry>())
@@ -113,5 +114,30 @@ struct GuestLedgerMigrationTests {
         let summary = try GuestLedgerMigration.importLedger(from: source, into: destination)
         #expect(summary.projectIcons == 0)
         #expect(try destination.fetch(FetchDescriptor<ProjectIconPreference>()).count == 1)
+    }
+
+    @Test func copiesMonthReviewIntoAccountStoreMarkedDirty() throws {
+        let source = ModelContext(try makeContainer())
+        let destination = ModelContext(try makeContainer())
+        let monthStart = try #require(SyncDateCodec.parseDay("2026-07-01"))
+        let closedAt = try #require(SyncDateCodec.parseTimestamp("2026-07-21T09:30:00.000Z"))
+        let review = MonthReview(monthStart: monthStart,
+                                 note: "Closed after delivery",
+                                 closedAt: closedAt,
+                                 syncState: .synced,
+                                 lastSyncedAt: closedAt)
+        source.insert(review)
+        try source.save()
+
+        let summary = try GuestLedgerMigration.importLedger(from: source, into: destination)
+
+        #expect(summary.monthReviews == 1)
+        #expect(summary.total == 1)
+        let copied = try #require(try destination.fetch(FetchDescriptor<MonthReview>()).first)
+        #expect(copied.id == review.id)
+        #expect(copied.note == "Closed after delivery")
+        #expect(copied.closedAt == closedAt)
+        #expect(copied.needsSync)
+        #expect(copied.lastSyncedAt == nil)
     }
 }

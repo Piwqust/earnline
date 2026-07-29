@@ -4,7 +4,9 @@ import Supabase
 
 @MainActor
 enum SyncCoordinator {
-    private static let pageSize = 1000
+    // The Edge proxy accepts up to 1,000 rows, but 250 keeps actual upserts
+    // comfortably below its body/connection limits on a constrained network.
+    private static let pageSize = 250
 
     /// A dirty local row and a newer remote row are a real user decision, not a
     /// timestamp race to resolve silently. The normal pass stops before either
@@ -154,7 +156,11 @@ enum SyncCoordinator {
         for chunk in tombstones.chunked(into: pageSize) {
             try await client
                 .from("earnline_tombstones")
-                .upsert(chunk.map { RemoteTombstone($0, workspaceID: workspaceID) })
+                // Retry must preserve the original server timestamp. The
+                // database owns `deleted_at`; duplicate ids are a no-op.
+                .upsert(chunk.map { RemoteTombstone($0, workspaceID: workspaceID) },
+                        onConflict: "id",
+                        ignoreDuplicates: true)
                 .execute()
         }
 
@@ -203,35 +209,35 @@ enum SyncCoordinator {
         // re-filtering after the await would swallow mid-flight edits, and the
         // next pull would then visibly revert them.
         let dirtyClients = clients.filter(\.needsSync)
-        if !dirtyClients.isEmpty {
-            let payload = dirtyClients.map { RemoteClient($0, workspaceID: workspaceID) }
-            let stamps = dirtyClients.map(\.syncUpdatedAt)
+        for chunk in dirtyClients.chunked(into: pageSize) {
+            let payload = chunk.map { RemoteClient($0, workspaceID: workspaceID) }
+            let stamps = chunk.map(\.syncUpdatedAt)
             try await client.from("earnline_clients").upsert(payload).execute()
-            markPushed(dirtyClients, stamps: stamps)
+            markPushed(chunk, stamps: stamps)
         }
 
         let dirtyHeadings = headings.filter(\.needsSync)
-        if !dirtyHeadings.isEmpty {
-            let payload = dirtyHeadings.map { RemoteHeading($0, workspaceID: workspaceID) }
-            let stamps = dirtyHeadings.map(\.syncUpdatedAt)
+        for chunk in dirtyHeadings.chunked(into: pageSize) {
+            let payload = chunk.map { RemoteHeading($0, workspaceID: workspaceID) }
+            let stamps = chunk.map(\.syncUpdatedAt)
             try await client.from("earnline_headings").upsert(payload).execute()
-            markPushed(dirtyHeadings, stamps: stamps)
+            markPushed(chunk, stamps: stamps)
         }
 
         let dirtyProjectIcons = projectIcons.filter(\.needsSync)
-        if !dirtyProjectIcons.isEmpty {
-            let payload = dirtyProjectIcons.map { RemoteProjectIcon($0, workspaceID: workspaceID) }
-            let stamps = dirtyProjectIcons.map(\.syncUpdatedAt)
+        for chunk in dirtyProjectIcons.chunked(into: pageSize) {
+            let payload = chunk.map { RemoteProjectIcon($0, workspaceID: workspaceID) }
+            let stamps = chunk.map(\.syncUpdatedAt)
             try await client.from("earnline_project_icons").upsert(payload).execute()
-            markPushed(dirtyProjectIcons, stamps: stamps)
+            markPushed(chunk, stamps: stamps)
         }
 
         let dirtyMonthReviews = monthReviews.filter(\.needsSync)
-        if !dirtyMonthReviews.isEmpty {
-            let payload = dirtyMonthReviews.map { RemoteMonthReview($0, workspaceID: workspaceID) }
-            let stamps = dirtyMonthReviews.map(\.syncUpdatedAt)
+        for chunk in dirtyMonthReviews.chunked(into: pageSize) {
+            let payload = chunk.map { RemoteMonthReview($0, workspaceID: workspaceID) }
+            let stamps = chunk.map(\.syncUpdatedAt)
             try await client.from("earnline_month_reviews").upsert(payload).execute()
-            markPushed(dirtyMonthReviews, stamps: stamps)
+            markPushed(chunk, stamps: stamps)
         }
 
         var dirtyEntries: [Entry] = []
@@ -241,10 +247,13 @@ enum SyncCoordinator {
             dirtyEntries.append(entry)
             entryPayload.append(record)
         }
-        if !entryPayload.isEmpty {
-            let stamps = dirtyEntries.map(\.syncUpdatedAt)
-            try await client.from("earnline_entries").upsert(entryPayload).execute()
-            markPushed(dirtyEntries, stamps: stamps)
+        for offset in stride(from: 0, to: entryPayload.count, by: pageSize) {
+            let end = Swift.min(offset + pageSize, entryPayload.count)
+            let payload = Array(entryPayload[offset..<end])
+            let rows = Array(dirtyEntries[offset..<end])
+            let stamps = rows.map(\.syncUpdatedAt)
+            try await client.from("earnline_entries").upsert(payload).execute()
+            markPushed(rows, stamps: stamps)
         }
     }
 
@@ -309,6 +318,9 @@ enum SyncCoordinator {
     }
 
     @discardableResult
+    // This is intentionally the single merge boundary for five remote models;
+    // splitting its guards across helpers would make conflict ordering opaque.
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private static func pullRemoteRows(context: ModelContext,
                                        client: SupabaseClient,
                                        workspaceID: String,
@@ -368,11 +380,30 @@ enum SyncCoordinator {
             context: context
         )
 
-        let maxUpdatedAt = (remoteClients.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
-            + remoteHeadings.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
-            + remoteEntries.compactMap { SyncDateCodec.parseTimestamp($0.updatedAt) }
+        let maxUpdatedAt = (remoteClients.compactMap { record in
+                SyncValidation.isValidClient(name: record.name, colorHex: record.colorHex)
+                    ? SyncDateCodec.parseTimestamp(record.updatedAt)
+                    : nil
+        }
+            + remoteHeadings.compactMap { record in
+                SyncValidation.isValidHeading(title: record.title)
+                    ? SyncDateCodec.parseTimestamp(record.updatedAt)
+                    : nil
+            }
+            + remoteEntries.compactMap { record in
+                SyncValidation.isValidEntry(amount: record.amount.decimal,
+                                            currencyCode: record.currencyCode,
+                                            project: record.project,
+                                            task: record.task,
+                                            status: record.status)
+                    ? SyncDateCodec.parseTimestamp(record.updatedAt)
+                    : nil
+            }
             + remoteProjectIcons.compactMap {
                 ProjectIconResolver.normalizedKey(for: $0.projectKey).isEmpty
+                    || $0.projectKey.count > Limits.maxProjectLength
+                    || $0.projectKey != ProjectIconResolver.normalizedKey(for: $0.projectKey)
+                    || ProjectSymbol(rawValue: $0.symbolName) == nil
                     ? nil
                     : SyncDateCodec.parseTimestamp($0.updatedAt)
             }
@@ -396,7 +427,8 @@ enum SyncCoordinator {
         // which corrupted conflict resolution and the visible ledger. A skipped
         // row is retried on the next pass (`gte` cursor is inclusive).
         for record in applicableClients {
-            guard let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
+            guard SyncValidation.isValidClient(name: record.name, colorHex: record.colorHex),
+                  let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
             if let local = clientsByID[record.id] {
                 if conflictsWithDirtyLocal(remoteUpdatedAt: remoteUpdatedAt,
@@ -431,9 +463,11 @@ enum SyncCoordinator {
         for record in remoteProjectIcons {
             let projectKey = ProjectIconResolver.normalizedKey(for: record.projectKey)
             guard !projectKey.isEmpty,
+                  projectKey.count <= Limits.maxProjectLength,
+                  projectKey == record.projectKey,
+                  let symbol = ProjectSymbol(rawValue: record.symbolName),
                   let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
-            let symbol = ProjectSymbol.resolved(record.symbolName)
             if let local = projectIconsByID[record.id] {
                 if conflictsWithDirtyLocal(remoteUpdatedAt: remoteUpdatedAt,
                                            localLastSyncedAt: local.lastSyncedAt,
@@ -511,7 +545,8 @@ enum SyncCoordinator {
         var headingsByID = Dictionary(uniqueKeysWithValues: localHeadings.map { ($0.id, $0) })
 
         for record in applicableHeadings {
-            guard let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt),
+            guard SyncValidation.isValidHeading(title: record.title),
+                  let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt),
                   let date = SyncDateCodec.parseDay(record.date) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
             if let local = headingsByID[record.id] {
@@ -546,11 +581,16 @@ enum SyncCoordinator {
 
         for record in applicableEntries {
             guard let owner = clientsByID[record.clientID] else { continue }
-            guard let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt),
+            guard SyncValidation.isValidEntry(amount: record.amount.decimal,
+                                              currencyCode: record.currencyCode,
+                                              project: record.project,
+                                              task: record.task,
+                                              status: record.status),
+                  let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt),
                   let date = SyncDateCodec.parseDay(record.date) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
-            // A malformed hold date drops just the hold, not the whole row.
             let holdUntil = record.holdUntil.flatMap(SyncDateCodec.parseDay)
+            guard record.holdUntil == nil || holdUntil != nil else { continue }
             if let local = entriesByID[record.id] {
                 if conflictsWithDirtyLocal(remoteUpdatedAt: remoteUpdatedAt,
                                            localLastSyncedAt: local.lastSyncedAt,
@@ -595,6 +635,9 @@ enum SyncCoordinator {
         return maxUpdatedAt
     }
 
+    // Every entity has an explicit delete path so a malformed tombstone cannot
+    // accidentally fall through to another model.
+    // swiftlint:disable:next cyclomatic_complexity
     private static func applyRemoteTombstones(_ records: [RemoteTombstone],
                                               context: ModelContext,
                                               conflictResolution: ConflictResolution) throws {
@@ -734,19 +777,21 @@ enum SyncCoordinator {
         return remoteUpdatedAt > localLastSyncedAt
     }
 
-    /// Page through every matching row. PostgREST caps a response at the
-    /// project's `db-max-rows` (1000 by default), so an unpaginated `select()`
-    /// silently truncated large workspaces. Order by the cursor column then `id`
-    /// for a stable total order across pages (unordered `.range()` could skip or
-    /// repeat rows), and keep requesting until a short page comes back.
-    private static func fetchPaged<T: Decodable>(_ type: T.Type,
-                                                 client: SupabaseClient,
-                                                 table: String,
-                                                 workspaceID: String,
-                                                 cursorColumn: String,
-                                                 since: Date?) async throws -> [T] {
+    /// Page through every matching row with a descending `(server timestamp,
+    /// id)` keyset. Offset ranges can skip rows when a concurrent upsert moves
+    /// an earlier row across the next offset. The first page establishes the
+    /// high-water mark; every later request asks strictly below its last row,
+    /// so concurrent newer writes are left for the next inclusive sync pass.
+    private static func fetchPaged<T: SyncCursorRecord>(
+        _ type: T.Type,
+        client: SupabaseClient,
+        table: String,
+        workspaceID: String,
+        cursorColumn: String,
+        since: Date?
+    ) async throws -> [T] {
         var out: [T] = []
-        var from = 0
+        var cursor: (timestamp: String, id: UUID)?
         while true {
             var query = client
                 .from(table)
@@ -755,15 +800,28 @@ enum SyncCoordinator {
             if let since {
                 query = query.gte(cursorColumn, value: SyncDateCodec.timestampString(since))
             }
+            if let cursor {
+                query = query.or(
+                    "\(cursorColumn).lt.\(cursor.timestamp),and(\(cursorColumn).eq.\(cursor.timestamp),id.lt.\(cursor.id.uuidString))"
+                )
+            }
             let page: [T] = try await query
-                .order(cursorColumn, ascending: true)
-                .order("id", ascending: true)
-                .range(from: from, to: from + pageSize - 1)
+                .order(cursorColumn, ascending: false)
+                .order("id", ascending: false)
+                .range(from: 0, to: pageSize - 1)
                 .execute()
                 .value
             out.append(contentsOf: page)
             if page.count < pageSize { break }
-            from += pageSize
+            guard let last = page.last,
+                  SyncDateCodec.parseTimestamp(last.syncCursorTimestamp) != nil else {
+                throw SyncError.invalidRemoteCursor(table: table)
+            }
+            let next = (timestamp: last.syncCursorTimestamp, id: last.id)
+            guard cursor?.timestamp != next.timestamp || cursor?.id != next.id else {
+                throw SyncError.invalidRemoteCursor(table: table)
+            }
+            cursor = next
         }
         return out
     }

@@ -7,13 +7,17 @@ struct earnlineApp: App {
 
     init() {
         let defaults: UserDefaults
-        if (AppModel.isRunningUIAutomation || AppModel.isRunningUnitTests),
+        #if DEBUG
+        if AppModel.isRunningUIAutomation || AppModel.isRunningUnitTests,
            let isolatedDefaults = UserDefaults(suiteName: AppModel.uiAutomationDefaultsSuite) {
             isolatedDefaults.removePersistentDomain(forName: AppModel.uiAutomationDefaultsSuite)
             defaults = isolatedDefaults
         } else {
             defaults = .standard
         }
+        #else
+        defaults = .standard
+        #endif
         let model = AppModel(defaults: defaults)
         _app = State(initialValue: model)
     }
@@ -110,29 +114,21 @@ private struct WorkspaceContainerHost: View {
             }
             .onOpenURL { url in
                 Task { await app.handleAuthCallback(url) }
-        }
+            }
     }
 
     @ViewBuilder
     private func primaryContent(for store: WorkspaceStore) -> some View {
-        #if DEBUGMENU
-        if app.isDebugAuthGatePreview, !app.isAccountReady {
-            DebugAuthGateView()
-                .transition(.opacity)
-        } else if app.isAccountReady {
-            ledger(for: store)
-        } else {
-            AuthGateView()
-                .transition(.opacity)
-        }
-        #else
+        // One gate, both builds. A Dev-only account preview drives the *real*
+        // `AuthGateView` through `AppModel.accountState`; it does not swap in a
+        // second, look-alike screen. See the `isDebugAuthGatePreview` guards in
+        // `AppModel+Auth`, which keep every action inert while it runs.
         if app.isAccountReady {
             ledger(for: store)
         } else {
             AuthGateView()
                 .transition(.opacity)
         }
-        #endif
     }
 
     /// The ledger, with the first-run flow layered over it when it is due.
@@ -152,8 +148,7 @@ private struct WorkspaceContainerHost: View {
 
             if app.isPresentingOnboarding {
                 OnboardingFlowView {
-                    app.onboardingCompleted = true
-                    app.isPresentingOnboarding = false
+                    app.completeOnboarding()
                 }
                 .transition(.opacity)
             }
@@ -182,6 +177,7 @@ private struct WorkspaceContainerHost: View {
     @MainActor
     private func bootstrapCurrentStore(store: WorkspaceStore) async {
         let context = store.container.mainContext
+        #if DEBUG
         if AppModel.isRunningUIAutomation {
             // The gate's own tests need the real authentication surface, in a
             // deterministic state, with no fixtures seeded behind it.
@@ -216,6 +212,7 @@ private struct WorkspaceContainerHost: View {
             }
             return
         }
+        #endif
         app.lockOnLaunchIfNeeded()
         let initialStoreIdentity = app.workspaceStoreIdentity
         await app.bootstrapAuthentication()
@@ -223,12 +220,6 @@ private struct WorkspaceContainerHost: View {
         // private, account-scoped one. Let the new container's task own the
         // first sync; never push the old container under the new membership.
         guard initialStoreIdentity == app.workspaceStoreIdentity, app.isAccountReady else { return }
-        // A workspace that has never been introduced gets the first-run flow
-        // before anything else touches the screen. It writes real rows, so it
-        // waits until the resolved account's own store is the one on screen.
-        if !app.onboardingCompleted {
-            app.isPresentingOnboarding = true
-        }
         if store.environment == .production {
             do {
                 try SampleData.cleanupLeakedProductionFixturesIfNeeded(context)
@@ -250,10 +241,31 @@ private struct WorkspaceContainerHost: View {
             try SampleData.cleanupLegacyDemoEntriesIfNeeded(context)
         } catch {
             app.syncMessage = String(localized: "Needs sync")
+            // swiftlint:disable:next line_length
             app.syncError = String(localized: "Earnline could not safely finish local ledger cleanup. Nothing was uploaded. Restart the app and try again.")
             return
         }
-        await app.syncNow(context: context)
+        let syncOutcome = await app.syncNow(context: context)
+        // A successful first authenticated pass may move the app from its
+        // legacy cache to an account-scoped container. The new container's
+        // bootstrap owns onboarding; never decide from the outgoing cache.
+        guard initialStoreIdentity == app.workspaceStoreIdentity else { return }
+
+        let remoteStateKnown = syncOutcome == nil
+            || app.accountSession?.isLocalOnly == true
+            || store.environment != .production
+        do {
+            try app.resolveOnboardingPresentation(
+                context: context,
+                remoteStateKnown: remoteStateKnown
+            )
+        } catch {
+            app.isPresentingOnboarding = false
+            app.syncMessage = String(localized: "Needs sync")
+            // swiftlint:disable:next line_length
+            app.syncError = String(localized: "Earnline could not safely decide whether onboarding is needed. Your ledger was not changed. Restart the app and try again.")
+            return
+        }
         app.refreshPendingReminders(context: context)
         app.startRealtime(context: context)
     }
@@ -265,7 +277,6 @@ private struct WorkspaceContainerHost: View {
         app.detachWorkspaceStore()
         // A pending composer handoff never crosses a workspace boundary: the
         // client it names lives in the store being switched away from.
-        app.pendingFirstEntryClientID = nil
         if stores[key] == nil {
             do {
                 stores[key] = try WorkspaceStore(key: key)
@@ -350,6 +361,7 @@ private struct StoreRecoveryView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
+            // swiftlint:disable:next line_length
             Text("Your older local ledger will stay on this device untouched. Earnline will use a separate cache for your signed-in workspace, which you can populate by syncing or importing later.")
         }
     }

@@ -18,16 +18,17 @@ enum GuestLedgerMigration {
         var entries = 0
         var headings = 0
         var projectIcons = 0
+        var monthReviews = 0
 
-        var total: Int { clients + entries + headings + projectIcons }
+        var total: Int { clients + entries + headings + projectIcons + monthReviews }
         var isEmpty: Bool { total == 0 }
     }
 
     /// The guest store's SwiftData file name. This must stay equal to the name
     /// `WorkspaceStore.localStoreName` builds for the fixed guest key
     /// (production · `local-guest` · account). `local-guest` is already
-    /// filename-safe, so no sanitizing is needed here; `guestLedgerSummary()`
-    /// silently returns empty if the file is ever absent or renamed.
+    /// filename-safe, so no sanitizing is needed here. A missing file is an
+    /// empty guest ledger; an unreadable file is reported to the Settings UI.
     static let guestStoreName =
         "\(AppModel.WorkspaceEnvironment.production.storeName)-\(AppModel.localGuestWorkspaceID)"
 
@@ -42,9 +43,9 @@ enum GuestLedgerMigration {
     /// Counts of what a subsequent import would copy — `.isEmpty` when there is
     /// no guest ledger to bring over, so the UI can hide the action entirely.
     /// Opens (and immediately drops) a throwaway container; call it sparingly.
-    static func guestLedgerSummary() -> Summary {
-        guard guestLedgerExists(), let container = try? guestContainer() else { return Summary() }
-        return counts(in: ModelContext(container))
+    static func guestLedgerSummary() throws -> Summary {
+        guard guestLedgerExists() else { return Summary() }
+        return try counts(in: ModelContext(guestContainer()))
     }
 
     /// Open the guest store and copy its rows into `destination`. The guest file
@@ -66,6 +67,7 @@ enum GuestLedgerMigration {
         let sourceClients = try source.fetch(FetchDescriptor<Client>())
         let sourceHeadings = try source.fetch(FetchDescriptor<Heading>())
         let sourceIcons = try source.fetch(FetchDescriptor<ProjectIconPreference>())
+        let sourceMonthReviews = try source.fetch(FetchDescriptor<MonthReview>())
 
         var summary = Summary()
 
@@ -143,18 +145,38 @@ enum GuestLedgerMigration {
             summary.projectIcons += 1
         }
 
+        // Month reviews use deterministic ids per month. Preserve the guest
+        // copy when the account already has that id, exactly like entries and
+        // headings: importing must never overwrite an account-side edit.
+        let existingMonthReviewIDs = Set(
+            try destination.fetch(FetchDescriptor<MonthReview>()).map(\.id)
+        )
+        for review in sourceMonthReviews where !existingMonthReviewIDs.contains(review.id) {
+            let copy = MonthReview(id: review.id,
+                                   monthStart: review.monthStart,
+                                   note: review.note,
+                                   closedAt: review.closedAt,
+                                   createdAt: review.createdAt,
+                                   updatedAt: review.syncUpdatedAt,
+                                   syncState: .dirty,
+                                   lastSyncedAt: nil)
+            destination.insert(copy)
+            summary.monthReviews += 1
+        }
+
         if !summary.isEmpty {
             try destination.save()
         }
         return summary
     }
 
-    private static func counts(in context: ModelContext) -> Summary {
-        Summary(
-            clients: (try? context.fetchCount(FetchDescriptor<Client>())) ?? 0,
-            entries: (try? context.fetchCount(FetchDescriptor<Entry>())) ?? 0,
-            headings: (try? context.fetchCount(FetchDescriptor<Heading>())) ?? 0,
-            projectIcons: (try? context.fetchCount(FetchDescriptor<ProjectIconPreference>())) ?? 0
+    private static func counts(in context: ModelContext) throws -> Summary {
+        try Summary(
+            clients: context.fetchCount(FetchDescriptor<Client>()),
+            entries: context.fetchCount(FetchDescriptor<Entry>()),
+            headings: context.fetchCount(FetchDescriptor<Heading>()),
+            projectIcons: context.fetchCount(FetchDescriptor<ProjectIconPreference>()),
+            monthReviews: context.fetchCount(FetchDescriptor<MonthReview>())
         )
     }
 
@@ -165,7 +187,7 @@ enum GuestLedgerMigration {
     }
 
     private static func guestContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: EarnlineSchemaV2.self)
+        let schema = Schema(versionedSchema: EarnlineSchemaV3.self)
         let configuration = ModelConfiguration(guestStoreName, schema: schema)
         return try ModelContainer(for: schema,
                                   migrationPlan: EarnlineMigrationPlan.self,

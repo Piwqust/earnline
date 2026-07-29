@@ -8,6 +8,7 @@ enum Limits {
     static let maxTaskLength = 140
     static let maxClientNameLength = 24
     static let maxHeadingLength = 40
+    static let supportedCurrencyCodes = ["USD", "EUR", "GBP", "RUB", "UAH"]
 }
 
 enum ClientNameValidation: Equatable {
@@ -80,5 +81,43 @@ enum Validation {
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+}
+
+/// Wire values are untrusted even after RLS has selected the correct workspace.
+/// Keep these checks aligned with the local editors and database constraints so
+/// one malformed cloud row cannot poison SwiftData or make a later push fail.
+enum SyncValidation {
+    static func isValidClient(name: String, colorHex: String) -> Bool {
+        isCanonicalNonEmpty(name, maximum: Limits.maxClientNameLength)
+            && colorHex.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil
+    }
+
+    static func isValidEntry(amount: Decimal,
+                             currencyCode: String,
+                             project: String?,
+                             task: String,
+                             status: String) -> Bool {
+        amount > 0
+            && amount <= Limits.maxAmount
+            && Limits.supportedCurrencyCodes.contains(currencyCode)
+            && (project.map(isCanonicalOptionalProject) ?? true)
+            && isCanonicalNonEmpty(task, maximum: Limits.maxTaskLength)
+            && EntryStatus.allCases.contains { $0.rawValue == status }
+    }
+
+    static func isValidHeading(title: String) -> Bool {
+        isCanonicalNonEmpty(title, maximum: Limits.maxHeadingLength)
+    }
+
+    static func isCanonicalOptionalProject(_ project: String) -> Bool {
+        project.count <= Limits.maxProjectLength
+            && project == project.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isCanonicalNonEmpty(_ value: String, maximum: Int) -> Bool {
+        !value.isEmpty
+            && value.count <= maximum
+            && value == value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

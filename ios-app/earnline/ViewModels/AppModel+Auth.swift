@@ -120,7 +120,11 @@ extension AppModel {
     /// while the rest of UI automation stays offline and in-memory. Production
     /// code never sets this argument.
     nonisolated static var isAuthGatePreview: Bool {
+        #if DEBUG
         isRunningUIAutomation && hasUIAutomationLaunchFlag("-authGatePreview")
+        #else
+        false
+        #endif
     }
 
     var requiresAccountAuthentication: Bool {
@@ -168,7 +172,13 @@ extension AppModel {
         #endif
         guard requiresAccountAuthentication else {
             if case .ready = accountState { return }
-            accountState = .ready(AccountSession(userID: "local", email: nil, workspaceID: workspaceID, membershipRole: "owner", isPairedDevice: false))
+            accountState = .ready(AccountSession(
+                userID: "local",
+                email: nil,
+                workspaceID: workspaceID,
+                membershipRole: "owner",
+                isPairedDevice: false
+            ))
             return
         }
         if defaults.bool(forKey: Self.localGuestDefaultsKey) {
@@ -184,6 +194,8 @@ extension AppModel {
         do {
             let session = try await supabase().auth.session
             await resolveWorkspace(for: session)
+        } catch let error as EarnlineAuthStorage.StorageError {
+            accountState = .failure(error.localizedDescription)
         } catch {
             accountState = .signedOut
         }
@@ -223,6 +235,7 @@ extension AppModel {
     private func activateLocalGuestWorkspace() {
         detachWorkspaceStore()
         workspaceID = Self.localGuestWorkspaceID
+        loadOnboardingState()
         // The guest container intentionally uses `.account` mode so it maps to
         // its own SwiftData file and can never touch the legacy cache that the
         // first resolved real account is entitled to migrate.
@@ -276,7 +289,7 @@ extension AppModel {
     }
 
     func handleAuthCallback(_ url: URL) async {
-        guard url.scheme == Self.oauthRedirectURL.scheme, hasSupabaseConfiguration else { return }
+        guard Self.isExpectedOAuthCallback(url), hasSupabaseConfiguration else { return }
         do {
             let session = try await supabase().auth.session(from: url)
             await resolveWorkspace(for: session)
@@ -349,11 +362,14 @@ extension AppModel {
         accountState = .authenticating
         do {
             let client = try supabase()
-            let sessionTokens = try await requestDeviceSession(for: token)
+            guard let authStorage else { throw AccountAuthError.invalidResponse }
+            let requestID = try authStorage.pairingRequestID(for: token)
+            let sessionTokens = try await requestDeviceSession(for: token, requestID: requestID)
             let deviceSession = try await client.auth.setSession(
                 accessToken: sessionTokens.accessToken,
                 refreshToken: sessionTokens.refreshToken
             )
+            try authStorage.clearPairingRequestID(for: token)
             await resolveWorkspace(for: deviceSession)
         } catch {
             accountState = .failure(authErrorMessage(error))
@@ -420,28 +436,58 @@ extension AppModel {
             }
         }
 
-        // Supabase clears the local session before its best-effort `/logout`
-        // request. Always finish detaching this iPhone even when that request
-        // (or paired-device revocation) cannot reach the server.
-        var localSignOutFailure: Error?
+        // Supabase may treat Keychain failures as best effort. Remove the
+        // namespaced session ourselves and refuse to claim a local sign-out if
+        // secure storage could not actually be cleared.
+        var sdkSignOutFailure: Error?
+        var storageFailure: Error?
+        var storage: EarnlineAuthStorage?
         do {
-            try await supabase().auth.signOut(scope: .local)
+            let client = try supabase()
+            storage = authStorage
+            try await client.auth.signOut(scope: .local)
         } catch {
-            localSignOutFailure = error
+            // The SDK may report a transport or its own best-effort storage
+            // failure. The explicit delete below is the local source of truth.
+            sdkSignOutFailure = error
+        }
+        guard let storage else {
+            accountState = .failure(String(
+                localized: "Could not access secure sign-in data on this iPhone. Unlock it and choose Sign out again."
+            ))
+            return
+        }
+        do {
+            try storage.removeSession()
+        } catch {
+            storageFailure = error
+        }
+        if let storageFailure {
+            accountState = .failure(String(
+                // swiftlint:disable:next line_length
+                localized: "Could not remove secure sign-in data from this iPhone. Unlock it and choose Sign out again. \(storageFailure.localizedDescription)"
+            ))
+            return
         }
         detachWorkspaceStore()
         workspaceID = workspaceEnvironment.workspaceID
         workspaceStoreIdentity = "\(workspaceEnvironment.rawValue):signed-out"
         resetSupabaseClient()
 
-        if remoteDisconnectFailure != nil || localSignOutFailure != nil {
+        if remoteDisconnectFailure != nil {
             let message: String
             if pairedDevice {
+                // swiftlint:disable:next line_length
                 message = String(localized: "Signed out on this iPhone. This paired device could not be disconnected from your workspace while offline. Reconnect it, then revoke it from your owner device.")
             } else {
                 message = String(localized: "Signed out on this iPhone. The server could not be reached to end this session remotely.")
             }
             accountState = .failure(message)
+        } else if sdkSignOutFailure != nil {
+            accountState = .failure(String(
+                // swiftlint:disable:next line_length
+                localized: "Signed out on this iPhone. Secure sign-in data was removed, but Supabase could not finish its own sign-out cleanup."
+            ))
         } else {
             accountState = .signedOut
         }
@@ -493,6 +539,7 @@ extension AppModel {
         } catch {
             // Online authorization remains valid, but make it clear that the
             // offline fallback could not be refreshed for this device.
+            // swiftlint:disable:next line_length
             accountSecurityNotice = String(localized: "Earnline could not save this iPhone’s offline workspace check. Online sync still works, but offline access may require signing in again.")
         }
     }
@@ -560,6 +607,7 @@ extension AppModel {
         let previousUserID = defaults.string(forKey: "accountStoreFirstUserID")
         let isDifferentAccount = previousUserID != nil && previousUserID != userID
         workspaceID = resolvedWorkspaceID
+        loadOnboardingState()
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID")
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID.\(workspaceEnvironment.rawValue)")
         syncGeneration += 1
@@ -616,7 +664,7 @@ extension AppModel {
         session.user.isAnonymous || session.user.appMetadata["earnline_device"]?.boolValue == true
     }
 
-    private func requestDeviceSession(for token: UUID) async throws -> DeviceSessionResponse {
+    private func requestDeviceSession(for token: UUID, requestID: UUID) async throws -> DeviceSessionResponse {
         guard let baseURL = URL(string: supabaseURLString), !supabaseKey.isEmpty else {
             throw AccountAuthError.invalidResponse
         }
@@ -626,7 +674,10 @@ extension AppModel {
             .appendingPathComponent("earnline-pair-device")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.httpBody = try JSONEncoder().encode(["token": token.uuidString.lowercased()])
+        request.httpBody = try JSONEncoder().encode([
+            "token": token.uuidString.lowercased(),
+            "request_id": requestID.uuidString.lowercased(),
+        ])
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(supabaseKey)", forHTTPHeaderField: "authorization")
@@ -652,10 +703,17 @@ extension AppModel {
         return UUID(uuidString: url.lastPathComponent)
     }
 
+    nonisolated static func isExpectedOAuthCallback(_ url: URL) -> Bool {
+        url.scheme == oauthRedirectURL.scheme
+            && url.host == oauthRedirectURL.host
+            && url.path == oauthRedirectURL.path
+    }
+
     /// Places the gate in one deterministic state for UI automation. Driven by
     /// `-authGateState` (or `EARNLINE_UI_TEST_AUTH_GATE_STATE`) so each test
     /// can photograph a single state without a provider or a network.
     private func applyAuthGatePreviewState() {
+        #if DEBUG
         let processInfo = ProcessInfo.processInfo
         let environmentState = processInfo.environment["EARNLINE_UI_TEST_AUTH_GATE_STATE"]
         let arguments = processInfo.arguments
@@ -681,6 +739,9 @@ extension AppModel {
         default:
             accountState = .signedOut
         }
+        #else
+        accountState = .signedOut
+        #endif
     }
 
     private func previewAccountSession(isPairedDevice: Bool) -> AccountSession {

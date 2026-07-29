@@ -112,11 +112,19 @@ struct LineParserTests {
     @Test func parsesBundledIncomeLedger() {
         let entries = IncomeLedgerImporter.parse(IncomeLedgerImporter.bundledLedger, year: 2026)
         #expect(entries.count == 29)
-        #expect(entries.filter { $0.clientName == "Mikita" }.count == 25)
-        #expect(entries.filter { $0.clientName == "bóra" }.count == 2)
-        #expect(entries.filter { $0.clientName == "blackwave" }.count == 2)
-        #expect(entries.filter { $0.currencyCode == "RUB" }.reduce(Decimal.zero) { $0 + $1.amount } == 35000)
-        #expect(entries.filter { $0.currencyCode == "USD" }.reduce(Decimal.zero) { $0 + $1.amount } == 6160)
+        #expect(entries.filter { $0.clientName == "Лунной мастерской" }.count == 21)
+        #expect(entries.filter { $0.clientName == "Бюро облачных китов" }.count == 4)
+        #expect(entries.filter { $0.clientName == "Аркадии северного сияния" }.count == 4)
+        #expect(entries.filter { $0.currencyCode == "RUB" }.reduce(Decimal.zero) { $0 + $1.amount } == 53000)
+        #expect(entries.filter { $0.currencyCode == "USD" }.reduce(Decimal.zero) { $0 + $1.amount } == 6910)
+        #expect(entries.contains { $0.project == "Почта для звёзд" && $0.task == "Анимация отправки" })
+    }
+
+    @Test func doesNotTreatACyrillicProjectInitialAsAThousandsSuffix() {
+        let parsed = LineParser.parse("$260 Карманная планета: Экран приветствия")
+        #expect(parsed.amount == 260)
+        #expect(parsed.project == "Карманная планета")
+        #expect(parsed.task == "Экран приветствия")
     }
 
     @Test func parseBlockSplitsLinesAndFlagsCommittable() {

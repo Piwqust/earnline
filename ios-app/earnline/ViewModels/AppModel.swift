@@ -28,9 +28,13 @@ final class AppModel {
     /// relaunches the same bundle in a long serial suite. Its per-launch
     /// environment is authoritative, so test helpers set a complete flag set
     /// there; command-line arguments remain the fallback for manual runs.
+    #if DEBUG
     nonisolated static let uiTestFlagsEnvironmentKey = "EARNLINE_UI_TEST_FLAGS"
+    nonisolated static let uiAutomationDefaultsSuite = "com.earnline.app.ui-tests"
+    #endif
 
     nonisolated static func hasUIAutomationLaunchFlag(_ flag: String) -> Bool {
+        #if DEBUG
         let processInfo = ProcessInfo.processInfo
         if let rawFlags = processInfo.environment[uiTestFlagsEnvironmentKey] {
             return rawFlags
@@ -38,12 +42,19 @@ final class AppModel {
                 .contains { $0 == flag }
         }
         return processInfo.arguments.contains(flag)
+        #else
+        false
+        #endif
     }
 
     nonisolated static var isRunningUIAutomation: Bool {
+        #if DEBUG
         hasUIAutomationLaunchFlag("-uiTesting")
             || hasUIAutomationLaunchFlag("-demoLedger")
             || hasUIAutomationLaunchFlag("-demoStressLedger")
+        #else
+        false
+        #endif
     }
     /// Swift Testing exercises the App Lock state machine directly, but its
     /// ephemeral host window never receives a full scene appearance cycle.
@@ -51,10 +62,14 @@ final class AppModel {
     /// unbalanced-transition warning; real app and UI-test launches keep the
     /// production window path intact.
     nonisolated static var isRunningUnitTests: Bool {
+        #if DEBUG
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             && !isRunningUIAutomation
+        #else
+        false
+        #endif
     }
-    nonisolated static let supportedCurrencyCodes = ["USD", "EUR", "GBP", "RUB", "UAH"]
+    nonisolated static let supportedCurrencyCodes = Limits.supportedCurrencyCodes
     nonisolated static let defaultBaseCurrencyCode = "USD"
     nonisolated static let defaultSecondaryCurrencyCode = "RUB"
     nonisolated static let defaultExchangeRate = 83.0
@@ -63,7 +78,6 @@ final class AppModel {
     nonisolated static let productionWorkspaceID = "legacy-production-cache"
     nonisolated static let testWorkspaceID = "local-test-cache"
     nonisolated static let workspaceCurrencyProfileStorageVersion = 1
-    nonisolated static let uiAutomationDefaultsSuite = "com.earnline.app.ui-tests"
 
     enum WorkspaceEnvironment: String, CaseIterable, Identifiable {
         case production
@@ -104,6 +118,13 @@ final class AppModel {
         /// A workspace-specific container populated from the first successful
         /// authenticated pull.
         case account
+    }
+
+    /// The durable checkpoint for the first-run flow. The rows created by the
+    /// flow are real ledger data, so the checkpoint must survive a process
+    /// termination and resume instead of attempting to create them again.
+    enum OnboardingCheckpointStep: Int {
+        case client, income, done
     }
 
     var baseCurrencyCode: String {
@@ -178,9 +199,10 @@ final class AppModel {
             loadWorkspaceCurrencyProfile()
             loadWorkspaceSyncState()
             loadWorkspaceProfileSyncState()
-            // Each workspace earns its own introduction: Test having been through
-            // the flow must not silently mark Production as done.
-            onboardingCompleted = defaults.bool(forKey: workspaceDefaultKey("onboardingCompleted"))
+            // Each resolved workspace earns its own introduction. Currency
+            // preferences are environment-scoped, but onboarding cannot be:
+            // two accounts can use the same Production environment.
+            loadOnboardingState(migrateLegacyFlag: true)
             detachWorkspaceStore()
             resetSupabaseClient()
         }
@@ -243,19 +265,26 @@ final class AppModel {
     var requireAppLock: Bool {
         didSet { defaults.set(requireAppLock, forKey: "requireAppLock") }
     }
-    /// The client the onboarding flow just created, handed to the ledger so it
-    /// can open the composer on it. Deliberately *not* persisted: it describes
-    /// one handoff between two views in a single session, and a stale value read
-    /// back on a later launch would reopen a composer nobody asked for.
-    ///
-    /// The ledger clears it as soon as it has acted on it.
-    var pendingFirstEntryClientID: UUID?
-    /// Whether this workspace has been through the first-run flow. Scoped per
-    /// workspace like the currency profile: signing into a second account on the
-    /// same device gets its own introduction rather than inheriting one it never
-    /// saw. Set once, when the owner taps "Let's start".
+    /// Whether this resolved workspace has been through the first-run flow.
+    /// Unlike currency preferences, this key includes `workspaceID`: signing
+    /// into a second account in Production must not inherit the first account's
+    /// introduction.
     var onboardingCompleted: Bool {
-        didSet { defaults.set(onboardingCompleted, forKey: workspaceDefaultKey("onboardingCompleted")) }
+        didSet { defaults.set(onboardingCompleted, forKey: onboardingDefaultKey("onboardingCompleted")) }
+    }
+    var onboardingCheckpointStep: OnboardingCheckpointStep = .client {
+        didSet {
+            defaults.set(
+                onboardingCheckpointStep.rawValue,
+                forKey: onboardingDefaultKey("onboardingCheckpointStep")
+            )
+        }
+    }
+    var onboardingClientID: UUID? {
+        didSet { persist(onboardingClientID, forKey: onboardingDefaultKey("onboardingClientID")) }
+    }
+    var onboardingEntryID: UUID? {
+        didSet { persist(onboardingEntryID, forKey: onboardingDefaultKey("onboardingEntryID")) }
     }
     /// Whether the onboarding layer is on screen. In-memory only: it is a
     /// presentation state, not a preference, and it is derived from
@@ -321,6 +350,7 @@ final class AppModel {
     // private to the type — nothing outside `AppModel` should touch them.
     let defaults: UserDefaults
     @ObservationIgnored var supabaseClient: SupabaseClient?
+    @ObservationIgnored var authStorage: EarnlineAuthStorage?
     @ObservationIgnored var queuedSyncTask: Task<Void, Never>?
     @ObservationIgnored var realtimeChannel: RealtimeChannelV2?
     /// The client that owns `realtimeChannel` — kept so teardown can remove the
@@ -348,6 +378,7 @@ final class AppModel {
     @ObservationIgnored private var lockWindow: UIWindow?
     @ObservationIgnored private var isUnlocking = false
 
+    // swiftlint:disable:next function_body_length
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         Self.migrateWorkspaceCurrencyProfilesIfNeeded(defaults: defaults)
@@ -397,9 +428,42 @@ final class AppModel {
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID")
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID.\(resolvedEnvironment.rawValue)")
         profileNeedsSync = defaults.bool(forKey: "profileNeedsSync.\(resolvedEnvironment.rawValue)")
-        onboardingCompleted = defaults.bool(
-            forKey: Self.workspaceDefaultKey("onboardingCompleted", environment: resolvedEnvironment)
+        let onboardingCompletedKey = Self.onboardingDefaultKey(
+            "onboardingCompleted",
+            environment: resolvedEnvironment,
+            workspaceID: resolvedWorkspaceID
         )
+        let legacyOnboardingKey = Self.workspaceDefaultKey(
+            "onboardingCompleted",
+            environment: resolvedEnvironment
+        )
+        if defaults.object(forKey: onboardingCompletedKey) == nil,
+           defaults.object(forKey: legacyOnboardingKey) != nil {
+            defaults.set(defaults.bool(forKey: legacyOnboardingKey), forKey: onboardingCompletedKey)
+        }
+        onboardingCompleted = defaults.bool(forKey: onboardingCompletedKey)
+        let checkpointStepKey = Self.onboardingDefaultKey(
+            "onboardingCheckpointStep",
+            environment: resolvedEnvironment,
+            workspaceID: resolvedWorkspaceID
+        )
+        onboardingCheckpointStep = OnboardingCheckpointStep(
+            rawValue: defaults.integer(forKey: checkpointStepKey)
+        ) ?? .client
+        onboardingClientID = defaults.string(
+            forKey: Self.onboardingDefaultKey(
+                "onboardingClientID",
+                environment: resolvedEnvironment,
+                workspaceID: resolvedWorkspaceID
+            )
+        ).flatMap(UUID.init(uuidString:))
+        onboardingEntryID = defaults.string(
+            forKey: Self.onboardingDefaultKey(
+                "onboardingEntryID",
+                environment: resolvedEnvironment,
+                workspaceID: resolvedWorkspaceID
+            )
+        ).flatMap(UUID.init(uuidString:))
         let workspaceKeySuffix = resolvedEnvironment.rawValue
         let savedLastSyncAt = defaults.object(forKey: "lastSyncAt.\(workspaceKeySuffix)") as? Date
             ?? defaults.object(forKey: "lastSyncAt") as? Date
@@ -410,23 +474,32 @@ final class AppModel {
             ?? defaults.object(forKey: "syncCursor") as? Date
             ?? savedLastSyncAt
         syncCursor = savedSyncCursor
+        let storedAppearance: AppearanceMode
+        if let saved = defaults.string(forKey: "appearanceMode").flatMap(AppearanceMode.init(rawValue:)) {
+            storedAppearance = saved
+        } else if let legacyDark = defaults.object(forKey: "prefersDarkMode") as? Bool {
+            // Migrate the old binary toggle without changing what the user
+            // sees: an explicit choice stays explicit. Fresh installs follow
+            // the system, as Apple's own apps do.
+            storedAppearance = legacyDark ? .dark : .light
+        } else {
+            storedAppearance = .system
+        }
+        #if DEBUG
         if Self.hasUIAutomationLaunchFlag("-uiTestDarkAppearance") {
             // Keep visual regression tests independent from whichever
             // appearance preference the simulator persisted previously.
             // Assigning during initialization does not write the test-only
             // override back to UserDefaults.
             appearanceMode = .dark
-        } else if let saved = defaults.string(forKey: "appearanceMode").flatMap(AppearanceMode.init(rawValue:)) {
-            appearanceMode = saved
-        } else if let legacyDark = defaults.object(forKey: "prefersDarkMode") as? Bool {
-            // Migrate the old binary toggle without changing what the user
-            // sees: an explicit choice stays explicit. Fresh installs follow
-            // the system, as Apple's own apps do.
-            appearanceMode = legacyDark ? .dark : .light
         } else {
-            appearanceMode = .system
+            appearanceMode = storedAppearance
         }
+        #else
+        appearanceMode = storedAppearance
+        #endif
         accent = Theme.Accent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .blue
+        #if DEBUG
         if Self.hasUIAutomationLaunchFlag("-resetDeveloperMode") {
             defaults.set(false, forKey: "developerModeEnabled")
         }
@@ -438,10 +511,15 @@ final class AppModel {
         if Self.hasUIAutomationLaunchFlag("-resetExperimentalFeatures") {
             defaults.set(false, forKey: "clientBadgesEnabled")
         }
+        #else
+        developerModeEnabled = defaults.bool(forKey: "developerModeEnabled")
+        #endif
         clientBadgesEnabled = defaults.bool(forKey: "clientBadgesEnabled")
+        #if DEBUG
         if Self.isRunningUIAutomation && Self.hasUIAutomationLaunchFlag("-demoClientProfile") {
             clientBadgesEnabled = true
         }
+        #endif
         requireAppLock = defaults.bool(forKey: "requireAppLock")
         syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
     }
@@ -656,6 +734,127 @@ final class AppModel {
 
     static func workspaceDefaultKey(_ key: String, environment: WorkspaceEnvironment) -> String {
         "\(key).\(environment.rawValue)"
+    }
+
+    static func onboardingDefaultKey(
+        _ key: String,
+        environment: WorkspaceEnvironment,
+        workspaceID: String
+    ) -> String {
+        "\(key).\(environment.rawValue).\(workspaceID)"
+    }
+
+    func onboardingDefaultKey(_ key: String) -> String {
+        Self.onboardingDefaultKey(key, environment: workspaceEnvironment, workspaceID: workspaceID)
+    }
+
+    /// Reloads the checkpoint whenever account resolution changes the active
+    /// workspace without changing the Production/Test environment.
+    func loadOnboardingState(migrateLegacyFlag: Bool = false) {
+        let completedKey = onboardingDefaultKey("onboardingCompleted")
+        if migrateLegacyFlag,
+           defaults.object(forKey: completedKey) == nil {
+            let legacyKey = workspaceDefaultKey("onboardingCompleted")
+            if defaults.object(forKey: legacyKey) != nil {
+                defaults.set(defaults.bool(forKey: legacyKey), forKey: completedKey)
+            }
+        }
+        onboardingCompleted = defaults.bool(forKey: completedKey)
+        onboardingCheckpointStep = OnboardingCheckpointStep(
+            rawValue: defaults.integer(forKey: onboardingDefaultKey("onboardingCheckpointStep"))
+        ) ?? .client
+        onboardingClientID = defaults.string(
+            forKey: onboardingDefaultKey("onboardingClientID")
+        ).flatMap(UUID.init(uuidString:))
+        onboardingEntryID = defaults.string(
+            forKey: onboardingDefaultKey("onboardingEntryID")
+        ).flatMap(UUID.init(uuidString:))
+        isPresentingOnboarding = false
+    }
+
+    func startOnboardingReplay() {
+        clearOnboardingCheckpoint()
+        isPresentingOnboarding = true
+    }
+
+    func resetOnboardingForNextLaunch() {
+        onboardingCompleted = false
+        clearOnboardingCheckpoint()
+        isPresentingOnboarding = false
+    }
+
+    func stageOnboardingClient(_ clientID: UUID) {
+        onboardingClientID = clientID
+        onboardingEntryID = nil
+        onboardingCheckpointStep = .income
+    }
+
+    func stageOnboardingEntry(_ entryID: UUID) {
+        onboardingEntryID = entryID
+        onboardingCheckpointStep = .done
+    }
+
+    func completeOnboarding() {
+        onboardingCompleted = true
+        clearOnboardingCheckpoint()
+        isPresentingOnboarding = false
+    }
+
+    /// Decides whether first-run UI is safe to show only after local cleanup
+    /// and the initial remote pull. Existing ledger data wins over a missing
+    /// local flag, preventing upgraded users and newly paired devices from
+    /// creating duplicate clients.
+    @discardableResult
+    func resolveOnboardingPresentation(
+        context: ModelContext,
+        remoteStateKnown: Bool
+    ) throws -> Bool {
+        guard !onboardingCompleted else {
+            isPresentingOnboarding = false
+            return false
+        }
+
+        if let checkpointClientID = onboardingClientID {
+            var checkpoint = FetchDescriptor<Client>(
+                predicate: #Predicate { $0.id == checkpointClientID }
+            )
+            checkpoint.fetchLimit = 1
+            if try !context.fetch(checkpoint).isEmpty {
+                isPresentingOnboarding = true
+                return true
+            }
+            clearOnboardingCheckpoint()
+        }
+
+        var clients = FetchDescriptor<Client>()
+        clients.fetchLimit = 1
+        var entries = FetchDescriptor<Entry>()
+        entries.fetchLimit = 1
+        if try !context.fetch(clients).isEmpty || !context.fetch(entries).isEmpty {
+            completeOnboarding()
+            return false
+        }
+
+        guard remoteStateKnown else {
+            isPresentingOnboarding = false
+            return false
+        }
+        isPresentingOnboarding = true
+        return true
+    }
+
+    private func clearOnboardingCheckpoint() {
+        onboardingCheckpointStep = .client
+        onboardingClientID = nil
+        onboardingEntryID = nil
+    }
+
+    private func persist(_ id: UUID?, forKey key: String) {
+        if let id {
+            defaults.set(id.uuidString, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     /// Currency settings used to share three global UserDefaults keys across

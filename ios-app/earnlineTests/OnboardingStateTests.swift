@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import earnline
 
@@ -8,14 +9,14 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct OnboardingStateTests {
-    private func withModel(_ body: (AppModel, UserDefaults) -> Void) {
+    private func withModel(_ body: (AppModel, UserDefaults) throws -> Void) rethrows {
         let suiteName = "OnboardingStateTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             Issue.record("Could not create isolated defaults")
             return
         }
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        body(AppModel(defaults: defaults), defaults)
+        try body(AppModel(defaults: defaults), defaults)
     }
 
     @Test func aFreshWorkspaceHasNotBeenIntroduced() {
@@ -36,19 +37,22 @@ struct OnboardingStateTests {
         }
     }
 
-    @Test func theFlagIsScopedToItsWorkspace() {
+    @Test func theFlagIsScopedToItsResolvedWorkspace() {
         withModel { app, defaults in
-            // Dev builds are pinned to Test, so drive the key directly rather
-            // than flipping `workspaceEnvironment`, which a DEBUGMENU build
-            // refuses to move off `.test`.
-            let environment = app.workspaceEnvironment
             app.onboardingCompleted = true
 
-            let key = AppModel.workspaceDefaultKey("onboardingCompleted", environment: environment)
+            let key = AppModel.onboardingDefaultKey(
+                "onboardingCompleted",
+                environment: app.workspaceEnvironment,
+                workspaceID: app.workspaceID
+            )
             #expect(defaults.bool(forKey: key))
 
-            let other: AppModel.WorkspaceEnvironment = environment == .production ? .test : .production
-            let otherKey = AppModel.workspaceDefaultKey("onboardingCompleted", environment: other)
+            let otherKey = AppModel.onboardingDefaultKey(
+                "onboardingCompleted",
+                environment: app.workspaceEnvironment,
+                workspaceID: "another-workspace"
+            )
             #expect(defaults.bool(forKey: otherKey) == false)
         }
     }
@@ -65,16 +69,78 @@ struct OnboardingStateTests {
         }
     }
 
-    @Test func theHandoffIsNotPersisted() {
+    @Test func anIncompleteFlowResumesFromItsDurableCheckpoint() {
         withModel { app, defaults in
-            let id = UUID()
-            app.pendingFirstEntryClientID = id
+            let clientID = UUID()
+            let entryID = UUID()
+            app.stageOnboardingClient(clientID)
 
-            // A stale value read back on a later launch would reopen a composer
-            // nobody asked for, so it must live in memory only.
-            let fresh = AppModel(defaults: defaults)
-            #expect(fresh.pendingFirstEntryClientID == nil)
-            #expect(app.pendingFirstEntryClientID == id)
+            var relaunched = AppModel(defaults: defaults)
+            #expect(relaunched.onboardingCheckpointStep == .income)
+            #expect(relaunched.onboardingClientID == clientID)
+            #expect(relaunched.onboardingEntryID == nil)
+
+            relaunched.stageOnboardingEntry(entryID)
+            relaunched = AppModel(defaults: defaults)
+            #expect(relaunched.onboardingCheckpointStep == .done)
+            #expect(relaunched.onboardingClientID == clientID)
+            #expect(relaunched.onboardingEntryID == entryID)
+        }
+    }
+
+    @Test func completionClearsTheDurableCheckpoint() {
+        withModel { app, defaults in
+            app.stageOnboardingClient(UUID())
+            app.stageOnboardingEntry(UUID())
+            app.completeOnboarding()
+
+            let relaunched = AppModel(defaults: defaults)
+            #expect(relaunched.onboardingCompleted)
+            #expect(relaunched.onboardingCheckpointStep == .client)
+            #expect(relaunched.onboardingClientID == nil)
+            #expect(relaunched.onboardingEntryID == nil)
+        }
+    }
+
+    @Test func existingLedgerDataSkipsFirstRunAndMigratesTheFlag() throws {
+        try withModel { app, _ in
+            let container = try ModelContainer(
+                for: Client.self,
+                Entry.self,
+                configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+            )
+            container.mainContext.insert(Client(name: "Existing client"))
+
+            let presented = try app.resolveOnboardingPresentation(
+                context: container.mainContext,
+                remoteStateKnown: true
+            )
+
+            #expect(!presented)
+            #expect(app.onboardingCompleted)
+            #expect(!app.isPresentingOnboarding)
+        }
+    }
+
+    @Test func anEmptyLedgerWaitsUntilRemoteStateIsKnown() throws {
+        try withModel { app, _ in
+            let container = try ModelContainer(
+                for: Client.self,
+                Entry.self,
+                configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+            )
+
+            #expect(try !app.resolveOnboardingPresentation(
+                context: container.mainContext,
+                remoteStateKnown: false
+            ))
+            #expect(!app.isPresentingOnboarding)
+
+            #expect(try app.resolveOnboardingPresentation(
+                context: container.mainContext,
+                remoteStateKnown: true
+            ))
+            #expect(app.isPresentingOnboarding)
         }
     }
 }

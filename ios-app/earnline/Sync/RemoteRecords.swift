@@ -76,11 +76,14 @@ struct SyncRate: Codable, Equatable {
 
 enum SyncError: LocalizedError {
     case missingConfiguration
+    case invalidRemoteCursor(table: String)
 
     var errorDescription: String? {
         switch self {
         case .missingConfiguration:
             return "Supabase is not configured."
+        case .invalidRemoteCursor(let table):
+            return "The sync service returned an invalid cursor for \(table)."
         }
     }
 }
@@ -141,7 +144,14 @@ enum SyncDateCodec {
     }
 }
 
-struct RemoteClient: Codable, Identifiable {
+/// Rows paged from PostgREST carry the server timestamp used as the stable
+/// keyset cursor. The protocol keeps the paging algorithm independent from
+/// each table's wire struct.
+protocol SyncCursorRecord: Decodable, Identifiable where ID == UUID {
+    var syncCursorTimestamp: String { get }
+}
+
+struct RemoteClient: Codable, Identifiable, SyncCursorRecord {
     let id: UUID
     let workspaceID: String
     let name: String
@@ -169,9 +179,11 @@ struct RemoteClient: Codable, Identifiable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
+
+    var syncCursorTimestamp: String { updatedAt }
 }
 
-struct RemoteProjectIcon: Codable, Identifiable {
+struct RemoteProjectIcon: Codable, Identifiable, SyncCursorRecord {
     let id: UUID
     let workspaceID: String
     let projectKey: String
@@ -196,9 +208,11 @@ struct RemoteProjectIcon: Codable, Identifiable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
+
+    var syncCursorTimestamp: String { updatedAt }
 }
 
-struct RemoteEntry: Codable, Identifiable {
+struct RemoteEntry: Codable, Identifiable, SyncCursorRecord {
     let id: UUID
     let workspaceID: String
     let clientID: UUID
@@ -245,9 +259,11 @@ struct RemoteEntry: Codable, Identifiable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
+
+    var syncCursorTimestamp: String { updatedAt }
 }
 
-struct RemoteHeading: Codable, Identifiable {
+struct RemoteHeading: Codable, Identifiable, SyncCursorRecord {
     let id: UUID
     let workspaceID: String
     let title: String
@@ -275,9 +291,11 @@ struct RemoteHeading: Codable, Identifiable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
+
+    var syncCursorTimestamp: String { updatedAt }
 }
 
-struct RemoteMonthReview: Codable, Identifiable {
+struct RemoteMonthReview: Codable, Identifiable, SyncCursorRecord {
     let id: UUID
     let workspaceID: String
     let monthStart: String
@@ -325,6 +343,8 @@ struct RemoteMonthReview: Codable, Identifiable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
+
+    var syncCursorTimestamp: String { updatedAt }
 }
 
 struct WorkspaceProfilePayload: Codable, Equatable {
@@ -367,7 +387,7 @@ struct RemoteWorkspaceProfile: Codable, Equatable {
     }
 }
 
-struct RemoteTombstone: Codable, Identifiable {
+struct RemoteTombstone: Codable, Identifiable, SyncCursorRecord {
     let id: UUID
     let workspaceID: String
     let entity: String
@@ -392,4 +412,17 @@ struct RemoteTombstone: Codable, Identifiable {
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
+
+    /// Deletion time is an authority boundary: the database writes it with its
+    /// own clock. A device may keep its local timestamp for UI/queue purposes,
+    /// but it must never be able to advance the remote tombstone cursor.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(workspaceID, forKey: .workspaceID)
+        try container.encode(entity, forKey: .entity)
+        try container.encode(recordID, forKey: .recordID)
+    }
+
+    var syncCursorTimestamp: String { deletedAt }
 }

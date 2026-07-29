@@ -44,8 +44,8 @@ struct SyncCoordinatorTests {
             return recordedRequests
         }
 
-        override class func canInit(with request: URLRequest) -> Bool { true }
-        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override static func canInit(with request: URLRequest) -> Bool { true }
+        override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func stopLoading() {}
 
         override func startLoading() {
@@ -401,6 +401,32 @@ struct SyncCoordinatorTests {
         #expect(try context.fetch(FetchDescriptor<MonthReview>()).first?.syncState == .synced)
         // Nothing was pulled, so there is no observed server stamp to advance to.
         #expect(cursor.rowUpdatedAt == nil)
+    }
+
+    @Test func pushSplits1001DirtyClientsIntoSafeBatches() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        for index in 0...1000 {
+            context.insert(Client(name: "Client \(index)"))
+        }
+        try context.save()
+
+        _ = try await SyncCoordinator.sync(context: context,
+                                           client: makeClient(),
+                                           workspaceID: workspace)
+
+        let clientUpserts = MockTransport.recorded.filter {
+            $0.method == "POST" && $0.table == "earnline_clients"
+        }
+        let batchSizes = try clientUpserts.map { request -> Int in
+            let payload = try #require(
+                JSONSerialization.jsonObject(with: Data(request.body.utf8)) as? [[String: Any]]
+            )
+            return payload.count
+        }
+        #expect(batchSizes == [250, 250, 250, 250, 1])
     }
 
     @Test func localTombstoneIsPushedThenCleared() async throws {

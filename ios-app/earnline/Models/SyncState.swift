@@ -19,7 +19,7 @@ protocol SyncableModel: PersistentModel {
 /// The curated SF Symbols that may identify a project. Persisting an enum raw
 /// value rather than an arbitrary symbol name keeps synced data renderable on
 /// every device; unknown future/invalid values calmly fall back to `folder`.
-enum ProjectSymbol: String, Codable, CaseIterable, Identifiable, Sendable {
+enum ProjectSymbol: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case folder
     case briefcase
     case display
@@ -50,50 +50,94 @@ enum ProjectSymbol: String, Codable, CaseIterable, Identifiable, Sendable {
     case calendar
     case storefront
     case bag
+    case book = "book.closed"
+    case graduationCap = "graduationcap"
+    case lightbulb
+    case target
+    case paintbrush
+    case wand = "wand.and.stars"
+    case microphone = "mic"
+    case headphones
+    case keyboard
+    case server = "server.rack"
+    case network
+    case gear = "gearshape"
+    case tag
+    case receipt
+    case phone
+    case envelope
+    case collaborate = "person.2.wave.2"
+    case location = "mappin.and.ellipse"
 
     var id: String { rawValue }
 
-    /// The picker and ledger deliberately use the filled SF Symbol family.
-    /// Persisted raw values remain stable across devices; this is presentation
-    /// only, so existing project-icon preferences need no migration.
+    /// The default retained for existing ledger rows. New presentation choices
+    /// are local display preferences, so the synced raw value stays stable.
     var systemImageName: String {
-        switch self {
-        case .folder: "folder.fill"
-        case .briefcase: "briefcase.fill"
-        case .display: "rectangle.fill"
-        case .paintpalette: "paintpalette.fill"
-        case .camera: "camera.fill"
-        case .video: "video.fill"
-        case .music: "music.note"
-        case .document: "doc.fill"
-        case .megaphone: "megaphone.fill"
-        case .cart: "cart.fill"
-        case .globe: "globe.americas.fill"
-        case .tools: "wrench.and.screwdriver.fill"
-        case .package: "shippingbox.fill"
-        case .sparkles: "sparkles"
-        case .chart: "chart.bar.fill"
-        case .building: "building.2.fill"
-        case .app: "app.fill"
-        case .cloud: "cloud.fill"
-        case .terminal: "terminal.fill"
-        case .bolt: "bolt.fill"
-        case .cpu: "cpu.fill"
-        case .photo: "photo.fill"
-        case .pencil: "pencil.circle.fill"
-        case .theater: "theatermasks.fill"
-        case .creditCard: "creditcard.fill"
-        case .banknote: "banknote.fill"
-        case .people: "person.2.fill"
-        case .calendar: "calendar.circle.fill"
-        case .storefront: "storefront.fill"
-        case .bag: "bag.fill"
-        }
+        systemImageName(for: .fill)
     }
+
+    func systemImageName(for appearance: ProjectIconAppearance) -> String {
+        let names = appearance == .outline ? Self.outlineImageNames : Self.filledImageNames
+        return names[self] ?? rawValue
+    }
+
+    // Keep the wire enum separate from the SF Symbol chosen for each local
+    // appearance. Dictionaries make the mapping data rather than a deeply
+    // nested branch, which also keeps SwiftLint's complexity signal useful.
+    private static let outlineImageNames: [ProjectSymbol: String] = [
+        .folder: "folder", .briefcase: "briefcase", .display: "rectangle",
+        .paintpalette: "paintpalette", .camera: "camera", .video: "video",
+        .music: "music.note", .document: "doc.text", .megaphone: "megaphone",
+        .cart: "cart", .globe: "globe.americas", .tools: "wrench.and.screwdriver",
+        .package: "shippingbox", .sparkles: "sparkles", .chart: "chart.line.uptrend.xyaxis",
+        .building: "building.2", .app: "app", .cloud: "cloud", .terminal: "terminal",
+        .bolt: "bolt", .cpu: "cpu", .photo: "photo", .pencil: "pencil.circle",
+        .theater: "theatermasks", .creditCard: "creditcard", .banknote: "banknote",
+        .people: "person.2", .calendar: "calendar.circle", .storefront: "storefront",
+        .bag: "bag", .book: "book.closed", .graduationCap: "graduationcap",
+        .lightbulb: "lightbulb", .target: "target", .paintbrush: "paintbrush",
+        .wand: "wand.and.stars", .microphone: "mic", .headphones: "headphones",
+        .keyboard: "keyboard", .server: "server.rack", .network: "network",
+        .gear: "gearshape", .tag: "tag", .receipt: "receipt", .phone: "phone",
+        .envelope: "envelope", .collaborate: "person.2.wave.2", .location: "mappin.and.ellipse",
+    ]
+
+    private static let filledImageNames: [ProjectSymbol: String] = [
+        .folder: "folder.fill", .briefcase: "briefcase.fill", .display: "rectangle.fill",
+        .paintpalette: "paintpalette.fill", .camera: "camera.fill", .video: "video.fill",
+        .music: "music.note", .document: "doc.fill", .megaphone: "megaphone.fill",
+        .cart: "cart.fill", .globe: "globe.americas.fill", .tools: "wrench.and.screwdriver.fill",
+        .package: "shippingbox.fill", .sparkles: "sparkles", .chart: "chart.bar.fill",
+        .building: "building.2.fill", .app: "app.fill", .cloud: "cloud.fill",
+        .terminal: "terminal.fill", .bolt: "bolt.fill", .cpu: "cpu.fill",
+        .photo: "photo.fill", .pencil: "pencil.circle.fill", .theater: "theatermasks.fill",
+        .creditCard: "creditcard.fill", .banknote: "banknote.fill", .people: "person.2.fill",
+        .calendar: "calendar.circle.fill", .storefront: "storefront.fill", .bag: "bag.fill",
+        .book: "book.closed.fill", .graduationCap: "graduationcap.fill",
+        .lightbulb: "lightbulb.fill", .target: "target", .paintbrush: "paintbrush.fill",
+        .wand: "wand.and.stars", .microphone: "mic.fill", .headphones: "headphones",
+        .keyboard: "keyboard.fill", .server: "server.rack", .network: "network",
+        .gear: "gearshape.fill", .tag: "tag.fill", .receipt: "doc.text.fill",
+        .phone: "phone.fill", .envelope: "envelope.fill", .collaborate: "person.2.fill",
+        .location: "mappin.circle.fill",
+    ]
 
     static func resolved(_ rawValue: String?) -> ProjectSymbol {
         rawValue.flatMap(ProjectSymbol.init(rawValue:)) ?? .folder
     }
+}
+
+/// Presentation is deliberately local to a device. A project keeps the same
+/// semantic symbol in synced data while each person can choose the calmer
+/// outline treatment or the more emphatic filled one for their ledger.
+enum ProjectIconAppearance: String, CaseIterable, Identifiable, Sendable {
+    case outline
+    case fill
+
+    static let userDefaultsKey = "projectIconAppearance"
+
+    var id: String { rawValue }
 }
 
 /// Stable identity shared by every place that reads or writes a free-form

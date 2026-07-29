@@ -245,8 +245,10 @@ enum LineParser {
             let codeGroup: Int?
         }
         let patterns: [AmountPattern] = [
-            // symbol-first: "$240", "$ 24k"
-            .init(pattern: "([\(symbolClass)])\\s?(\(number))\\s?([kKкК])?",
+            // symbol-first: "$240", "$ 24k". The thousands suffix must
+            // touch the number: otherwise "$260 Карманная…" would consume
+            // the first letter of the project as a Cyrillic `к` multiplier.
+            .init(pattern: "([\(symbolClass)])\\s?(\(number))([kKкК])?",
                   numberGroup: 2, multiplierGroup: 3, symbolGroup: 1, codeGroup: nil),
             // number-first with trailing symbol: "12 000 ₽", "11k₽"
             .init(pattern: "(\(number))\\s?([kKкК])?\\s?([\(symbolClass)])",

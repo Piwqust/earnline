@@ -9,7 +9,6 @@ struct PendingTests {
     }
 
     @Test func pendingEntriesFilterInProgressAndSortByHold() {
-        let app = AppModel()
         let client = Client(name: "Acme")
         let paid = Entry(amount: 1, task: "paid", status: .paid)
         let soon = Entry(amount: 1, task: "soon", holdUntil: date(2026, 7, 1), status: .inProgress)

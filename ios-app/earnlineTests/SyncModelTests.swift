@@ -152,6 +152,14 @@ struct SyncModelTests {
         }
     }
 
+    @Test func projectSymbolCatalogKeepsStableNamesAcrossStyles() {
+        #expect(ProjectSymbol.allCases.count == 48)
+        #expect(ProjectSymbol.receipt.systemImageName(for: .outline) == "receipt")
+        #expect(ProjectSymbol.receipt.systemImageName(for: .fill) == "doc.text.fill")
+        #expect(ProjectSymbol.app.systemImageName(for: .outline) == "app")
+        #expect(ProjectSymbol.app.systemImageName(for: .fill) == "app.fill")
+    }
+
     @Test @MainActor func cloudResetClearsEveryLocalWorkspaceRowIncludingProjectIcons() throws {
         let schema = Schema(versionedSchema: EarnlineSchemaV3.self)
         let container = try ModelContainer(

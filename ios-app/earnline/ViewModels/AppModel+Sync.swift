@@ -116,6 +116,7 @@ extension AppModel {
             try SampleData.purgeAutoSeededDemoIfNeeded(context)
         } catch {
             syncMessage = String(localized: "Needs sync")
+            // swiftlint:disable:next line_length
             syncError = String(localized: "Earnline could not safely remove local sample data before sync. Nothing was uploaded. Try again after restarting the app.")
             return syncError
         }
@@ -381,7 +382,20 @@ extension AppModel {
         guard let url = URL(string: urlText), !key.isEmpty else {
             throw SyncError.missingConfiguration
         }
-        let client = SupabaseClient(supabaseURL: url, supabaseKey: key)
+        let storage = EarnlineAuthStorage(projectURL: url)
+        try storage.migrateLegacySessionIfNeeded()
+        let client = SupabaseClient(
+            supabaseURL: url,
+            supabaseKey: key,
+            options: SupabaseClientOptions(
+                auth: .init(
+                    storage: storage,
+                    storageKey: storage.sessionKey,
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
+        )
+        authStorage = storage
         supabaseClient = client
         return client
     }
@@ -390,6 +404,7 @@ extension AppModel {
     /// main file rebuild the client through here on every edit.
     func resetSupabaseClient() {
         supabaseClient = nil
+        authStorage = nil
         syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
         scheduleConfigRefresh()
     }

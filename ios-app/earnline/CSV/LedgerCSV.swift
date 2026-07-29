@@ -19,24 +19,6 @@ enum LedgerCSV {
         var currencyCode: String
         var status: EntryStatus
         var holdDate: Date?
-
-        init(date: Date,
-             client: String,
-             project: String?,
-             task: String,
-             amount: Decimal,
-             currencyCode: String,
-             status: EntryStatus,
-             holdDate: Date?) {
-            self.date = date
-            self.client = client
-            self.project = project
-            self.task = task
-            self.amount = amount
-            self.currencyCode = currencyCode
-            self.status = status
-            self.holdDate = holdDate
-        }
     }
 
     struct ImportedRow: Identifiable, Hashable {
@@ -250,6 +232,7 @@ enum LedgerCSV {
         return Preview(rows: rows, issues: issues, duplicateRowNumbers: duplicateRows)
     }
 
+    // swiftlint:disable:next function_parameter_count
     private static func importedRow(rowNumber: Int,
                                     date: String,
                                     client: String,
