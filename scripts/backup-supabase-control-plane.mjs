@@ -112,6 +112,7 @@ const snapshots = {
     union all select 'earnline_tombstones', count(*) from public.earnline_tombstones
     union all select 'earnline_profiles', count(*) from public.earnline_profiles
     union all select 'earnline_project_icons', count(*) from public.earnline_project_icons
+    union all select 'earnline_month_reviews', count(*) from public.earnline_month_reviews
     order by table_name
   `),
 };

@@ -10,6 +10,7 @@ import {
 import {
   RemoteRequestError,
   type CursorColumn,
+  type PageCursor,
   type RemoteValidation,
   type RowByTable,
   type RowTable,
@@ -28,6 +29,22 @@ interface QueuedRequest {
   signal?: AbortSignal;
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
+}
+
+const WRITABLE_ROW_FIELDS: Record<RowTable, readonly string[]> = {
+  earnline_clients: ["id", "name", "color_hex", "sort_index"],
+  earnline_entries: ["id", "client_id", "amount", "currency_code", "project", "task", "date", "hold_until", "status", "sort_index"],
+  earnline_headings: ["id", "title", "date", "sort_index"],
+  earnline_month_reviews: ["id", "month_start", "note", "closed_at"],
+  earnline_tombstones: ["id", "entity", "record_id"],
+};
+
+function writableRows<T extends RowTable>(table: T, rows: RowByTable[T][]): Record<string, unknown>[] {
+  const fields = WRITABLE_ROW_FIELDS[table];
+  return rows.map((row) => {
+    const source = row as unknown as Record<string, unknown>;
+    return Object.fromEntries(fields.map((field) => [field, source[field]]));
+  });
 }
 
 function normalizeEndpoint(value: string): string {
@@ -82,13 +99,7 @@ export class ProxyRemote implements SyncRemote {
       }
       groups.set(item.signal, [...(groups.get(item.signal) ?? []), item]);
     }
-    await Promise.all([...groups.entries()].flatMap(([signal, requests]) => {
-      const tasks: Promise<void>[] = [];
-      for (let index = 0; index < requests.length; index += 12) {
-        tasks.push(this.send(requests.slice(index, index + 12), signal));
-      }
-      return tasks;
-    }));
+    await Promise.all([...groups.entries()].map(([signal, requests]) => this.send(requests, signal)));
   }
 
   private async send(requests: QueuedRequest[], signal?: AbortSignal): Promise<void> {
@@ -111,49 +122,38 @@ export class ProxyRemote implements SyncRemote {
       requests.forEach((item) => item.reject(error));
       return;
     }
-    let response: Response;
     try {
-      const body = requests.length === 1
-        ? { action: requests[0].action, ...requests[0].payload }
-        : { action: "batch", requests: requests.map((item) => ({ action: item.action, ...item.payload })) };
-      response = await fetch(this.endpoint, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(body),
-        cache: "no-store",
-        credentials: "omit",
-        referrerPolicy: "no-referrer",
-        signal,
-      });
+      await Promise.all(requests.map(async (item) => {
+        const response = await fetch(this.endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ action: item.action, ...item.payload }),
+          cache: "no-store",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          signal,
+        });
+        const json = (await response.json().catch(() => ({}))) as ProxyResponse;
+        if (!response.ok) {
+          const safeMessage = response.status === 401 || response.status === 403
+            ? "This browser is not authorized to sync that workspace."
+            : json.error || `Sync service returned ${response.status}.`;
+          throw new RemoteRequestError(safeMessage, response.status);
+        }
+        item.resolve(json.data);
+      }));
     } catch (error) {
       const safeError = error instanceof DOMException && error.name === "AbortError"
         ? error
-        : new RemoteRequestError("Could not reach the Earnline sync service.");
+        : error instanceof RemoteRequestError
+          ? error
+          : new RemoteRequestError("Could not reach the Earnline sync service.");
       requests.forEach((item) => item.reject(safeError));
       return;
     }
-    const json = (await response.json().catch(() => ({}))) as ProxyResponse;
-    if (!response.ok) {
-      const safeMessage = response.status === 401 || response.status === 403
-        ? "This browser is not authorized to sync that workspace."
-        : json.error || `Sync service returned ${response.status}.`;
-      const error = new RemoteRequestError(safeMessage, response.status);
-      requests.forEach((item) => item.reject(error));
-      return;
-    }
-    if (requests.length === 1) {
-      requests[0].resolve(json.data);
-      return;
-    }
-    if (!Array.isArray(json.data) || json.data.length !== requests.length) {
-      const error = new RemoteRequestError("The sync service returned an invalid batch response.");
-      requests.forEach((item) => item.reject(error));
-      return;
-    }
-    requests.forEach((item, index) => item.resolve((json.data as unknown[])[index]));
   }
 
   async validate(signal?: AbortSignal): Promise<RemoteValidation> {
@@ -178,11 +178,11 @@ export class ProxyRemote implements SyncRemote {
     table: T,
     cursorColumn: CursorColumn,
     sinceMs: number | null,
-    from: number,
+    after: PageCursor | null,
     limit: number,
     signal?: AbortSignal,
   ): Promise<RowByTable[T][]> {
-    const value = await this.request("rows.list", { table, cursorColumn, sinceMs, from, limit }, signal);
+    const value = await this.request("rows.list", { table, cursorColumn, sinceMs, after, limit }, signal);
     switch (table) {
       case "earnline_clients":
         return decodeClientRows(value) as RowByTable[T][];
@@ -202,7 +202,7 @@ export class ProxyRemote implements SyncRemote {
     rows: RowByTable[T][],
     signal?: AbortSignal,
   ): Promise<void> {
-    await this.request("rows.upsert", { table, rows }, signal);
+    await this.request("rows.upsert", { table, rows: writableRows(table, rows) }, signal);
   }
 
   async deleteRows(

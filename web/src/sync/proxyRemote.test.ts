@@ -49,27 +49,23 @@ describe("secure proxy transport", () => {
     await expect(remote.validate()).rejects.not.toThrow("sensitive detail");
   });
 
-  it("coalesces concurrent row reads into one Edge Function invocation", async () => {
+  it("shares the session for concurrent reads without creating a non-atomic batch", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as { action: string; requests: Array<{ action: string; table: string }> };
-      expect(body.action).toBe("batch");
-      expect(body.requests.map((request) => request.table)).toEqual([
-        "earnline_clients",
-        "earnline_headings",
-        "earnline_entries",
-      ]);
-      return new Response(JSON.stringify({ data: [[], [], []] }), {
+      const body = JSON.parse(String(init?.body)) as { action: string; table: string };
+      expect(body.action).toBe("rows.list");
+      expect(["earnline_clients", "earnline_headings", "earnline_entries"]).toContain(body.table);
+      return new Response(JSON.stringify({ data: [] }), {
         status: 200, headers: { "content-type": "application/json" },
       });
     });
     vi.stubGlobal("fetch", fetchMock);
     const remote = new ProxyRemote("https://sync.example.test");
     await Promise.all([
-      remote.fetchPage("earnline_clients", "updated_at", null, 0, 1000),
-      remote.fetchPage("earnline_headings", "updated_at", null, 0, 1000),
-      remote.fetchPage("earnline_entries", "updated_at", null, 0, 1000),
+      remote.fetchPage("earnline_clients", "updated_at", null, null, 1000),
+      remote.fetchPage("earnline_headings", "updated_at", null, null, 1000),
+      remote.fetchPage("earnline_entries", "updated_at", null, null, 1000),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(getSession).toHaveBeenCalledTimes(1);
   });
 });

@@ -417,11 +417,22 @@ async function fetchRows<T extends RowTable>(
   signal?: AbortSignal,
 ): Promise<RowByTable[T][]> {
   const output: RowByTable[T][] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
+  let after: { timestamp: string; id: string } | null = null;
+  for (;;) {
     throwIfAborted(signal);
-    const page = await remote.fetchPage(table, cursorColumn, sinceMs, from, PAGE_SIZE, signal);
+    const page = await remote.fetchPage(table, cursorColumn, sinceMs, after, PAGE_SIZE, signal);
     output.push(...page);
     if (page.length < PAGE_SIZE) return output;
+    const last = page.at(-1) as unknown as Record<string, unknown> | undefined;
+    const timestamp = last?.[cursorColumn];
+    if (!last || typeof timestamp !== "string" || typeof last.id !== "string") {
+      throw new Error(`The sync service returned an invalid ${cursorColumn} cursor.`);
+    }
+    const next = { timestamp, id: last.id };
+    if (after?.timestamp === next.timestamp && after.id === next.id) {
+      throw new Error(`The sync service repeated a ${cursorColumn} cursor.`);
+    }
+    after = next;
   }
 }
 

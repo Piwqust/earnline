@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EarnlineDB } from "../data/db";
 import type { Client, Entry, MonthReview } from "../domain/types";
 import { monthReviewId } from "../domain/monthReview";
-import type { CursorColumn, RemoteValidation, RowByTable, RowTable, SyncRemote } from "./remoteClient";
+import type { CursorColumn, PageCursor, RemoteValidation, RowByTable, RowTable, SyncRemote } from "./remoteClient";
 import type { WorkspaceProfilePayload, WorkspaceProfileRow } from "./remoteRecords";
 import { SyncConflictError, sync } from "./syncCoordinator";
 
@@ -23,11 +23,23 @@ class FakeRemote implements SyncRemote {
   async upsertProfile(payload: WorkspaceProfilePayload): Promise<WorkspaceProfileRow> {
     return { ...payload, updated_at: new Date(this.now++).toISOString() };
   }
-  async fetchPage<T extends RowTable>(table: T, cursor: CursorColumn, since: number | null, from: number, limit: number): Promise<RowByTable[T][]> {
+  async fetchPage<T extends RowTable>(table: T, cursor: CursorColumn, since: number | null, after: PageCursor | null, limit: number): Promise<RowByTable[T][]> {
     this.log.push(`fetch:${table}`);
-    return (this.rows[table] as RowByTable[T][])
+    return [...(this.rows[table] as RowByTable[T][])]
       .filter((row) => since == null || Date.parse(String((row as unknown as Record<string, unknown>)[cursor])) >= since)
-      .slice(from, from + limit);
+      .sort((left, right) => {
+        const a = left as unknown as Record<string, unknown>;
+        const b = right as unknown as Record<string, unknown>;
+        const timestamp = String(b[cursor]).localeCompare(String(a[cursor]));
+        return timestamp || String(b.id).localeCompare(String(a.id));
+      })
+      .filter((row) => {
+        if (!after) return true;
+        const value = row as unknown as Record<string, unknown>;
+        const timestamp = String(value[cursor]);
+        return timestamp < after.timestamp || (timestamp === after.timestamp && String(value.id) < after.id);
+      })
+      .slice(0, limit);
   }
   async upsertRows<T extends RowTable>(table: T, rows: RowByTable[T][]): Promise<void> {
     this.log.push(`upsert:${table}`);

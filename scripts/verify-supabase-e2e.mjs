@@ -140,39 +140,16 @@ try {
   const pairingToken = pairing.value?.[0]?.pairing_token;
   if (!pairingToken) throw new Error("Could not create a pairing token.");
   console.log("redeeming pairing token…");
-  let deviceToken;
-  try {
-    const paired = await edge("earnline-pair-device", publishableKey, { token: pairingToken }, 3);
-    deviceToken = paired.value?.access_token;
-  } catch (error) {
-    // A flaky client connection can lose the successful response after the
-    // one-use token has already been redeemed. Recover only a device identity
-    // created in this exact temporary workspace so the rest of the security
-    // contract can still be verified and cleaned up.
-    const recovered = await managementQuery(`
-      select members.user_id, users.email
-      from public.earnline_workspace_members as members
-      join auth.users as users on users.id = members.user_id
-      where members.workspace_id = ${sqlLiteral(workspaceID)}
-        and members.role = 'device'
-        and coalesce((users.raw_app_meta_data ->> 'earnline_device')::boolean, false)
-      order by members.created_at desc
-      limit 1
-    `);
-    const recoveredDevice = recovered.value?.[0];
-    if (!recoveredDevice?.user_id || !recoveredDevice?.email) throw error;
-    deviceUserID = recoveredDevice.user_id;
-    const recoveryPassword = `${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}Aa1!`;
-    await admin(`users/${deviceUserID}`, "PUT", { password: recoveryPassword });
-    const recoveredSession = await jsonRequest(new URL("/auth/v1/token?grant_type=password", projectURL), {
-      method: "POST",
-      headers: { apikey: publishableKey, "content-type": "application/json" },
-      body: JSON.stringify({ email: recoveredDevice.email, password: recoveryPassword }),
-    });
-    deviceToken = recoveredSession.value?.access_token;
-    console.log("pairing response was lost; recovered the temporary device session");
-  }
+  const pairingRequestID = randomUUID();
+  const pairingRequest = { token: pairingToken, request_id: pairingRequestID };
+  const paired = await edge("earnline-pair-device", publishableKey, pairingRequest, 3);
+  const deviceToken = paired.value?.access_token;
   if (!deviceToken) throw new Error("Pairing did not return a device session.");
+  const retry = await edge("earnline-pair-device", publishableKey, pairingRequest, 3);
+  if (!retry.value?.access_token || jwtSubject(retry.value.access_token) !== jwtSubject(deviceToken)) {
+    throw new Error("A pairing retry created a different device identity.");
+  }
+  console.log("idempotent pairing retry: passed");
   deviceUserID ??= jwtSubject(deviceToken);
   console.log("validating paired-device sync…");
   await edge("earnline-sync", deviceToken, { action: "validate" }, 3);

@@ -15,6 +15,10 @@ export type RowTable =
   | "earnline_month_reviews"
   | "earnline_tombstones";
 export type CursorColumn = "updated_at" | "deleted_at";
+export interface PageCursor {
+  timestamp: string;
+  id: string;
+}
 
 export interface RowByTable {
   earnline_clients: ClientRow;
@@ -42,7 +46,7 @@ export interface SyncRemote {
     table: T,
     cursorColumn: CursorColumn,
     sinceMs: number | null,
-    from: number,
+    after: PageCursor | null,
     limit: number,
     signal?: AbortSignal,
   ): Promise<RowByTable[T][]>;

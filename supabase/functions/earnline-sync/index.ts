@@ -1,10 +1,11 @@
 import { withSupabase } from "npm:@supabase/server@^1";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@^2";
+import projectSymbols from "../../contract/project-symbols.json" with { type: "json" };
 
 type TableName = "earnline_clients" | "earnline_entries" | "earnline_headings" | "earnline_project_icons" | "earnline_month_reviews" | "earnline_tombstones";
 type CursorColumn = "updated_at" | "deleted_at";
 
-const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
+const READ_COLUMNS: Record<TableName, readonly string[]> = {
   earnline_clients: ["id", "name", "color_hex", "sort_index", "created_at", "updated_at"],
   earnline_entries: ["id", "client_id", "amount", "currency_code", "project", "task", "date", "hold_until", "status", "sort_index", "created_at", "updated_at"],
   earnline_headings: ["id", "title", "date", "sort_index", "created_at", "updated_at"],
@@ -12,13 +13,21 @@ const TABLE_COLUMNS: Record<TableName, readonly string[]> = {
   earnline_month_reviews: ["id", "month_start", "note", "closed_at", "created_at", "updated_at"],
   earnline_tombstones: ["id", "entity", "record_id", "deleted_at", "created_at"],
 };
+const WRITE_COLUMNS: Record<TableName, readonly string[]> = {
+  earnline_clients: ["id", "name", "color_hex", "sort_index"],
+  earnline_entries: ["id", "client_id", "amount", "currency_code", "project", "task", "date", "hold_until", "status", "sort_index"],
+  earnline_headings: ["id", "title", "date", "sort_index"],
+  earnline_project_icons: ["id", "project_key", "symbol_name"],
+  earnline_month_reviews: ["id", "month_start", "note", "closed_at"],
+  // Server defaults/trigger own both timestamps. This is intentionally the
+  // only client-writable tombstone shape.
+  earnline_tombstones: ["id", "entity", "record_id"],
+};
 const MONTH_REVIEW_MAX_NOTE_LENGTH = 280;
-const PROJECT_SYMBOLS = new Set([
-  "folder", "briefcase", "display", "paintpalette", "camera", "video",
-  "music.note", "doc.text", "megaphone", "cart", "globe",
-  "wrench.and.screwdriver", "shippingbox", "sparkles",
-  "chart.line.uptrend.xyaxis", "building.2",
-]);
+const MAX_REQUEST_BYTES = 256 * 1024;
+const PROJECT_SYMBOLS = new Set<string>(projectSymbols);
+const CURRENCY_CODES = new Set(["USD", "EUR", "GBP", "RUB", "UAH"]);
+const ENTRY_STATUSES = new Set(["paid", "inProgress", "canceled"]);
 const PROFILE_COLUMNS = ["workspace_id", "base_currency_code", "secondary_currency_code", "exchange_rate", "updated_at"] as const;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -62,7 +71,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 function tableName(value: unknown): TableName {
-  if (typeof value !== "string" || !Object.hasOwn(TABLE_COLUMNS, value)) throw new Error("Unsupported sync table.");
+  if (typeof value !== "string" || !Object.hasOwn(READ_COLUMNS, value)) throw new Error("Unsupported sync table.");
   return value as TableName;
 }
 
@@ -95,11 +104,47 @@ function isTimestamp(value: unknown): value is string {
     && Number.isFinite(Date.parse(value));
 }
 
+function isDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().startsWith(value);
+}
+
+function isCanonicalText(value: unknown, maximum: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= maximum && value === value.trim();
+}
+
+function isCanonicalProject(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && value.length <= 40 && value === value.trim());
+}
+
+function isSortIndex(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= -2_147_483_648 && value <= 2_147_483_647;
+}
+
+function isAmount(value: unknown): boolean {
+  if (typeof value !== "number" && typeof value !== "string") return false;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 1_000_000_000;
+}
+
+function pageCursor(value: unknown): { timestamp: string; id: string } | null {
+  if (value == null) return null;
+  const input = record(value);
+  if (!isTimestamp(input.timestamp) || typeof input.id !== "string" || !UUID_PATTERN.test(input.id)) {
+    throw new Error("Invalid sync page cursor.");
+  }
+  return { timestamp: input.timestamp, id: input.id };
+}
+
 function scopedRows(value: unknown, table: TableName, workspaceId: string): Record<string, unknown>[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 1000) throw new Error("Invalid sync row batch.");
-  const allowed = new Set(TABLE_COLUMNS[table]);
+  const allowed = new Set(WRITE_COLUMNS[table]);
   return value.map((item) => {
     const input = record(item);
+    if (Object.keys(input).some((key) => !allowed.has(key))) {
+      throw new Error("Sync rows contain fields that are not writable.");
+    }
     const output: Record<string, unknown> = { workspace_id: workspaceId };
     for (const [key, field] of Object.entries(input)) {
       if (allowed.has(key)) output[key] = field;
@@ -107,9 +152,22 @@ function scopedRows(value: unknown, table: TableName, workspaceId: string): Reco
     if (typeof output.id !== "string" || !UUID_PATTERN.test(output.id)) {
       throw new Error("Every sync row requires a UUID id.");
     }
+    if (table === "earnline_clients" &&
+      (!isCanonicalText(output.name, 24) || typeof output.color_hex !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(output.color_hex) ||
+        !isSortIndex(output.sort_index))) {
+      throw new Error("Every client requires a short name, color, and sort index.");
+    }
     if (table === "earnline_entries" &&
-      (typeof output.client_id !== "string" || !UUID_PATTERN.test(output.client_id))) {
-      throw new Error("Every entry requires a UUID client id.");
+      (typeof output.client_id !== "string" || !UUID_PATTERN.test(output.client_id) || !isAmount(output.amount) ||
+        typeof output.currency_code !== "string" || !CURRENCY_CODES.has(output.currency_code) ||
+        !isCanonicalProject(output.project) || !isCanonicalText(output.task, 140) || !isDate(output.date) ||
+        (output.hold_until !== null && !isDate(output.hold_until)) || typeof output.status !== "string" ||
+        !ENTRY_STATUSES.has(output.status) || !isSortIndex(output.sort_index))) {
+      throw new Error("Every entry requires valid ledger fields.");
+    }
+    if (table === "earnline_headings" &&
+      (!isCanonicalText(output.title, 40) || !isDate(output.date) || !isSortIndex(output.sort_index))) {
+      throw new Error("Every event note requires a title, date, and sort index.");
     }
     if (table === "earnline_project_icons" &&
       (typeof output.project_key !== "string" || output.project_key.length < 1 || output.project_key.length > 40 ||
@@ -142,7 +200,7 @@ function profileRow(value: unknown, workspaceId: string): Record<string, unknown
   const secondary = input.secondary_currency_code;
   const rate = input.exchange_rate;
   if (typeof base !== "string" || typeof secondary !== "string" ||
-    !/^[A-Z]{3,16}$/.test(base) || !/^[A-Z]{3,16}$/.test(secondary) || base === secondary) {
+    !CURRENCY_CODES.has(base) || !CURRENCY_CODES.has(secondary) || base === secondary) {
     throw new Error("Invalid workspace currency profile.");
   }
   const numericRate = typeof rate === "number" ? rate : typeof rate === "string" ? Number(rate) : Number.NaN;
@@ -189,24 +247,35 @@ async function executeAction(
     const table = tableName(body.table);
     const expectedCursor: CursorColumn = table === "earnline_tombstones" ? "deleted_at" : "updated_at";
     if (body.cursorColumn !== expectedCursor) throw new Error("Invalid cursor column.");
-    const from = typeof body.from === "number" && Number.isSafeInteger(body.from) && body.from >= 0 ? body.from : 0;
     const limit = typeof body.limit === "number" && Number.isSafeInteger(body.limit) && body.limit > 0 && body.limit <= 1000 ? body.limit : 1000;
-    const columns = ["workspace_id", ...TABLE_COLUMNS[table]].join(",");
+    const after = pageCursor(body.after);
+    const columns = ["workspace_id", ...READ_COLUMNS[table]].join(",");
     let query = userClient.from(table).select(columns).eq("workspace_id", workspaceId)
-      .order(expectedCursor, { ascending: true }).order("id", { ascending: true });
+      .order(expectedCursor, { ascending: false }).order("id", { ascending: false });
     if (typeof body.sinceMs === "number" && Number.isFinite(body.sinceMs)) {
       query = query.gte(expectedCursor, new Date(body.sinceMs).toISOString());
     } else if (body.sinceMs !== null) {
       throw new Error("Invalid sync cursor.");
     }
-    const { data, error } = await query.range(from, from + limit - 1);
+    if (after) {
+      query = query.or(
+        `${expectedCursor}.lt.${after.timestamp},and(${expectedCursor}.eq.${after.timestamp},id.lt.${after.id})`,
+      );
+    }
+    const { data, error } = await query.range(0, limit - 1);
     if (error) throw error;
     return hideWorkspace(data ?? [], scope);
   }
   if (action === "rows.upsert") {
     const table = tableName(body.table);
     const rows = scopedRows(body.rows, table, workspaceId);
-    const { error } = await userClient.from(table).upsert(rows);
+    const tableClient = userClient.from(table);
+    // Tombstones are append-only and their timestamp is assigned by Postgres.
+    // A lost response may repeat the same id, which must be a harmless insert
+    // conflict instead of an UPDATE attempt rejected by the database policy.
+    const { error } = table === "earnline_tombstones"
+      ? await tableClient.upsert(rows, { onConflict: "id", ignoreDuplicates: true })
+      : await tableClient.upsert(rows);
     if (error) throw error;
     return { ok: true };
   }
@@ -254,24 +323,11 @@ const jwtHandler = withSupabase({ auth: "user" }, async (request, context) => {
     const scope = (await sha256(`earnline:workspace:${workspaceId}:${env("EARNLINE_SCOPE_SALT")}`)).slice(0, 32);
 
     try {
-      const body = record(await request.json());
-      if (body.action === "batch") {
-        // Not transactional: the actions run in order against the caller-scoped
-        // client, so a failure partway through leaves the earlier ones applied
-        // and returns one opaque 400. That is survivable only because the sync
-        // protocol is idempotent and retried — do not batch anything that is
-        // not safe to re-send. See docs/AUDIT-2026-07.md (S2).
-        if (!Array.isArray(body.requests) || body.requests.length < 1 || body.requests.length > 12) {
-          throw new Error("Invalid sync request batch.");
-        }
-        const results: unknown[] = [];
-        for (const item of body.requests) {
-          const nested = record(item);
-          if (nested.action === "batch") throw new Error("Nested batches are not supported.");
-          results.push(await executeAction(nested, userClient, workspaceId, scope));
-        }
-        return response(results);
+      const rawBody = await request.text();
+      if (encoder.encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+        return failure("Request body is too large.", 413);
       }
+      const body = record(JSON.parse(rawBody));
       return response(await executeAction(body, userClient, workspaceId, scope));
     } catch (error) {
       // Detailed database errors stay in server logs; clients receive no schema
@@ -296,6 +352,10 @@ export default {
     try {
       if (!originAllowed(request)) return withCors(request, failure("Origin is not allowed.", 403));
       if (request.method === "OPTIONS") return withCors(request, response({ ok: true }));
+      const declaredLength = Number(request.headers.get("content-length") ?? "0");
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+        return withCors(request, failure("Request body is too large.", 413));
+      }
       return withCors(request, await jwtHandler(request));
     } catch {
       return failure("Sync service is not configured.", 503);

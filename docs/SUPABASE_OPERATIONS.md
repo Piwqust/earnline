@@ -10,7 +10,9 @@ multi-tenant signup product.
 
 ## Before every schema or function deployment
 
-1. Export the current rows with `scripts/backup-supabase-rest.mjs`.
+1. Export the current rows with `scripts/backup-supabase-rest.mjs`. It requires
+   a server-only backup access token; the publishable key is never used as a
+   Bearer credential.
 2. Create a full Dashboard backup or run `pg_dump` with a short-lived database
    connection string. The REST export does not include Auth users, grants,
    policies, functions, triggers, or migration history.
@@ -18,6 +20,30 @@ multi-tenant signup product.
    database and run the read-only verifier against staging.
 4. Keep the old iOS and web clients available until the new functions and RLS
    checks pass.
+
+## Clean restore proof
+
+Do this only against an empty, isolated staging project. It reads every
+restored row but does not write anything.
+
+1. Restore the full database backup into the clean staging project using the
+   Supabase Dashboard backup flow or `pg_restore`. Do not use the REST export
+   as a replacement for an Auth/schema backup.
+2. In a terminal, set short-lived credentials only for that shell, then run:
+
+   ```bash
+   SUPABASE_RESTORE_URL='https://staging-project.supabase.co' \
+   SUPABASE_RESTORE_PUBLISHABLE_KEY='staging-publishable-key' \
+   SUPABASE_RESTORE_ACCESS_TOKEN='server-only-staging-backup-token' \
+   node scripts/verify-supabase-backup-restore.mjs .local-backups/supabase-rest-YYYY-MM-DDTHH-MM-SSZ
+   ```
+
+   The command checks the manifest hashes, every table row and ID, entry-to-
+   client foreign keys, and money totals by currency. It prints counts and
+   totals, never ledger rows or credentials.
+3. Delete the temporary staging project or restore it to its empty baseline
+   after the proof. This prevents backup data from becoming a second live
+   workspace.
 
 ## Read-only security verification
 

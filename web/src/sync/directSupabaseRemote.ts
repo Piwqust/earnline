@@ -11,6 +11,7 @@ import {
 } from "./remoteRecords";
 import type {
   CursorColumn,
+  PageCursor,
   RemoteConnectionStatus,
   RemoteValidation,
   RowByTable,
@@ -83,7 +84,7 @@ export class DirectSupabaseRemote implements SyncRemote {
     table: T,
     cursorColumn: CursorColumn,
     sinceMs: number | null,
-    from: number,
+    after: PageCursor | null,
     limit: number,
     signal?: AbortSignal,
   ): Promise<RowByTable[T][]> {
@@ -91,10 +92,15 @@ export class DirectSupabaseRemote implements SyncRemote {
       .from(table)
       .select("*")
       .eq("workspace_id", this.rowWorkspace)
-      .order(cursorColumn, { ascending: true })
-      .order("id", { ascending: true });
+      .order(cursorColumn, { ascending: false })
+      .order("id", { ascending: false });
     if (sinceMs != null) query = query.gte(cursorColumn, new Date(sinceMs).toISOString());
-    const result = await query.range(from, from + limit - 1).abortSignal(signal ?? new AbortController().signal);
+    if (after) {
+      query = query.or(
+        `${cursorColumn}.lt.${after.timestamp},and(${cursorColumn}.eq.${after.timestamp},id.lt.${after.id})`,
+      );
+    }
+    const result = await query.range(0, limit - 1).abortSignal(signal ?? new AbortController().signal);
     if (result.error) throw result.error;
     switch (table) {
       case "earnline_clients": return decodeClientRows(result.data) as RowByTable[T][];
@@ -107,7 +113,10 @@ export class DirectSupabaseRemote implements SyncRemote {
 
   async upsertRows<T extends RowTable>(table: T, rows: RowByTable[T][], signal?: AbortSignal): Promise<void> {
     const scoped = rows.map((row) => ({ ...row, workspace_id: this.rowWorkspace }));
-    const result = await this.supabase.from(table).upsert(scoped).abortSignal(signal ?? new AbortController().signal);
+    const result = await this.supabase
+      .from(table)
+      .upsert(scoped, table === "earnline_tombstones" ? { onConflict: "id", ignoreDuplicates: true } : undefined)
+      .abortSignal(signal ?? new AbortController().signal);
     if (result.error) throw result.error;
   }
 

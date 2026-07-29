@@ -4,8 +4,9 @@ import { join } from "node:path";
 
 const projectURL = (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim();
 const publishableKey = (process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
-if (!projectURL || !publishableKey) {
-  throw new Error("Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or their VITE_ equivalents).");
+const backupAccessToken = (process.env.SUPABASE_BACKUP_ACCESS_TOKEN ?? process.env.SUPABASE_BACKUP_SERVICE_ROLE_KEY ?? "").trim();
+if (!projectURL || !publishableKey || !backupAccessToken) {
+  throw new Error("Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, and a server-only SUPABASE_BACKUP_ACCESS_TOKEN.");
 }
 
 const defaultTables = [
@@ -15,6 +16,7 @@ const defaultTables = [
   "earnline_tombstones",
   "earnline_profiles",
   "earnline_project_icons",
+  "earnline_month_reviews",
 ];
 const tables = (process.env.SUPABASE_BACKUP_TABLES ?? "")
   .split(",")
@@ -43,13 +45,16 @@ for (const table of tables) {
     url.searchParams.set("select", "*");
     url.searchParams.set("limit", String(pageSize));
     url.searchParams.set("offset", String(from));
+    url.searchParams.set("order", "id.asc");
     let response;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
         response = await fetch(url, {
           headers: {
             apikey: publishableKey,
-            authorization: `Bearer ${publishableKey}`,
+            // The public key intentionally remains only the API key. Reading
+            // every workspace row requires a separately supplied backup role.
+            authorization: `Bearer ${backupAccessToken}`,
             connection: "close",
           },
           signal: AbortSignal.timeout(60_000),
