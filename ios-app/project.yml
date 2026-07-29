@@ -2,7 +2,7 @@ name: earnline
 packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift.git
-    exactVersion: 2.48.0
+    exactVersion: 2.54.0
 options:
   bundleIdPrefix: com.earnline
   deploymentTarget:
@@ -13,7 +13,7 @@ fileGroups:
   - TestPlans
 settings:
   base:
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: "1.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "6.0"
   configs:
@@ -167,6 +167,18 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.earnline.devuitests
         GENERATE_INFOPLIST_FILE: "YES"
+  earnlineReleaseUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: earnlineReleaseUITests
+    dependencies:
+      - target: earnline
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.earnline.releaseuitests
+        GENERATE_INFOPLIST_FILE: "YES"
 schemes:
   # Local physical-device workflow. It builds only the primary app so a
   # personal signing team can provision the connected phone without also
@@ -192,13 +204,27 @@ schemes:
           script: |
             "${PROJECT_DIR}/Scripts/install-dev-companion.sh"
     test:
-      # Everyday is deliberately the default. AppStoreRelease includes the
-      # rarely needed accessibility-size regression checks and is selected
-      # explicitly before an App Store/release-readiness pass.
+      # Everyday is deliberately the default. AppStoreRelease is the broad
+      # Debug coverage plan with the rarely needed accessibility-size checks.
+      # It is not Release-binary evidence; `earnline-release` below supplies
+      # the separate Release test action.
       testPlans:
         - path: TestPlans/Everyday.xctestplan
           defaultPlan: true
         - path: TestPlans/AppStoreRelease.xctestplan
+  # Production-binary gate. Keep it separate from the normal scheme because
+  # Xcode stores one build configuration per TestAction, not per test plan.
+  # This scheme compiles and launches the actual Release app, with no Debug
+  # automation hooks available to it.
+  earnline-release:
+    build:
+      targets:
+        earnline: all
+        earnlineReleaseUITests: [test]
+    test:
+      config: Release
+      targets:
+        - earnlineReleaseUITests
   earnline-dev:
     build:
       targets:

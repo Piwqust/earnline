@@ -14,6 +14,8 @@
 - Before an iOS action, identify the Xcode window, confirm the active scheme and run destination, and switch them deliberately. Default to `earnline` on iPhone 17 with the iOS 27 runtime. Use `earnline-dev` only for Debug-only checks and `earnline-device` only for an explicitly physical-device task.
 - Prefer the native Xcode MCP server for build, run, tests, simulator input, screenshots, accessibility hierarchy, logs, and Xcode configuration. Keep XCUITest for durable regression coverage. A standalone Simulator MCP or IDB companion disconnect on a beta runtime is a tool-compatibility failure, not proof of an app failure.
 - Treat Xcode 26/iOS 26 and Xcode 27/iOS 27 evidence as separate. When using the command line, set `DEVELOPER_DIR` per command to the Xcode 27 installation and verify it with `xcodebuild -version`; never change machine-wide `xcode-select` for this repository.
+- Do not use Computer Use for normal iOS simulator inspection or interaction. It is an expensive last resort only when the user explicitly asks for a manual desktop action. Prefer structured data in this order: native Xcode MCP device interaction and accessibility hierarchy, Appium XCUITest accessibility tree, then `simctl` screenshot/logs plus a focused XCUITest.
+- The supported command-line fallback is `ios-app/Scripts/inspect-simulator-screen.sh`. It starts a local Appium XCUITest session with `noReset`, saves a PNG and XML hierarchy in ignored `.ios-simulator-output/`, and closes the session. It must return a nonempty hierarchy before it is used as proof of an interaction. Do not add an IDB-based MCP wrapper: the local Homebrew IDB companion is not a supported Xcode 27/iOS 27 baseline.
 
 ## Design workflow
 
@@ -34,6 +36,7 @@ Small, well-scoped fixes do not require a separate design proposal, but they sti
 - iOS visual and interaction work: use `ios-hig-design`, `mobile-ios-design`, and `swiftui-ui-patterns`.
 - iOS 26 glass work: also use `swiftui-liquid-glass`.
 - iOS runtime checks: use the native Xcode 27 MCP server (`xcrun mcpbridge`) and inspect screenshots plus the accessibility hierarchy.
+- If native device interaction is unavailable to the agent, run `ios-app/Scripts/inspect-simulator-screen.sh` and inspect its XML hierarchy before falling back to a focused XCUITest. Do not substitute repeated coordinate clicks or desktop screenshots for semantic iOS automation.
 - Web visual work: use `impeccable`; use browser automation for live inspection, keyboard checks, console errors, responsive states, and screenshots.
 - Figma is a source of truth only when the user supplies or approves a file or node. Do not invent a parallel Figma system that drifts from code.
 
@@ -71,6 +74,7 @@ Small, well-scoped fixes do not require a separate design proposal, but they sti
 - Run relevant unit tests; run the full iOS test suite for shared model, sync, parser, or navigation changes.
 - The default `Everyday` test plan skips release-only accessibility-size UI checks. Select `AppStoreRelease` only when the user explicitly asks for an App Store or release-readiness pass; do not turn it on for routine feature or visual work.
 - Capture the changed screen and exercise the actual interaction, not only its launch state.
+- When the native Xcode MCP device session is unavailable, use `ios-app/Scripts/inspect-simulator-screen.sh` for the screenshot and hierarchy. Its output is private and ignored; never add it to Git or present a successful screenshot alone as interaction coverage.
 - Review the Xcode Issue navigator separately. A successful build, launch, or screenshot does not prove that the interaction and full test plan passed.
 
 ## Optional web companion
