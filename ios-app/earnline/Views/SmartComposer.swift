@@ -287,12 +287,17 @@ struct SmartComposer: View {
             chip(height: 22) {
                 Text(DateFormat.dotted(entryDate)).appFont(14).foregroundStyle(Theme.label(0.7))
             }
+            .hitTarget()
         }
         .buttonStyle(.plain)
         .popover(isPresented: $showDatePicker) {
             DatePickerPopover(title: "Income date", date: $entryDate, minimumDate: nil,
                               clearTitle: nil, onClear: nil, onDone: { showDatePicker = false })
         }
+        // Without these the row announced a bare "30.07.2026" with no role,
+        // while every other control here names itself.
+        .accessibilityLabel("Income date")
+        .accessibilityValue(DateFormat.dotted(entryDate))
     }
 
     private var holdChip: some View {
@@ -305,8 +310,11 @@ struct SmartComposer: View {
                         .foregroundStyle(holdUntil != nil ? Theme.label(0.8) : Theme.label(0.4))
                 }
             }
+            .hitTarget()
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Hold until")
+        .accessibilityValue(holdUntil.map(DateFormat.dotted) ?? String(localized: "No hold date"))
         .popover(isPresented: $showHoldPicker) {
             DatePickerPopover(
                 title: "Hold until",

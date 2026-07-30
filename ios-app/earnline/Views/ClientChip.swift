@@ -36,6 +36,10 @@ struct ClientChip: View {
                         .padding(.vertical, 4)
                         .glassEffect(.regular.tint(Color(hex: client.colorHex)).interactive(),
                                      in: .capsule)
+                        // The drawn capsule is ~19 pt tall; this reaches into the
+                        // row's own padding so the target approaches 44 pt
+                        // without thickening the ledger's densest row.
+                        .expandedTapArea()
                 }
                 .buttonStyle(.plain)
 
@@ -89,6 +93,9 @@ struct ClientChip: View {
             }
         }
         .foregroundStyle(Theme.label)
-        .contentShape(.rect)
+        // Same reasoning as the client capsule: the "+ Line" / "× Close" label is
+        // only ~18 pt tall, so grow the touch region into the row's padding
+        // rather than the row itself.
+        .expandedTapArea()
     }
 }

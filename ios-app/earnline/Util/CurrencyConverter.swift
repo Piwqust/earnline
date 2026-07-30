@@ -34,9 +34,14 @@ struct CurrencyConverter: Sendable {
         // raw units to a base-currency total fabricates a financial result.
         // Callers retain and display the entry's original amount; consolidated
         // totals exclude it until a conversion rate is available.
-        #if DEBUG
-        print("⚠️ toBase: no rate for \(code); excluding it from consolidated totals.")
-        #endif
+        //
+        // Deliberately silent. This is called once per entry inside six
+        // aggregation loops and again per rendered row, so a DEBUG print here
+        // emitted thousands of lines per pass on the stress dataset — exactly
+        // when the console is being used to profile. The condition already has
+        // a real, user-facing signal: `unsupportedCurrencyCount`, counted by
+        // `InsightsDashboardInput.dashboardSnapshot` and warned about in
+        // Settings' Currency section.
         return .zero
     }
 

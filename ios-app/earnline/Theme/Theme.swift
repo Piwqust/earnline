@@ -135,6 +135,41 @@ extension View {
                  relativeTo style: Font.TextStyle = .body) -> some View {
         modifier(ScaledFont(size: size, weight: weight, design: design, style: style))
     }
+
+    /// Grow a control's touch region to Apple's 44 pt minimum without changing
+    /// what is drawn.
+    ///
+    /// Several chips in the app are deliberately compact — the Figma draws the
+    /// composer's date and hold pills at 22 pt — but a compact *appearance* is
+    /// not a licence for a compact *target*. `contentShape` after the frame is
+    /// what makes the extra height tappable rather than merely reserved.
+    ///
+    /// Use this only where the surrounding row is already at least 44 pt tall,
+    /// so nothing moves; otherwise the layout must change and that is a design
+    /// decision, not a modifier.
+    func hitTarget(minWidth: CGFloat = 44, minHeight: CGFloat = 44) -> some View {
+        frame(minWidth: minWidth, minHeight: minHeight)
+            .contentShape(.rect)
+    }
+
+    /// Grow only the touch region, by `inset` points on every side, leaving
+    /// layout completely untouched.
+    ///
+    /// For controls whose drawn height the design fixes — the ledger's client
+    /// chip and its "+ Line" button sit in a deliberately dense row — a real
+    /// `frame(minHeight: 44)` would thicken the row, which is a design decision
+    /// rather than a fix. A negatively-inset content shape reaches into the row's
+    /// own padding instead: measured on the client row, the chip's reported target
+    /// goes from 19 pt to 51 and "+ Line" from 18 pt to 42, with the drawn pills
+    /// unchanged.
+    ///
+    /// It does not fully reach 44 pt, and cannot here: the client row allows 8 pt
+    /// above and 4 pt below, so a 12 pt expansion already extends roughly 1 pt
+    /// past where the next row's own inset begins. Closing the remaining gap
+    /// means giving the row more height — ask the design, don't widen this.
+    func expandedTapArea(_ inset: CGFloat = 12) -> some View {
+        contentShape(.rect.inset(by: -inset))
+    }
 }
 
 struct ScaledFont: ViewModifier {

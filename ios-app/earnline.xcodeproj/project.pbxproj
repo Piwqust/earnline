@@ -102,6 +102,7 @@
 		79FAA8A77DBF221312E1D366 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28596D76F0D416DC4CFA07D1 /* SyncCoordinator.swift */; };
 		7A26A3A3B2D1EFA98EDF7FF8 /* PrivacyPolicyURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4754A8FD611180CB16304D /* PrivacyPolicyURLTests.swift */; };
 		7A57CFBA972E4A423DC34310 /* SupabaseConnectionValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CCC60622645EBD9BCB13146 /* SupabaseConnectionValidatorTests.swift */; };
+		7AFA50CA62A79144D9F317DB /* LedgerRowBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E181DF7E54F40511BBC72157 /* LedgerRowBuilderTests.swift */; };
 		7BF96E59B57221AF0A6A9F11 /* LedgerBottomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BD244DD7F67E1505C74C383 /* LedgerBottomBar.swift */; };
 		7C77AE68E56D5C76EE73718B /* MoneyAmountText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF52DF486BF776CD0284740 /* MoneyAmountText.swift */; };
 		7D0C6C8C9F21DAF6433C40D3 /* PairedDevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2938F825348BD34C3739D92C /* PairedDevicesView.swift */; };
@@ -389,6 +390,7 @@
 		DD8190FB29D11E5C57776C93 /* LedgerRowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerRowModel.swift; sourceTree = "<group>"; };
 		DE634E20A41BA7DA6525224B /* AppLockController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockController.swift; sourceTree = "<group>"; };
 		E17F6E1E98CF2BD5B5A59C00 /* UndoDeleteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoDeleteTests.swift; sourceTree = "<group>"; };
+		E181DF7E54F40511BBC72157 /* LedgerRowBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerRowBuilderTests.swift; sourceTree = "<group>"; };
 		E5C91A7306FB4CE7EF14BEBC /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		ED7E74C56315608E534D7118 /* ExchangeRateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExchangeRateTests.swift; sourceTree = "<group>"; };
 		EFB68DE60447EECFE99BD788 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -663,6 +665,7 @@
 				32839318AD65467B747F50D7 /* InsightsTests.swift */,
 				DD1063389855558DE16E2D58 /* LedgerCSVTests.swift */,
 				9BFA663EC28691A956D9BCBB /* LedgerMutationStoreTests.swift */,
+				E181DF7E54F40511BBC72157 /* LedgerRowBuilderTests.swift */,
 				356288D1DEC8AF6116D9BECA /* LedgerSnapshotCacheTests.swift */,
 				59FF5A0C28C3143109F9AE84 /* LineParserTests.swift */,
 				1204AFC1783325FEBE9AE360 /* MonthReviewTests.swift */,
@@ -1002,6 +1005,7 @@
 				C9C4CADA0EB366089D8F8482 /* InsightsTests.swift in Sources */,
 				9CD0D4E2D9BC5375959C3E5D /* LedgerCSVTests.swift in Sources */,
 				E04BBD1FF3DF2B5F382A258C /* LedgerMutationStoreTests.swift in Sources */,
+				7AFA50CA62A79144D9F317DB /* LedgerRowBuilderTests.swift in Sources */,
 				C1CF1A87C036F611268012A7 /* LedgerSnapshotCacheTests.swift in Sources */,
 				8F5B283CDDF0E5851B1FE1B9 /* LineParserTests.swift in Sources */,
 				D7AB87C324C58D25C9CA9963 /* MonthReviewTests.swift in Sources */,
