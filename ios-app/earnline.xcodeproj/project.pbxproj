@@ -90,8 +90,10 @@
 		6CF74236981D4595BA758706 /* CSVTransferView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DD037E622725FFA70E7862 /* CSVTransferView.swift */; };
 		6E1AEEEC1F1C0C8D7BC0F218 /* PairingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89077DDA26AD9E14D3E0449E /* PairingViews.swift */; };
 		6E99FCF83B5E936CD1CD15E2 /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDE91A869C636CE48EFEF21 /* ValidationTests.swift */; };
+		71A9EF04B79C07BF979795EA /* AppLockController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE634E20A41BA7DA6525224B /* AppLockController.swift */; };
 		71C6F131CCFC2AAF0ACCCFDF /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C91A7306FB4CE7EF14BEBC /* Color+Hex.swift */; };
 		72231E60864D846613036681 /* SmartComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79625F3F23FE9A39E4096DD0 /* SmartComposer.swift */; };
+		73D692681CFCA9E9DB9CB3D1 /* AppLockController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE634E20A41BA7DA6525224B /* AppLockController.swift */; };
 		73F633FDBD20DA2F0CF89EA0 /* CurrencyConverterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C864B07A1C84941939F54F /* CurrencyConverterTests.swift */; };
 		74324CDD790A7412041F17E7 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AB22977B8238F3A7032AB83 /* SettingsView.swift */; };
 		77A71FDBFC3B56DDF107FB11 /* AppModel+Auth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF20183ECF856B14C12FABF /* AppModel+Auth.swift */; };
@@ -385,6 +387,7 @@
 		D6E68D64267673FC7CC383FE /* AccountStoreRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountStoreRecoveryTests.swift; sourceTree = "<group>"; };
 		DD1063389855558DE16E2D58 /* LedgerCSVTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerCSVTests.swift; sourceTree = "<group>"; };
 		DD8190FB29D11E5C57776C93 /* LedgerRowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerRowModel.swift; sourceTree = "<group>"; };
+		DE634E20A41BA7DA6525224B /* AppLockController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockController.swift; sourceTree = "<group>"; };
 		E17F6E1E98CF2BD5B5A59C00 /* UndoDeleteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoDeleteTests.swift; sourceTree = "<group>"; };
 		E5C91A7306FB4CE7EF14BEBC /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		ED7E74C56315608E534D7118 /* ExchangeRateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExchangeRateTests.swift; sourceTree = "<group>"; };
@@ -706,6 +709,7 @@
 		FD7663938DD246431EE620E4 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				DE634E20A41BA7DA6525224B /* AppLockController.swift */,
 				C802DFDEE4441B0822458BB6 /* AppModel.swift */,
 				5EF20183ECF856B14C12FABF /* AppModel+Auth.swift */,
 				57A18487944B820EC22DAE5E /* AppModel+Sync.swift */,
@@ -1025,6 +1029,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BE9133DAADA0592B24BBF651 /* AppLock.swift in Sources */,
+				73D692681CFCA9E9DB9CB3D1 /* AppLockController.swift in Sources */,
 				AC9A14E870EA2F3163FC3124 /* AppModel+Auth.swift in Sources */,
 				D3036812DB4D3BB96F60B1C5 /* AppModel+Sync.swift in Sources */,
 				E3A45153629D4F1684335516 /* AppModel.swift in Sources */,
@@ -1117,6 +1122,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				223F3245E7841AA5BCE2723C /* AppLock.swift in Sources */,
+				71A9EF04B79C07BF979795EA /* AppLockController.swift in Sources */,
 				77A71FDBFC3B56DDF107FB11 /* AppModel+Auth.swift in Sources */,
 				8B52FF0B84B8558DFE02033A /* AppModel+Sync.swift in Sources */,
 				8337678026263EA4242B3290 /* AppModel.swift in Sources */,

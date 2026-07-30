@@ -71,4 +71,50 @@ struct AppLockTests {
             authenticationSucceeded: false
         ) == .denied)
     }
+
+    /// The controller drives the same state machine without an `AppModel`, a
+    /// UserDefaults suite, or a window — which is the point of it being its own
+    /// type. The preference is injected, so these never touch the simulator's
+    /// persisted lock setting.
+    private func makeController(enabled: Bool) -> (AppLockController, () -> Bool) {
+        let controller = AppLockController()
+        // A box, so the test can observe the controller turning an impossible
+        // lock off through the `disable` callback.
+        final class Box { var isEnabled: Bool; init(_ value: Bool) { isEnabled = value } }
+        let box = Box(enabled)
+        controller.configure(
+            isEnabled: { box.isEnabled },
+            disable: { box.isEnabled = false },
+            interfaceStyle: { .unspecified },
+            createsWindow: { false }
+        )
+        return (controller, { box.isEnabled })
+    }
+
+    @Test func controllerLockIsOptInWithoutAnAppModel() {
+        let (controller, _) = makeController(enabled: false)
+        controller.lockIfNeeded()
+        #expect(!controller.isLocked)
+        controller.coverIfNeeded()
+        #expect(!controller.isLocked)
+    }
+
+    @Test func controllerSeparatesTheCoverFromTheCommittedLock() {
+        let (controller, isEnabled) = makeController(enabled: true)
+        // The cover only reaches the committed state when the device can
+        // actually authenticate; a simulator without a passcode disables the
+        // lock instead, which is itself the documented behaviour.
+        controller.coverIfNeeded()
+        #expect(!controller.isLocked)
+
+        controller.lockIfNeeded()
+        if isEnabled() {
+            #expect(controller.isLocked)
+        } else {
+            // The lock turned itself off because no passcode is available, and
+            // said so rather than leaving an unlockable cover up.
+            #expect(!controller.isLocked)
+            #expect(controller.notice != nil)
+        }
+    }
 }

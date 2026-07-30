@@ -56,8 +56,17 @@ struct LedgerView: View {
             && ledgerSnapshot?.hasEntries == false
     }
 
-    private func refreshSearchStats() {
-        snapshotCache.refreshSearchStats(isSearching: isSearching, rowBuilder: rowBuilder, app: app)
+    /// Everything the cache needs for one aggregation pass, resolved together so
+    /// a deferred pass cannot see a half-updated set.
+    private var snapshotInputs: LedgerSnapshotCache.Inputs {
+        LedgerSnapshotCache.Inputs(
+            context: context,
+            clients: clients,
+            headings: headings,
+            app: app,
+            isSearching: isSearching,
+            rowBuilder: rowBuilder
+        )
     }
 
     private func ledgerRows(_ snapshot: Insights.LedgerSnapshot) -> [LedgerRow] {
@@ -79,8 +88,8 @@ struct LedgerView: View {
                         rate: app.rate)
     }
 
-    /// `ModelContext.didSave` remains a fallback for saves outside AppModel,
-    /// but device saves need a deterministic invalidation signal for the
+    /// `ModelContext.didSave` remains a fallback for saves outside the mutation
+    /// store, but device saves need a deterministic invalidation signal for the
     /// cached summary snapshot.
     private struct LedgerRevision: Hashable {
         let pricing: PricingRevision
@@ -89,51 +98,6 @@ struct LedgerView: View {
 
     private var ledgerRevision: LedgerRevision {
         LedgerRevision(pricing: pricingRevision, dataRevision: mutations.dataRevision)
-    }
-
-    private func refreshLedgerSnapshot() {
-        snapshotCache.refreshLedgerSnapshot(
-            context: context,
-            clients: clients,
-            headings: headings,
-            app: app,
-            isSearching: isSearching,
-            rowBuilder: rowBuilder
-        )
-    }
-
-    private func scheduleSnapshotRefresh() {
-        snapshotCache.scheduleSnapshotRefresh(
-            context: context,
-            clients: clients,
-            headings: headings,
-            app: app,
-            isSearching: isSearching,
-            rowBuilder: rowBuilder
-        )
-    }
-
-    private func requestLedgerWindowExtension() {
-        snapshotCache.requestWindowExtension(
-            context: context,
-            clients: clients,
-            headings: headings,
-            app: app,
-            isSearching: isSearching,
-            rowBuilder: rowBuilder
-        )
-    }
-
-    private func prefetchLedgerWindowIfNeeded(for displayedMonth: Date) {
-        snapshotCache.prefetchWindowIfNeeded(
-            for: displayedMonth,
-            context: context,
-            clients: clients,
-            headings: headings,
-            app: app,
-            isSearching: isSearching,
-            rowBuilder: rowBuilder
-        )
     }
 
     var body: some View {
@@ -255,7 +219,7 @@ struct LedgerView: View {
                     composerRoute = nil
                     // One full pass, user-initiated: search must span every
                     // month, while the ledger itself stays windowed.
-                    snapshotCache.beginSearch(app: app, clients: clients, rowBuilder: rowBuilder)
+                    snapshotCache.beginSearch(snapshotInputs)
                 } else {
                     search.query = ""
                     search.tokens = []
@@ -264,8 +228,8 @@ struct LedgerView: View {
             }
             // The query and the token chips are the only other inputs to the
             // hit scan, so this is the complete refresh set.
-            .onChange(of: search.query) { _, _ in refreshSearchStats() }
-            .onChange(of: search.tokens) { _, _ in refreshSearchStats() }
+            .onChange(of: search.query) { _, _ in snapshotCache.refreshSearchStats(snapshotInputs) }
+            .onChange(of: search.tokens) { _, _ in snapshotCache.refreshSearchStats(snapshotInputs) }
             .onAppear(perform: runDemoIfNeeded)
             .onChange(of: clients.count) { _, _ in runDemoIfNeeded() }
     }
@@ -359,7 +323,7 @@ struct LedgerView: View {
                             .frame(height: 1)
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .onAppear(perform: requestLedgerWindowExtension)
+                            .onAppear { snapshotCache.requestWindowExtension(snapshotInputs) }
                     }
                 }
             }
@@ -415,7 +379,7 @@ struct LedgerView: View {
         // the ledger fills in a beat later — then again when the currency
         // settings re-price the totals. Data edits arrive via `didSave` below.
         .task(id: ledgerRevision) {
-            refreshLedgerSnapshot()
+            snapshotCache.refreshLedgerSnapshot(snapshotInputs)
         }
         // Every mutation in this app persists through a context save (the
         // LedgerMutationStore.save contract, plus the sync pass's own saves), so this is
@@ -427,7 +391,7 @@ struct LedgerView: View {
         // so an unrelated container's save refreshed this ledger too.
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { notification in
             guard (notification.object as? ModelContext) === context else { return }
-            scheduleSnapshotRefresh()
+            snapshotCache.scheduleSnapshotRefresh(snapshotInputs)
         }
     }
 
@@ -627,7 +591,7 @@ struct LedgerView: View {
             // Preload the next twelve months before the six-month summary trend
             // reaches the edge of the materialized data. The task itself runs
             // after this scroll callback returns.
-            prefetchLedgerWindowIfNeeded(for: m)
+            snapshotCache.prefetchWindowIfNeeded(for: m, inputs: snapshotInputs)
         }
     }
 }

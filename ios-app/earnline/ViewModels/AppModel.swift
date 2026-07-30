@@ -291,11 +291,6 @@ final class AppModel {
     /// `onboardingCompleted` at launch. Replaying from Settings or the debug
     /// menu sets it directly without disturbing the persisted flag.
     var isPresentingOnboarding = false
-    private(set) var isLocked = false
-    /// A non-blocking privacy message shown in Settings after the app disables
-    /// an impossible legacy lock (for example, after the device passcode was
-    /// removed). The ledger is never left behind a cover it cannot unlock.
-    var appLockNotice: String?
     /// A non-blocking warning about account or workspace verification. It
     /// never replaces the visible recovery path or erases the local ledger.
     var accountSecurityNotice: String?
@@ -350,6 +345,10 @@ final class AppModel {
     /// it to the view tree via `.environment`, and wires the sync scheduler into
     /// it. Every screen saves and deletes through the store directly.
     let mutations: LedgerMutationStore
+    /// The optional App Lock, including the alert-level window its cover lives
+    /// in. Owned here so the scene-phase hooks have one destination, but the
+    /// window management itself is no longer this type's concern.
+    let appLock: AppLockController
     @ObservationIgnored var supabaseClient: SupabaseClient?
     @ObservationIgnored var authStorage: EarnlineAuthStorage?
     @ObservationIgnored var queuedSyncTask: Task<Void, Never>?
@@ -376,13 +375,12 @@ final class AppModel {
     @ObservationIgnored let pathMonitor = NWPathMonitor()
     @ObservationIgnored var pathMonitorStarted = false
     @ObservationIgnored var pathWasSatisfied = true
-    @ObservationIgnored private var lockWindow: UIWindow?
-    @ObservationIgnored private var isUnlocking = false
 
     // swiftlint:disable:next function_body_length
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         mutations = LedgerMutationStore()
+        appLock = AppLockController()
         Self.migrateWorkspaceCurrencyProfilesIfNeeded(defaults: defaults)
 
         let savedEnvironment = defaults.string(forKey: "workspaceEnvironment").flatMap(WorkspaceEnvironment.init(rawValue:))
@@ -527,111 +525,36 @@ final class AppModel {
         mutations.configureSyncScheduler { [weak self] context in
             self?.queueSync(context: context)
         }
+        // The lock preference and the appearance override stay owned here (one
+        // place for every UserDefaults key, one place for the window style); the
+        // controller only reads them and reports back when it has to turn an
+        // impossible lock off.
+        appLock.configure(
+            isEnabled: { [weak self] in self?.requireAppLock ?? false },
+            disable: { [weak self] in self?.requireAppLock = false },
+            interfaceStyle: { [weak self] in self?.appearanceMode.uiStyle ?? .unspecified },
+            createsWindow: { !Self.isRunningUnitTests }
+        )
     }
 
     // MARK: App lock
 
-    /// Cold launches start covered when the lock is on; the biometric prompt
-    /// fires as soon as the window exists (called from the root `.task`).
-    func lockOnLaunchIfNeeded() {
-        guard canUseAppLock else { return }
-        isLocked = true
-        showLockWindow()
-        attemptUnlockIfNeeded()
+    /// The lock's own state machine and its alert-level window live in
+    /// `AppLockController`. These forward the scene-phase hooks so the host keeps
+    /// one place to call, and `isLocked` / `appLockNotice` stay readable where
+    /// Settings and the UI tests already look for them.
+    var isLocked: Bool { appLock.isLocked }
+
+    var appLockNotice: String? {
+        get { appLock.notice }
+        set { appLock.notice = newValue }
     }
 
-    /// Called on backgrounding — covers the content before the app-switcher
-    /// snapshot is taken, so amounts never show in the multitasking UI.
-    func lockIfNeeded() {
-        guard canUseAppLock, !isLocked else { return }
-        isLocked = true
-        showLockWindow()
-    }
-
-    /// Called on `.inactive` — the app-switcher snapshot is taken while the
-    /// scene is still inactive, before `.background` fires, so waiting for
-    /// backgrounding briefly exposed the ledger in the multitasking UI. This
-    /// shows the cover *without* committing the lock: swiping away Control
-    /// Center or an incoming-call banner returns straight to content, no
-    /// re-authentication.
-    func coverIfNeeded() {
-        guard canUseAppLock, !isLocked else { return }
-        showLockWindow()
-    }
-
-    /// Called on `.active` — removes an uncommitted privacy cover. A real
-    /// lock (set on `.background`) stays up until `attemptUnlockIfNeeded`
-    /// succeeds.
-    func uncoverIfNeeded() {
-        guard !isLocked else { return }
-        hideLockWindow()
-    }
-
-    /// Called on activation and by the lock screen's Unlock button.
-    func attemptUnlockIfNeeded() {
-        guard isLocked, !isUnlocking else { return }
-        isUnlocking = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            switch await AppLockAuth.evaluate(reason: String(localized: "Unlock your income ledger")) {
-            case .authenticated:
-                self.isLocked = false
-                self.hideLockWindow()
-            case .unavailable:
-                self.disableUnavailableAppLock()
-                self.isLocked = false
-                self.hideLockWindow()
-            case .denied:
-                break
-            }
-            self.isUnlocking = false
-        }
-    }
-
-    private var canUseAppLock: Bool {
-        guard requireAppLock else { return false }
-        guard AppLockAuth.isAuthenticationAvailable else {
-            disableUnavailableAppLock()
-            return false
-        }
-        return true
-    }
-
-    private func disableUnavailableAppLock() {
-        guard requireAppLock else { return }
-        requireAppLock = false
-        appLockNotice = String(localized: "App Lock was turned off because this iPhone no longer has a device passcode.")
-    }
-
-    /// The lock lives in its own alert-level window for the same reason dark
-    /// mode is a window-level override: a SwiftUI overlay in the root view
-    /// sits *under* presented sheets, and the lock must cover those too.
-    private func showLockWindow() {
-        guard !Self.isRunningUnitTests else { return }
-        guard lockWindow == nil else { return }
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard let scene = scenes.first(where: { $0.activationState != .unattached }) ?? scenes.first else { return }
-        let window = UIWindow(windowScene: scene)
-        window.windowLevel = .alert + 1
-        window.overrideUserInterfaceStyle = appearanceMode.uiStyle
-        window.rootViewController = UIHostingController(
-            rootView: LockScreenView { [weak self] in self?.attemptUnlockIfNeeded() }
-        )
-        window.makeKeyAndVisible()
-        lockWindow = window
-    }
-
-    private func hideLockWindow() {
-        guard let window = lockWindow else { return }
-        // Tear the alert-level window down in UIKit's expected order. Leaving
-        // its hosting controller attached while dropping the last window
-        // reference produced unbalanced appearance transitions in tests and
-        // could leave the main scene without a key window after unlock.
-        window.resignKey()
-        window.isHidden = true
-        window.rootViewController = nil
-        lockWindow = nil
-    }
+    func lockOnLaunchIfNeeded() { appLock.lockOnLaunchIfNeeded() }
+    func lockIfNeeded() { appLock.lockIfNeeded() }
+    func coverIfNeeded() { appLock.coverIfNeeded() }
+    func uncoverIfNeeded() { appLock.uncoverIfNeeded() }
+    func attemptUnlockIfNeeded() { appLock.attemptUnlockIfNeeded() }
 
     // MARK: Appearance
 

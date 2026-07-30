@@ -33,8 +33,7 @@ struct LedgerSnapshotCacheTests {
             searchTokens: []
         )
         let cache = LedgerSnapshotCache()
-
-        cache.refreshLedgerSnapshot(
+        let inputs = LedgerSnapshotCache.Inputs(
             context: context,
             clients: [client],
             headings: [],
@@ -42,10 +41,12 @@ struct LedgerSnapshotCacheTests {
             isSearching: false,
             rowBuilder: builder
         )
+
+        cache.refreshLedgerSnapshot(inputs)
         #expect(cache.ledgerSnapshot?.hasEntries == true)
         #expect(cache.searchSnapshot == nil)
 
-        cache.beginSearch(app: app, clients: [client], rowBuilder: builder)
+        cache.beginSearch(inputs)
         #expect(cache.searchSnapshot?.hasEntries == true)
         #expect(cache.searchStats.hitCount == 1)
         #expect(cache.searchStats.earnedTotal == 240)
