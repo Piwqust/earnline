@@ -16,6 +16,7 @@ import SwiftData
 /// Figma: node `471:4904` (`Onboarding_1` … `Onboarding_3`).
 struct OnboardingFlowView: View {
     @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.modelContext) private var context
     @Query(sort: \Client.sortIndex) private var clients: [Client]
 
@@ -163,8 +164,8 @@ struct OnboardingFlowView: View {
         guard let validName = clientValidation.validName else { return }
         let client = Client(name: validName, colorHex: colorHex, sortIndex: clients.count)
         context.insert(client)
-        if let error = app.save(context) {
-            // `AppModel.save` already rolled the failed transaction back.
+        if let error = mutations.save(context) {
+            // `LedgerMutationStore.save` already rolled the failed transaction back.
             saveError = error
             return
         }

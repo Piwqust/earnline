@@ -10,7 +10,7 @@ import SwiftData
 struct EditClientSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.dynamicTypeSize) private var typeSize
 
     let client: Client
@@ -152,7 +152,7 @@ struct EditClientSheet: View {
         client.name = validName
         client.colorHex = colorHex
         client.markDirty()
-        if let error = app.save(context) {
+        if let error = mutations.save(context) {
             saveError = error
         } else {
             dismiss()

@@ -10,6 +10,7 @@ struct PendingView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     /// Scoped to in-progress rows in SQL. This list used to be derived by
     /// walking `clients.flatMap(\.entries)`, which faulted every entry in the
@@ -151,12 +152,12 @@ struct PendingView: View {
     }
 
     private func delete(_ entry: Entry) {
-        saveError = app.delete(entry, context: context)
+        saveError = mutations.delete(entry, context: context)
     }
 
     @discardableResult
     private func save() -> Bool {
-        saveError = app.save(context)
+        saveError = mutations.save(context)
         return saveError == nil
     }
 }

@@ -23,7 +23,7 @@ enum CSVTransferRoute: String, Identifiable {
 /// Validation completes before the transaction is touched; the eventual one
 /// context save makes the selected rows plus any confirmed new clients atomic.
 struct CSVTransferView: View {
-    @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query(sort: \Entry.date, order: .reverse) private var entries: [Entry]
@@ -331,7 +331,7 @@ struct CSVTransferView: View {
             context.insert(entry)
         }
 
-        if let error = app.save(context) {
+        if let error = mutations.save(context) {
             saveError = error
         } else {
             completedImportCount = preview.rows.count

@@ -79,6 +79,7 @@ struct ProjectIconsSettingsView: View {
 
 private struct ProjectSymbolPickerView: View {
     @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.modelContext) private var context
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -263,7 +264,7 @@ private struct ProjectSymbolPickerView: View {
         guard symbol != selection else { return }
         do {
             try ProjectIconPreferenceStore.set(symbol, for: projectName, in: context)
-            saveError = app.save(context)
+            saveError = mutations.save(context)
             if saveError == nil { selectionFeedback += 1 }
         } catch {
             saveError = error.localizedDescription

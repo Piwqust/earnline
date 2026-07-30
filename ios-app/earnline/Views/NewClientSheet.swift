@@ -9,7 +9,7 @@ import SwiftData
 struct NewClientSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.dynamicTypeSize) private var typeSize
 
     let existingClients: [Client]
@@ -104,7 +104,7 @@ struct NewClientSheet: View {
         guard let validName = validation.validName else { return }
         let client = Client(name: validName, colorHex: colorHex, sortIndex: existingCount)
         context.insert(client)
-        if let error = app.save(context) {
+        if let error = mutations.save(context) {
             saveError = error
         } else {
             onCreate(client)

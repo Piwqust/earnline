@@ -9,6 +9,7 @@ struct PasteLinesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
 
     let clients: [Client]
     var defaultClient: Client?
@@ -179,8 +180,8 @@ struct PasteLinesSheet: View {
             entry.client = client
             context.insert(entry)
         }
-        if let error = app.save(context) {
-            // `AppModel.save` rolls the entire failed transaction back.
+        if let error = mutations.save(context) {
+            // `LedgerMutationStore.save` rolls the entire failed transaction back.
             saveError = error
         } else {
             successFeedback += 1

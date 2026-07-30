@@ -7,6 +7,7 @@ import SwiftData
 struct SmartComposer: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let client: Client
@@ -37,6 +38,11 @@ struct SmartComposer: View {
     @State private var showHoldPicker = false
     @State private var primed = false
     @State private var saveError: String?
+    /// Haptics ride `.sensoryFeedback` like every other surface in the app,
+    /// rather than instantiating UIKit generators at the call site: one idiom,
+    /// and the system owns preparation and the accessibility preference.
+    @State private var commitFeedback = 0
+    @State private var rejectedFeedback = 0
     /// Distinct recent project names for the chevron menu, collected once when
     /// the composer opens.
     ///
@@ -113,6 +119,8 @@ struct SmartComposer: View {
             if let holdUntil, holdUntil < newValue { self.holdUntil = newValue }
         }
         .saveErrorAlert($saveError, title: "Could not save line")
+        .sensoryFeedback(.impact(weight: .medium), trigger: commitFeedback)
+        .sensoryFeedback(.warning, trigger: rejectedFeedback)
     }
 
     // MARK: Chips
@@ -390,13 +398,13 @@ struct SmartComposer: View {
         )
         entry.client = client
         context.insert(entry)
-        if let error = app.save(context) {
-            // `AppModel.save` has already rolled the failed transaction back.
+        if let error = mutations.save(context) {
+            // `LedgerMutationStore.save` has already rolled the failed transaction back.
             // Do not mutate the context again here, or this error path itself
             // becomes a new pending delete.
             saveError = error
         } else {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            commitFeedback &+= 1
             // The line just committed may have introduced a project name, and
             // the next line is usually typed straight after.
             loadExistingProjects()
@@ -410,7 +418,7 @@ struct SmartComposer: View {
         }
     }
 
-    private func warn() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+    private func warn() { rejectedFeedback &+= 1 }
 }
 
 /// A compact graphical date picker shown as an anchored popover (tooltip), not a sheet.

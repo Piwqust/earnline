@@ -223,7 +223,7 @@ enum ProjectIconPreferenceError: LocalizedError, Equatable {
 }
 
 /// Mutation boundary for Settings/UI integration. This intentionally does not
-/// save the context: callers use `AppModel.save(_:)` so failure and sync queueing
+/// save the context: callers use `LedgerMutationStore.save(_:)` so failure and sync queueing
 /// follow the same visible contract as every other Earnline edit.
 @MainActor
 enum ProjectIconPreferenceStore {

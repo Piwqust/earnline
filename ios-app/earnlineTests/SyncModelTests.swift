@@ -4,7 +4,10 @@ import Testing
 @testable import earnline
 
 struct SyncModelTests {
-    @Test @MainActor func successfulLedgerSaveAdvancesTheSummaryRevision() throws {
+    /// `AppModel` no longer forwards saves; it composes the store and wires the
+    /// debounced sync scheduler into it. That wiring is what this covers — the
+    /// save/revision/undo contract itself lives in `LedgerMutationStoreTests`.
+    @Test @MainActor func appModelWiresTheMutationStoreIntoTheSyncScheduler() throws {
         let suite = "earnline-summary-revision-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -16,12 +19,16 @@ struct SyncModelTests {
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let app = AppModel(defaults: defaults)
-        let baseline = app.ledgerDataRevision
+        let baseline = app.mutations.dataRevision
 
         container.mainContext.insert(Client(name: "Acme"))
 
-        #expect(app.save(container.mainContext) == nil)
-        #expect(app.ledgerDataRevision == baseline + 1)
+        #expect(app.mutations.save(container.mainContext) == nil)
+        #expect(app.mutations.dataRevision == baseline + 1)
+        // A committed mutation must reach the app's debounced sync pass, not
+        // only advance the revision the views observe.
+        #expect(app.queuedSyncTask != nil)
+        app.queuedSyncTask?.cancel()
     }
 
     @Test @MainActor func workspaceCurrencyProfilesStaySeparateAndMigrationPullsCloudFirst() {
@@ -304,10 +311,13 @@ struct SyncModelTests {
 
         client.entries = [paid, progress, canceled]
 
-        #expect(app.insights.total(of: client, in: monthDate) == 150)
-        #expect(app.insights.monthTotal([client], in: monthDate) == 150)
-        #expect(app.insights.entries(of: client, in: monthDate).count == 3)
-        #expect(app.insights.earnedEntries(of: client, in: monthDate).count == 2)
+        let snapshot = app.insights.ledgerSnapshot([client])
+        let key = snapshot.key(for: monthDate)
+        #expect(snapshot.total(of: client, monthKey: key) == 150)
+        #expect(snapshot.monthTotal(monthKey: key) == 150)
+        // All three lines stay visible in the ledger; only the earned total
+        // excludes the canceled one.
+        #expect(snapshot.entries(of: client, monthKey: key).count == 3)
     }
 
     @Test func syncRetryDelaysBackOffThenStop() {

@@ -3,10 +3,10 @@ import SwiftData
 import Testing
 @testable import earnline
 
-/// Direct coverage for the extracted `Insights` aggregation type. The existing
-/// `InsightsTests` drive it through `AppModel`'s forwarders; these exercise the
-/// value type itself and fill gaps the old suite didn't cover — month-over-month
-/// deltas, the pending-queue ordering, overdue detection, and `monthsWithData`.
+/// Direct coverage for the `Insights` aggregation type: the single-pass
+/// `LedgerSnapshot` (totals per client-month, month list, row order, and the
+/// windowed variant's whole-store facts), the pending-queue ordering, and
+/// overdue detection.
 @MainActor
 struct InsightsAggregationTests {
     private func insights(rate: Double = 100) -> Insights {
@@ -30,7 +30,8 @@ struct InsightsAggregationTests {
             Entry(amount: 999, task: "canceled", date: thisMonth, status: .canceled),
         ]
         b.entries = [Entry(amount: 50, task: "progress", date: thisMonth, status: .inProgress)]
-        #expect(insights().monthTotal([a, b], in: thisMonth) == 150)
+        let snapshot = insights().ledgerSnapshot([a, b])
+        #expect(snapshot.monthTotal(monthKey: snapshot.key(for: thisMonth)) == 150)
     }
 
     @Test func pendingEntriesOrderDatedBeforeUndatedThenBySoonestHold() {
@@ -60,10 +61,10 @@ struct InsightsAggregationTests {
         #expect(!ins.isOverdue(paidPast)) // only in-progress lines can be overdue
     }
 
-    @Test func monthsWithDataAlwaysIncludesThisMonthNewestFirst() {
+    @Test func snapshotMonthsAlwaysIncludeThisMonthNewestFirst() {
         let client = Client(name: "Acme")
         client.entries = [Entry(amount: 10, task: "old", date: monthsAgo(2), status: .paid)]
-        let months = insights().monthsWithData([client])
+        let months = insights().ledgerSnapshot([client]).months
         #expect(months.first == thisMonth)           // this month always present, newest first
         #expect(months.contains(DateFormat.monthStart(of: monthsAgo(2))))
         #expect(months == months.sorted(by: >))       // strictly descending
@@ -108,7 +109,7 @@ struct InsightsAggregationTests {
         ))
     }
 
-    @Test func ledgerSnapshotMatchesPerMonthAggregation() {
+    @Test func ledgerSnapshotBucketsTotalsByClientAndMonth() {
         let ins = insights()
         let a = Client(name: "A")
         let b = Client(name: "B")
@@ -123,33 +124,38 @@ struct InsightsAggregationTests {
         let nowKey = snapshot.key(for: thisMonth)
         let oldKey = snapshot.key(for: monthsAgo(2))
 
-        // Same months contract as monthsWithData.
-        #expect(snapshot.months == ins.monthsWithData([a, b]))
-        // Same totals as the per-month sweeps.
-        #expect(snapshot.monthTotal(monthKey: nowKey) == ins.monthTotal([a, b], in: thisMonth))
-        #expect(snapshot.monthTotal(monthKey: oldKey) == ins.monthTotal([a, b], in: monthsAgo(2)))
-        #expect(snapshot.total(of: a, monthKey: nowKey) == ins.total(of: a, in: thisMonth))
+        // Every month with a row is present, newest first, plus this month.
+        #expect(snapshot.months.first == thisMonth)
+        #expect(snapshot.months.contains(DateFormat.monthStart(of: monthsAgo(2))))
+        // Paid + in-progress across both clients; the canceled line is excluded.
+        #expect(snapshot.monthTotal(monthKey: nowKey) == 150)
+        #expect(snapshot.monthTotal(monthKey: oldKey) == 40)
+        #expect(snapshot.total(of: a, monthKey: nowKey) == 100)
+        #expect(snapshot.total(of: b, monthKey: nowKey) == 50)
         // Canceled lines appear in the rows but not in earned totals.
         #expect(snapshot.entries(of: a, monthKey: nowKey).count == 2)
-        #expect(snapshot.monthTotal(monthKey: nowKey) == 150)
         // Months without data read as zero, not as a crash or a miss.
         #expect(snapshot.monthTotal(monthKey: snapshot.key(for: monthsAgo(1))) == 0)
         #expect(!snapshot.hasEntries(b, monthKey: oldKey))
     }
 
-    @Test func ledgerSnapshotOrdersEntriesLikeEntriesOf() {
+    /// Ledger row order: ascending `sortIndex`, newest-created first on a tie.
+    @Test func ledgerSnapshotOrdersEntriesBySortIndexThenNewestCreated() {
         let ins = insights()
         let client = Client(name: "Acme")
-        let early = Entry(amount: 1, task: "early", date: thisMonth, sortIndex: 1)
-        let late = Entry(amount: 2, task: "late", date: thisMonth, sortIndex: 0)
-        let tie = Entry(amount: 3, task: "tie", date: thisMonth, sortIndex: 1)
+        let early = Entry(amount: 1, task: "early", date: thisMonth,
+                          sortIndex: 1, createdAt: date(2026, 1, 1))
+        let late = Entry(amount: 2, task: "late", date: thisMonth,
+                         sortIndex: 0, createdAt: date(2026, 1, 2))
+        let tie = Entry(amount: 3, task: "tie", date: thisMonth,
+                        sortIndex: 1, createdAt: date(2026, 1, 3))
         client.entries = [early, late, tie]
 
         let snapshot = ins.ledgerSnapshot([client])
-        let fromSnapshot = snapshot.entries(of: client, monthKey: snapshot.key(for: thisMonth)).map(\.task)
-        let fromFilter = ins.entries(of: client, in: thisMonth).map(\.task)
-        #expect(fromSnapshot == fromFilter)
-        #expect(fromSnapshot.first == "late") // sortIndex 0 leads
+        let ordered = snapshot.entries(of: client, monthKey: snapshot.key(for: thisMonth)).map(\.task)
+        // sortIndex 0 leads; the two index-1 rows tie and fall back to createdAt
+        // descending, so the newer "tie" precedes "early".
+        #expect(ordered == ["late", "tie", "early"])
     }
 
     @Test func windowedLedgerSnapshotMatchesFullAggregationForWindowMonths() {
@@ -170,7 +176,7 @@ struct InsightsAggregationTests {
                                           hasAnyEntries: true,
                                           pendingCount: 7)
         let key = windowed.key(for: thisMonth)
-        #expect(windowed.total(of: client, monthKey: key) == ins.total(of: client, in: thisMonth))
+        #expect(windowed.total(of: client, monthKey: key) == 100)
         #expect(windowed.monthTotal(monthKey: key) == 100)
         #expect(windowed.entries(of: client, monthKey: key).map(\.task) == ["recent"])
         // The old month is outside the window: no rows, no month.

@@ -4,50 +4,15 @@ import SwiftData
 struct LedgerView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(sort: \Client.sortIndex) private var clients: [Client]
     @Query(sort: \Heading.date, order: .reverse) private var headings: [Heading]
 
-    /// The one aggregation pass over the whole ledger, cached across body
-    /// evaluations. `LedgerView.body` re-evaluates many times around launch
-    /// (query delivery, appearance, toolbar/safe-area setup), and rebuilding
-    /// the snapshot inline made each of those a full SwiftData walk — on a
-    /// several-thousand-line ledger that was seconds of white screen before
-    /// the first frame. Refreshed by `ModelContext.didSave` (every edit,
-    /// insert, delete, import, undo, and sync pull in this app persists
-    /// through a save) and by the pricing task below for currency changes,
-    /// which don't touch the store.
-    @State private var ledgerSnapshot: Insights.LedgerSnapshot?
-    /// Trailing months currently materialized — see `refreshLedgerSnapshot`.
-    @State private var windowMonthCount = LedgerView.initialWindowMonths
-    /// Coalesces sentinel and month-boundary prefetch requests. SwiftData work
-    /// happens in a later task, never inside a scroll-position callback.
-    @State private var isExtendingLedgerWindow = false
-    /// Coalesces the save burst a sync pass produces — see `scheduleSnapshotRefresh`.
-    @State private var isSnapshotRefreshScheduled = false
-    /// Full-ledger snapshot for search, built when search opens: search spans
-    /// every month, not just the materialized window.
-    @State private var searchSnapshot: Insights.LedgerSnapshot?
-    /// Filter-menu inventory (months, clients, projects) gathered in the same
-    /// pass, so the native menu never walks the store per render.
-    @State private var searchFilterSource: EntrySearch.FilterSource?
-    /// Hit count and earned total for the active search, computed once per
-    /// query/token/store change.
-    ///
-    /// These were computed properties reading `rowBuilder.searchHits`, which
-    /// walks every client's entries. `rowBuilder` is rebuilt on every body
-    /// evaluation and the hits were read four times per render (header count,
-    /// empty-state check, earned total, and the total's own re-read) — so each
-    /// keystroke in the search field cost four full-ledger scans. Only the two
-    /// scalars are kept: holding `[Entry]` in view state would also mean holding
-    /// models a sync pull can invalidate underneath it.
-    @State private var searchStats = SearchStats()
-
-    struct SearchStats: Equatable {
-        var hitCount = 0
-        var earnedTotal: Decimal = .zero
-    }
+    /// Keeps cache invalidation and deferred SwiftData aggregation outside the
+    /// navigation view. The screen still owns routes, sheets, and user input.
+    @State private var snapshotCache = LedgerSnapshotCache()
 
     /// Mutually exclusive UI presentations are represented as typed routes,
     /// avoiding combinations such as two active sheets or two delete alerts.
@@ -77,6 +42,10 @@ struct LedgerView: View {
 
     private var activeComposerClient: Client? { rowBuilder.activeComposerClient }
     private var hasSearchFilter: Bool { rowBuilder.hasSearchFilter }
+    private var ledgerSnapshot: Insights.LedgerSnapshot? { snapshotCache.ledgerSnapshot }
+    private var searchSnapshot: Insights.LedgerSnapshot? { snapshotCache.searchSnapshot }
+    private var searchFilterSource: EntrySearch.FilterSource? { snapshotCache.searchFilterSource }
+    private var searchStats: LedgerSnapshotCache.SearchStats { snapshotCache.searchStats }
     /// A large first-earnings header is useful context but cannot remain fixed
     /// above the onboarding card at accessibility sizes: it would cover the
     /// card as the person scrolls to its primary action. Let it scroll with the
@@ -87,20 +56,8 @@ struct LedgerView: View {
             && ledgerSnapshot?.hasEntries == false
     }
 
-    /// One scan per query/token/store change, replacing the four per render.
     private func refreshSearchStats() {
-        guard isSearching else {
-            searchStats = SearchStats()
-            return
-        }
-        let hits = rowBuilder.searchHits
-        searchStats = SearchStats(
-            hitCount: hits.count,
-            earnedTotal: hits.reduce(.zero) { total, entry in
-                guard entry.status.isIncludedInEarnedTotals else { return total }
-                return total + app.toBase(entry.amount, code: entry.currencyCode)
-            }
-        )
+        snapshotCache.refreshSearchStats(isSearching: isSearching, rowBuilder: rowBuilder, app: app)
     }
 
     private func ledgerRows(_ snapshot: Insights.LedgerSnapshot) -> [LedgerRow] {
@@ -131,95 +88,52 @@ struct LedgerView: View {
     }
 
     private var ledgerRevision: LedgerRevision {
-        LedgerRevision(pricing: pricingRevision, dataRevision: app.ledgerDataRevision)
-    }
-
-    /// How many trailing months the ledger materializes. Launch fetches only
-    /// this window (a date-scoped SQL fetch — the whole table is never
-    /// faulted); scrolling toward the bottom extends it. Eight gives the
-    /// summary trend enough room to remain continuous before prefetch begins.
-    private static let initialWindowMonths = 8
-    private static let windowExtensionMonths = 12
-
-    private var windowStart: Date {
-        let thisMonth = DateFormat.monthStart(of: .now)
-        return Calendar.current.date(byAdding: .month,
-                                     value: -(windowMonthCount - 1),
-                                     to: thisMonth) ?? .distantPast
+        LedgerRevision(pricing: pricingRevision, dataRevision: mutations.dataRevision)
     }
 
     private func refreshLedgerSnapshot() {
-        let start = windowStart
-        let inWindow = FetchDescriptor<Entry>(predicate: #Predicate { $0.date >= start })
-        let entries = (try? context.fetch(inWindow)) ?? []
-        // Whole-store facts come from SQL counts, not from walking rows.
-        let older = FetchDescriptor<Entry>(predicate: #Predicate { $0.date < start })
-        let olderCount = (try? context.fetchCount(older)) ?? 0
-        let inProgressRaw = EntryStatus.inProgress.rawValue
-        let pending = FetchDescriptor<Entry>(predicate: #Predicate { $0.statusRaw == inProgressRaw })
-        let pendingCount = (try? context.fetchCount(pending)) ?? 0
-        // Notes are independent ledger events. Include their months in the
-        // window even when a month has no income rows, and let an older note
-        // request the same incremental history prefetch as an older entry.
-        let visibleHeadingMonths = headings.compactMap { heading -> Date? in
-            guard !heading.isInvalidated, heading.date >= start else { return nil }
-            return DateFormat.monthStart(of: heading.date)
-        }
-        let hasOlderHeadings = headings.contains { heading in
-            !heading.isInvalidated && heading.date < start
-        }
-        ledgerSnapshot = app.insights.ledgerSnapshot(windowed: entries,
-                                                     hasOlderMonths: olderCount > 0 || hasOlderHeadings,
-                                                     hasAnyEntries: olderCount > 0 || !entries.isEmpty,
-                                                     pendingCount: pendingCount,
-                                                     additionalMonths: visibleHeadingMonths)
-        // Search spans every month, not just the window; keep its full
-        // snapshot in step while it's open.
-        if isSearching {
-            searchSnapshot = app.insights.ledgerSnapshot(clients)
-            refreshSearchStats()
-        }
+        snapshotCache.refreshLedgerSnapshot(
+            context: context,
+            clients: clients,
+            headings: headings,
+            app: app,
+            isSearching: isSearching,
+            rowBuilder: rowBuilder
+        )
     }
 
-    /// Coalesce a burst of saves into one re-aggregation. A sync pass saves
-    /// three times in quick succession, and an import saves once per batch;
-    /// re-aggregating per save was pure waste, since only the last state shows.
     private func scheduleSnapshotRefresh() {
-        guard !isSnapshotRefreshScheduled else { return }
-        isSnapshotRefreshScheduled = true
-        Task { @MainActor in
-            await Task.yield()
-            isSnapshotRefreshScheduled = false
-            guard !Task.isCancelled else { return }
-            refreshLedgerSnapshot()
-        }
+        snapshotCache.scheduleSnapshotRefresh(
+            context: context,
+            clients: clients,
+            headings: headings,
+            app: app,
+            isSearching: isSearching,
+            rowBuilder: rowBuilder
+        )
     }
 
-    /// Materialize older months once the user nears the bottom of the window
-    /// (the load-older sentinel row) or scrolls the summary pill close to the
-    /// window's edge, where the six-month trend would otherwise miss data.
     private func requestLedgerWindowExtension() {
-        guard ledgerSnapshot?.hasOlderMonths == true, !isExtendingLedgerWindow else { return }
-        isExtendingLedgerWindow = true
-        // A List can prefetch the sentinel while the user is still scrolling.
-        // Yielding separates the SQL fetch from that scroll update, and the
-        // flag coalesces repeated sentinel/top-row signals into one extension.
-        Task { @MainActor in
-            await Task.yield()
-            defer { isExtendingLedgerWindow = false }
-            guard !Task.isCancelled, ledgerSnapshot?.hasOlderMonths == true else { return }
-            windowMonthCount += Self.windowExtensionMonths
-            refreshLedgerSnapshot()
-        }
+        snapshotCache.requestWindowExtension(
+            context: context,
+            clients: clients,
+            headings: headings,
+            app: app,
+            isSearching: isSearching,
+            rowBuilder: rowBuilder
+        )
     }
 
     private func prefetchLedgerWindowIfNeeded(for displayedMonth: Date) {
-        guard LedgerWindowPrefetch.needsExtension(
+        snapshotCache.prefetchWindowIfNeeded(
             for: displayedMonth,
-            windowStart: windowStart,
-            hasOlderMonths: ledgerSnapshot?.hasOlderMonths == true
-        ) else { return }
-        requestLedgerWindowExtension()
+            context: context,
+            clients: clients,
+            headings: headings,
+            app: app,
+            isSearching: isSearching,
+            rowBuilder: rowBuilder
+        )
     }
 
     var body: some View {
@@ -341,15 +255,11 @@ struct LedgerView: View {
                     composerRoute = nil
                     // One full pass, user-initiated: search must span every
                     // month, while the ledger itself stays windowed.
-                    searchSnapshot = app.insights.ledgerSnapshot(clients)
-                    searchFilterSource = buildSearchFilterSource()
-                    refreshSearchStats()
+                    snapshotCache.beginSearch(app: app, clients: clients, rowBuilder: rowBuilder)
                 } else {
                     search.query = ""
                     search.tokens = []
-                    searchSnapshot = nil
-                    searchFilterSource = nil
-                    searchStats = SearchStats()
+                    snapshotCache.endSearch()
                 }
             }
             // The query and the token chips are the only other inputs to the
@@ -508,7 +418,7 @@ struct LedgerView: View {
             refreshLedgerSnapshot()
         }
         // Every mutation in this app persists through a context save (the
-        // AppModel.save contract, plus the sync pass's own saves), so this is
+        // LedgerMutationStore.save contract, plus the sync pass's own saves), so this is
         // the one complete invalidation signal for the cached snapshot.
         //
         // Filtered and coalesced, though. One sync pass saves three times, and
@@ -548,28 +458,6 @@ struct LedgerView: View {
         }
     }
 
-    // MARK: Search filters
-
-    /// One walk over the store at search-open time: distinct months arrive
-    /// with the full snapshot; clients and their distinct project names are
-    /// collected here so native menu rendering is pure lookup.
-    private func buildSearchFilterSource() -> EntrySearch.FilterSource {
-        var source = EntrySearch.FilterSource()
-        source.months = searchSnapshot?.months ?? []
-        var seenProjects: Set<String> = []
-        var projects: [String] = []
-        for client in clients where !client.isInvalidated {
-            source.clients.append(.init(id: client.id, name: client.name))
-            for entry in client.entries where !entry.isInvalidated {
-                guard let project = entry.project, !project.isEmpty,
-                      seenProjects.insert(EntrySearch.normalized(project)).inserted else { continue }
-                projects.append(project)
-            }
-        }
-        source.projects = projects.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        return source
-    }
-
     private func rowsView(_ rows: [LedgerRow]) -> some View {
         LedgerRowsView(
             rows: rows,
@@ -596,7 +484,7 @@ struct LedgerView: View {
     }
 
     private func delete(_ e: Entry) {
-        saveError = app.delete(e, context: context)
+        saveError = mutations.delete(e, context: context)
         if saveError == nil {
             feedback.success += 1
         }
@@ -607,7 +495,7 @@ struct LedgerView: View {
     private func toggleComposer(_ client: Client, month: Date) {
         let m = DateFormat.monthStart(of: month)
         withAnimation(.smooth(duration: 0.3)) {
-            if activeComposerClient?.id == client.id, isComposerMonth(m) {
+            if activeComposerClient?.id == client.id, rowBuilder.isComposerMonth(m) {
                 composerRoute = nil
             } else {
                 composerRoute = LedgerComposerRoute(clientID: client.id, month: m)
@@ -622,11 +510,6 @@ struct LedgerView: View {
                 month: DateFormat.monthStart(of: month)
             )
         }
-    }
-
-    private func newProject() {
-        if clients.isEmpty { sheetRoute = .newClient; return }
-        if let c = mostRecentClient { openComposer(for: c, month: app.displayedMonth) }
     }
 
     private var mostRecentClient: Client? {
@@ -716,12 +599,12 @@ struct LedgerView: View {
         let snapshot = UndoableDelete.heading(HeadingSnapshot(h))
         SyncDeleteQueue.enqueue(.heading, id: h.id, in: context)
         withAnimation(.snappy) { context.delete(h) }
-        if saveChanges() { app.stageUndo(snapshot) }
+        if saveChanges() { mutations.stageUndo(snapshot) }
     }
 
     @discardableResult
     private func saveChanges() -> Bool {
-        saveError = app.save(context)
+        saveError = mutations.save(context)
         return saveError == nil
     }
 
@@ -746,10 +629,5 @@ struct LedgerView: View {
             // after this scroll callback returns.
             prefetchLedgerWindowIfNeeded(for: m)
         }
-    }
-
-    private func isComposerMonth(_ month: Date) -> Bool {
-        guard let composerMonth = composerRoute?.month else { return false }
-        return Calendar.current.isDate(month, equalTo: composerMonth, toGranularity: .month)
     }
 }

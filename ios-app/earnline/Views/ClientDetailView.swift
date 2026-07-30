@@ -294,7 +294,7 @@ struct ClientDetailView: View {
                     ClientTransactionsView(
                         title: status.title,
                         clientID: client.id,
-                        filter: .status(status.rawValue)
+                        filter: .status(status)
                     )
                 } label: {
                     ChromeRow(icon: nil) {
@@ -415,7 +415,7 @@ struct ClientDetailView: View {
         Task { @MainActor in
             SyncDeleteQueue.enqueue(.client, id: target.id, in: context)
             context.delete(target)
-            // Same save + sync + undo contract as AppModel.delete: the undo
+            // Same save + sync + undo contract as LedgerMutationStore.delete: the
             // toast is only staged once the delete actually persisted —
             // offering to restore a delete that failed would undo nothing.
             if mutations.save(context) == nil {

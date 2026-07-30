@@ -19,7 +19,7 @@ struct EditEntrySheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @AppStorage(ProjectIconAppearance.userDefaultsKey) private var projectIconAppearanceRaw = ProjectIconAppearance.fill.rawValue
     @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
     @Bindable var entry: Entry
@@ -313,7 +313,7 @@ struct EditEntrySheet: View {
         entry.status = status
         if let c = selectedClient { entry.client = c }
         entry.markDirty()
-        if let error = app.save(context) {
+        if let error = mutations.save(context) {
             saveError = error
         } else {
             saveFeedback += 1

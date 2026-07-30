@@ -37,12 +37,6 @@ struct LedgerRowBuilder {
         }
     }
 
-    var searchEarnedTotal: Decimal {
-        searchHits
-            .filter { $0.status.isIncludedInEarnedTotals }
-            .reduce(.zero) { $0 + app.toBase($1.amount, code: $1.currencyCode) }
-    }
-
     func hasContent(in snapshot: Insights.LedgerSnapshot) -> Bool {
         // An active composer is content even before the first entry exists —
         // otherwise creating your first client dead-ends on the empty state
@@ -140,7 +134,10 @@ struct LedgerRowBuilder {
         return rows
     }
 
-    private func isComposerMonth(_ month: Date) -> Bool {
+    /// Whether the open composer belongs to this month. `internal` so the ledger
+    /// screen's toggle asks the same question through the same predicate rather
+    /// than keeping a second copy of it.
+    func isComposerMonth(_ month: Date) -> Bool {
         guard let composerMonth = composerRoute?.month else { return false }
         return Calendar.current.isDate(month, equalTo: composerMonth, toGranularity: .month)
     }

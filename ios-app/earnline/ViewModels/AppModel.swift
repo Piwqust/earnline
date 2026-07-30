@@ -301,10 +301,6 @@ final class AppModel {
     var accountSecurityNotice: String?
     var isSyncing = false
     var syncMessage = String(localized: "Offline")
-    /// Increments only after a ledger mutation has reached SwiftData. Views
-    /// with cached derived data use this explicit signal rather than relying
-    /// exclusively on a process-wide save notification.
-    var ledgerDataRevision = 0
     var syncError: String?
     var accountState: AccountState = .checking
     #if DEBUGMENU
@@ -349,6 +345,11 @@ final class AppModel {
     // `@ObservationIgnored` keeps them off the observation graph. Treat as
     // private to the type — nothing outside `AppModel` should touch them.
     let defaults: UserDefaults
+    /// Ledger writes are independent from authentication and connection state.
+    /// The app is only the composition root for this store: it builds it, hands
+    /// it to the view tree via `.environment`, and wires the sync scheduler into
+    /// it. Every screen saves and deletes through the store directly.
+    let mutations: LedgerMutationStore
     @ObservationIgnored var supabaseClient: SupabaseClient?
     @ObservationIgnored var authStorage: EarnlineAuthStorage?
     @ObservationIgnored var queuedSyncTask: Task<Void, Never>?
@@ -381,6 +382,7 @@ final class AppModel {
     // swiftlint:disable:next function_body_length
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        mutations = LedgerMutationStore()
         Self.migrateWorkspaceCurrencyProfilesIfNeeded(defaults: defaults)
 
         let savedEnvironment = defaults.string(forKey: "workspaceEnvironment").flatMap(WorkspaceEnvironment.init(rawValue:))
@@ -522,6 +524,9 @@ final class AppModel {
         #endif
         requireAppLock = defaults.bool(forKey: "requireAppLock")
         syncMessage = isSupabaseConfigured ? String(localized: "Ready") : String(localized: "Offline")
+        mutations.configureSyncScheduler { [weak self] context in
+            self?.queueSync(context: context)
+        }
     }
 
     // MARK: App lock
@@ -626,43 +631,6 @@ final class AppModel {
         window.isHidden = true
         window.rootViewController = nil
         lockWindow = nil
-    }
-
-    // MARK: Undo delete
-
-    /// The last delete, held for a short window so the toast can reverse it.
-    var undoableDelete: UndoableDelete?
-    @ObservationIgnored private var undoExpiryTask: Task<Void, Never>?
-
-    /// Call after the delete has actually saved — a toast for a delete that
-    /// failed to persist would offer to undo nothing.
-    func stageUndo(_ delete: UndoableDelete) {
-        undoableDelete = delete
-        undoExpiryTask?.cancel()
-        undoExpiryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled else { return }
-            self?.undoableDelete = nil
-        }
-    }
-
-    /// Returns `nil` on success or the failure message — surface it with
-    /// `.saveErrorAlert` so a failed restore never passes for a successful one.
-    @discardableResult
-    func performUndo(context: ModelContext) -> String? {
-        guard let undoableDelete else { return nil }
-        undoExpiryTask?.cancel()
-        self.undoableDelete = nil
-        do {
-            try undoableDelete.restore(in: context)
-            try context.save()
-            ledgerDataRevision &+= 1
-            queueSync(context: context)
-            return nil
-        } catch {
-            context.rollback()
-            return error.localizedDescription
-        }
     }
 
     // MARK: Appearance

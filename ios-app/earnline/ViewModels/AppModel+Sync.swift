@@ -272,23 +272,6 @@ extension AppModel {
 
     // MARK: Persistence
 
-    /// Compatibility forwarding while views migrate to `LedgerMutationStore`.
-    /// The store remains the single persistence path for save, rollback,
-    /// summary invalidation, and debounced sync scheduling.
-    @discardableResult
-    func save(_ context: ModelContext) -> String? {
-        mutations.save(context)
-    }
-
-    /// Delete an entry through the standard tombstone → save → undo flow, so a
-    /// deletion looks the same whether it comes from the ledger, a client, or
-    /// the pending list. Returns `nil` on success (with the undo staged) or the
-    /// error message on failure.
-    @discardableResult
-    func delete(_ entry: Entry, context: ModelContext) -> String? {
-        mutations.delete(entry, context: context)
-    }
-
     /// Empty only the local, synced workspace cache — used by
     /// `resetLocalDataAndPull` when the user explicitly chooses the cloud as
     /// source of truth. Workspace/profile/defaults configuration is deliberately

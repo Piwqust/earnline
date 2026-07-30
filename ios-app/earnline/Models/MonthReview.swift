@@ -73,7 +73,7 @@ enum MonthReviewError: LocalizedError, Equatable {
 
 /// The sole mutation boundary for soft-closing and reopening a month. It does
 /// not save the context so callers retain Earnline's existing save/sync/error
-/// contract through `AppModel.save(_:)`.
+/// contract through `LedgerMutationStore.save(_:)`.
 @MainActor
 enum MonthReviewStore {
     static func review(forMonthContaining date: Date,

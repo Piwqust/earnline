@@ -233,11 +233,16 @@ struct InsightsDashboardSnapshot: Sendable {
     let unsupportedCurrencyCount: Int
 }
 
-/// Pure income aggregation over the ledger: grouping and totals, the monthly
-/// series and its month-over-month deltas, the daily-earnings heatmap, and the
-/// pending queue. Every figure is in the base currency via the injected
+/// Pure income aggregation over the ledger: the single-pass `LedgerSnapshot`
+/// behind the ledger list and its summary header, the daily-earnings heatmap,
+/// and the pending queue. Every figure is in the base currency via the injected
 /// `CurrencyConverter`; earned totals exclude canceled lines. Free of UI state
-/// so it can be unit-tested directly — `AppModel` exposes thin forwarders.
+/// so it can be unit-tested directly.
+///
+/// The per-client-per-month sweeps this type used to expose (`entries(of:in:)`,
+/// `total(of:in:)`, `monthTotal(_:in:)`, `earnedEntries(of:in:)`,
+/// `monthsWithData(_:)`) were O(months × entries) and were fully replaced by
+/// `LedgerSnapshot`, which answers the same questions from one O(entries) pass.
 ///
 /// `@MainActor` because it reads SwiftData model properties (`Client`/`Entry`),
 /// matching the isolation this math already ran under inside `AppModel`.
@@ -245,32 +250,6 @@ struct InsightsDashboardSnapshot: Sendable {
 struct Insights {
     let converter: CurrencyConverter
     var calendar: Calendar = .current
-
-    // MARK: Grouping & totals
-
-    func entries(of client: Client, in month: Date) -> [Entry] {
-        client.entries
-            .filter { sameMonth($0.date, month) }
-            .sorted { $0.sortIndex == $1.sortIndex ? $0.createdAt > $1.createdAt : $0.sortIndex < $1.sortIndex }
-    }
-
-    func earnedEntries(of client: Client, in month: Date) -> [Entry] {
-        entries(of: client, in: month).filter { $0.status.isIncludedInEarnedTotals }
-    }
-
-    func total(of client: Client, in month: Date) -> Decimal {
-        // A running sum doesn't care about order, so skip the filtered-array
-        // allocation and the sort that `earnedEntries` does — this runs per
-        // client, per visible month, and (×6) on every summary refresh.
-        client.entries.reduce(Decimal.zero) { sum, entry in
-            guard entry.status.isIncludedInEarnedTotals, sameMonth(entry.date, month) else { return sum }
-            return sum + converter.toBase(entry.amount, code: entry.currencyCode)
-        }
-    }
-
-    func monthTotal(_ clients: [Client], in month: Date) -> Decimal {
-        clients.reduce(Decimal.zero) { $0 + total(of: $1, in: month) }
-    }
 
     // MARK: Daily heatmap
 
@@ -366,22 +345,6 @@ struct Insights {
     func isOverdue(_ entry: Entry) -> Bool {
         guard entry.status == .inProgress, let hold = entry.holdUntil else { return false }
         return hold < calendar.startOfDay(for: .now)
-    }
-
-    /// Months containing at least one visible entry (newest first), always including this month.
-    func monthsWithData(_ clients: [Client]) -> [Date] {
-        var set = Set<Date>()
-        for c in clients {
-            for e in c.entries {
-                set.insert(DateFormat.monthStart(of: e.date))
-            }
-        }
-        set.insert(DateFormat.monthStart(of: .now))
-        return set.sorted(by: >)
-    }
-
-    private func sameMonth(_ a: Date, _ b: Date) -> Bool {
-        calendar.isDate(a, equalTo: b, toGranularity: .month)
     }
 
     // MARK: Ledger snapshot (single-pass aggregation)
