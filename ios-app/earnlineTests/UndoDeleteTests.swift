@@ -106,7 +106,10 @@ struct UndoDeleteTests {
         #expect(try context.fetch(FetchDescriptor<SyncTombstone>()).isEmpty)
     }
 
-    @Test func entryRestoreWithoutOwnerIsDroppedSafely() throws {
+    /// An orphan row would never render or sync, so the restore still declines
+    /// to insert one — but it now says so. Returning quietly meant the toast
+    /// dismissed and the person was told a restore had happened that had not.
+    @Test func entryRestoreWithoutOwnerReportsTheFailure() throws {
         let container = try makeContainer()
         let context = container.mainContext
         let client = Client(name: "Gone")
@@ -121,8 +124,10 @@ struct UndoDeleteTests {
         context.delete(client)
         try context.save()
 
-        try snapshot.restore(in: context)
-        try context.save()
+        #expect(throws: UndoRestoreError.ownerMissing) {
+            try snapshot.restore(in: context)
+        }
+        context.rollback()
         #expect(try context.fetch(FetchDescriptor<Entry>()).isEmpty)
     }
 }

@@ -1,9 +1,10 @@
 import Foundation
 import SwiftData
 
-/// Value snapshots of just-deleted rows, staged briefly (`AppModel.stageUndo`)
-/// so an accidental swipe can be reversed. Captured BEFORE the models are
-/// deleted — a SwiftData model is unusable once removed from its context.
+/// Value snapshots of just-deleted rows, staged briefly
+/// (`LedgerMutationStore.stageUndo`) so an accidental swipe can be reversed.
+/// Captured BEFORE the models are deleted — a SwiftData model is unusable once
+/// removed from its context.
 struct EntrySnapshot {
     let id: UUID
     let amount: Decimal
@@ -66,6 +67,19 @@ struct ClientSnapshot {
     }
 }
 
+/// Why a staged undo could not be replayed. Surfaced through the toast's
+/// existing "Could not restore" alert instead of failing quietly.
+enum UndoRestoreError: LocalizedError, Equatable {
+    case ownerMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .ownerMissing:
+            return String(localized: "This line's client no longer exists, so the line could not be restored.")
+        }
+    }
+}
+
 enum UndoableDelete {
     case entry(EntrySnapshot)
     case heading(HeadingSnapshot)
@@ -114,13 +128,20 @@ enum UndoableDelete {
 
     private func restoreEntry(_ snapshot: EntrySnapshot, in context: ModelContext) throws {
         try SyncDeleteQueue.dequeue(.entry, id: snapshot.id, in: context)
-        // Reattach to the owning client; if that client vanished in the
-        // meantime (deleted on another device), there is nothing to restore
-        // into — an orphan row would never render or sync.
-        guard let clientID = snapshot.clientID else { return }
+        // Reattach to the owning client. If that client vanished in the meantime
+        // (deleted on another device, or the store was swapped underneath), there
+        // is nothing to restore into — an orphan row would never render or sync.
+        // Report it rather than returning quietly: this path used to succeed
+        // silently, so the toast dismissed, nothing came back, and the person was
+        // told the restore had worked.
+        guard let clientID = snapshot.clientID else {
+            throw UndoRestoreError.ownerMissing
+        }
         // Whole-table scan on purpose — see SyncDeleteQueue.dequeue.
         let owner = try context.fetch(FetchDescriptor<Client>()).first { $0.id == clientID }
-        guard let owner else { return }
+        guard let owner else {
+            throw UndoRestoreError.ownerMissing
+        }
         insert(snapshot, into: owner, context: context)
     }
 

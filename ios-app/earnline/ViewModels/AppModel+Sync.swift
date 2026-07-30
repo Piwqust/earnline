@@ -165,7 +165,7 @@ extension AppModel {
             lastSyncAt = Date()
             syncMessage = String(localized: "Synced")
             try context.save()
-            ledgerDataRevision &+= 1
+            mutations.recordExternalSave()
             completeAccountStoreMigrationAfterSuccessfulSync()
             refreshPendingReminders(context: context)
             retryAttempt = 0
@@ -255,6 +255,10 @@ extension AppModel {
 
     func detachWorkspaceStore() {
         syncGeneration += 1
+        // A staged undo describes a row in the store being left behind. Replaying
+        // it against the incoming container would restore into the wrong
+        // workspace — see `LedgerMutationStore.discardStagedUndo()`.
+        mutations.discardStagedUndo()
         queuedSyncTask?.cancel()
         retryTask?.cancel()
         configRefreshTask?.cancel()
@@ -268,25 +272,12 @@ extension AppModel {
 
     // MARK: Persistence
 
-    /// The one persistence path: commit pending changes and kick the debounced
-    /// sync. Returns `nil` on success, or a user-facing message on failure —
-    /// assign it to the caller's error state and surface it with
-    /// `.saveErrorAlert`. Every screen saves through here so the save + sync +
-    /// error-reporting behaviour is identical everywhere.
+    /// Compatibility forwarding while views migrate to `LedgerMutationStore`.
+    /// The store remains the single persistence path for save, rollback,
+    /// summary invalidation, and debounced sync scheduling.
     @discardableResult
     func save(_ context: ModelContext) -> String? {
-        do {
-            try context.save()
-            ledgerDataRevision &+= 1
-            queueSync(context: context)
-            return nil
-        } catch {
-            // A save error must leave the screen exactly as it was before the
-            // action. Without this rollback, a later unrelated save could
-            // commit an insert/edit/delete the user was told had failed.
-            context.rollback()
-            return error.localizedDescription
-        }
+        mutations.save(context)
     }
 
     /// Delete an entry through the standard tombstone → save → undo flow, so a
@@ -295,12 +286,7 @@ extension AppModel {
     /// error message on failure.
     @discardableResult
     func delete(_ entry: Entry, context: ModelContext) -> String? {
-        let snapshot = UndoableDelete.entry(EntrySnapshot(entry))
-        SyncDeleteQueue.enqueue(.entry, id: entry.id, in: context)
-        withAnimation(.snappy) { context.delete(entry) }
-        let error = save(context)
-        if error == nil { stageUndo(snapshot) }
-        return error
+        mutations.delete(entry, context: context)
     }
 
     /// Empty only the local, synced workspace cache — used by
