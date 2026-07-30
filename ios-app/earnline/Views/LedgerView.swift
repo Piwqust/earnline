@@ -198,11 +198,11 @@ struct LedgerView: View {
     /// The inner navigation surface is kept separate from the sheet tree so
     /// SwiftUI can type-check toolbar and search modifiers independently.
     ///
-    /// The command menu and add control live in the navigation bar, while the
-    /// system owns search's placement and focus. iOS 26 currently logs a
-    /// UIKit hierarchy fault when a `Menu` and `DefaultToolbarItem(.search)`
-    /// share a `.bottomBar`; this supported SwiftUI composition avoids that
-    /// faulty toolbar injection without custom controls.
+    /// The chrome is the bottom bar: "…", the docked system search field, "+".
+    /// See `LedgerBottomBarItems`. A previous change moved "…" and "+" up into
+    /// the navigation bar to silence an iOS 26 UIKit hierarchy log; that traded
+    /// the designed layout for a console message and is not a trade this screen
+    /// makes. If the log returns, fix it inside the toolbar composition.
     private var ledgerNavigationContent: some View {
         ledgerCore
             .navigationDestination(for: LedgerRoute.self, destination: navigationDestination)
@@ -213,7 +213,7 @@ struct LedgerView: View {
                         prompt: "Search income") { token in
                 Label(token.label, systemImage: token.systemImage)
             }
-            .toolbar { navigationToolbar }
+            .toolbar { bottomToolbar }
             .onChange(of: search.isPresented) { _, searching in
                 if searching {
                     composerRoute = nil
@@ -234,7 +234,7 @@ struct LedgerView: View {
             .onChange(of: clients.count) { _, _ in runDemoIfNeeded() }
     }
 
-    private var navigationToolbar: some ToolbarContent {
+    private var bottomToolbar: some ToolbarContent {
         LedgerBottomBarItems(
             clients: clients,
             pendingCount: ledgerSnapshot?.pendingCount ?? 0,

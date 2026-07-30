@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Ledger navigation commands. Search remains the system `.searchable` field;
-/// these two commands deliberately use the navigation bar rather than
-/// `.bottomBar`. On iOS 26 a bottom-bar `Menu` combined with the system search
-/// item causes SwiftUI to inject a `UIKitToolbar` into an unsupported hosting
-/// hierarchy, which emits a runtime fault and can break after an OS update.
+/// The ledger's bottom chrome, laid out the way Apple's own list screens do
+/// it on iOS 26 (Notes, Mail): a leading "…" circle, the system search field
+/// docked in the middle, and a trailing "+" circle. Everything is a native
+/// bottom-bar toolbar item, so the system supplies the Liquid Glass surfaces,
+/// the floating capsule grouping, and the search field's expand/collapse
+/// choreography — no custom glass and no custom text field.
 struct LedgerBottomBarItems: ToolbarContent {
     let clients: [Client]
     let pendingCount: Int
@@ -20,8 +21,13 @@ struct LedgerBottomBarItems: ToolbarContent {
     let onPasteLines: () -> Void
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) { leadingMenu }
-        ToolbarItem(placement: .topBarTrailing) { addMenu }
+        ToolbarItem(placement: .bottomBar) { leadingMenu }
+        ToolbarSpacer(.fixed, placement: .bottomBar)
+        // The `.searchable` field rests here, Mail-style, instead of
+        // floating in its own detached bar.
+        DefaultToolbarItem(kind: .search, placement: .bottomBar)
+        ToolbarSpacer(.fixed, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) { addMenu }
     }
 
     @ViewBuilder
@@ -36,8 +42,12 @@ struct LedgerBottomBarItems: ToolbarContent {
     @ViewBuilder
     private var addMenu: some View {
         if clients.isEmpty {
+            // Income needs a client to belong to, so on an empty ledger the "+"
+            // goes straight to creating one rather than opening a menu whose
+            // only workable item is "Client". The glyph stays "+": this is the
+            // same trailing circle in the same bottom bar either way.
             Button(action: onNewClient) {
-                Label("Add client", systemImage: "person.crop.circle.badge.plus")
+                Label("Add", systemImage: "plus")
             }
             .tint(.primary)
             .accessibilityLabel("Add client")
@@ -69,8 +79,8 @@ struct LedgerBottomBarItems: ToolbarContent {
         }
     }
 
-    /// Search uses the system `.searchable` field, so it does not need a
-    /// duplicate menu entry.
+    /// Search no longer needs a menu entry — the field itself rests in the
+    /// toolbar, exactly like Notes and Mail.
     private var moreMenu: some View {
         Menu {
             Button(action: onInsights) {
