@@ -325,6 +325,26 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["All Transactions"].waitForExistence(timeout: 8))
     }
 
+    func testClientTransactionDrillDownKeepsTheLedgerRowsReachable() {
+        let app = launchApp(["-demoClientProfile"])
+        let allTransactions = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "All Transactions")
+        ).firstMatch
+        XCTAssertTrue(allTransactions.waitForExistence(timeout: 12))
+
+        for _ in 0..<6 where !allTransactions.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(allTransactions.isHittable)
+        allTransactions.tap()
+
+        XCTAssertTrue(app.navigationBars["All Transactions"].waitForExistence(timeout: 5))
+        let row = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "entry.row.")
+        ).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+    }
+
     func testProjectIconCanBeChosenFromSettings() {
         let app = launchApp(["-demoSettings", "-demoInsights"])
 

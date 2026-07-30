@@ -318,9 +318,9 @@ enum SyncCoordinator {
     }
 
     @discardableResult
-    // This is intentionally the single merge boundary for five remote models;
-    // splitting its guards across helpers would make conflict ordering opaque.
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    // This remains the ordered merge boundary for five remote models. The
+    // entity helpers below preserve each model's validation and conflict rules.
+    // swiftlint:disable:next function_body_length
     private static func pullRemoteRows(context: ModelContext,
                                        client: SupabaseClient,
                                        workspaceID: String,
@@ -420,13 +420,61 @@ enum SyncCoordinator {
             }).max()
 
         var clientsByID = Dictionary(uniqueKeysWithValues: localClients.map { ($0.id, $0) })
-        var conflictCount = 0
+        var projectIconsByID = Dictionary(uniqueKeysWithValues: localProjectIcons.map { ($0.id, $0) })
+        var monthReviewsByID = Dictionary(uniqueKeysWithValues: localMonthReviewRows.map { ($0.id, $0) })
+        var headingsByID = Dictionary(uniqueKeysWithValues: localHeadings.map { ($0.id, $0) })
+        var entriesByID = Dictionary(uniqueKeysWithValues: localEntries.map { ($0.id, $0) })
 
-        // Rows whose dates can't be parsed are skipped, not defaulted: the old
-        // "now"/"today" fallbacks silently rewrote timestamps and entry dates,
-        // which corrupted conflict resolution and the visible ledger. A skipped
-        // row is retried on the next pass (`gte` cursor is inclusive).
-        for record in applicableClients {
+        // Keep the merge order explicit: entries depend on clients, and each
+        // helper preserves the validation and conflict policy of its model.
+        var conflictCount = mergeClients(
+            applicableClients,
+            context: context,
+            clientsByID: &clientsByID,
+            conflictResolution: conflictResolution
+        )
+        conflictCount += mergeProjectIcons(
+            remoteProjectIcons,
+            context: context,
+            projectIconsByID: &projectIconsByID,
+            conflictResolution: conflictResolution
+        )
+        conflictCount += mergeMonthReviews(
+            remoteMonthReviews,
+            context: context,
+            monthReviewsByID: &monthReviewsByID,
+            conflictResolution: conflictResolution
+        )
+        conflictCount += mergeHeadings(
+            applicableHeadings,
+            context: context,
+            headingsByID: &headingsByID,
+            conflictResolution: conflictResolution
+        )
+        conflictCount += mergeEntries(
+            applicableEntries,
+            context: context,
+            clientsByID: clientsByID,
+            entriesByID: &entriesByID,
+            conflictResolution: conflictResolution
+        )
+
+        if conflictCount > 0 { throw SyncConflictError.detected(conflictCount) }
+        return maxUpdatedAt
+    }
+
+    // Rows whose dates can't be parsed are skipped, not defaulted: the old
+    // "now"/"today" fallbacks silently rewrote timestamps and entry dates,
+    // which corrupted conflict resolution and the visible ledger. A skipped
+    // row is retried on the next pass (`gte` cursor is inclusive).
+    private static func mergeClients(
+        _ records: [RemoteClient],
+        context: ModelContext,
+        clientsByID: inout [UUID: Client],
+        conflictResolution: ConflictResolution
+    ) -> Int {
+        var conflictCount = 0
+        for record in records {
             guard SyncValidation.isValidClient(name: record.name, colorHex: record.colorHex),
                   let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
@@ -457,10 +505,17 @@ enum SyncCoordinator {
                 clientsByID[record.id] = newClient
             }
         }
+        return conflictCount
+    }
 
-        var projectIconsByID = Dictionary(uniqueKeysWithValues: localProjectIcons.map { ($0.id, $0) })
-
-        for record in remoteProjectIcons {
+    private static func mergeProjectIcons(
+        _ records: [RemoteProjectIcon],
+        context: ModelContext,
+        projectIconsByID: inout [UUID: ProjectIconPreference],
+        conflictResolution: ConflictResolution
+    ) -> Int {
+        var conflictCount = 0
+        for record in records {
             let projectKey = ProjectIconResolver.normalizedKey(for: record.projectKey)
             guard !projectKey.isEmpty,
                   projectKey.count <= Limits.maxProjectLength,
@@ -495,10 +550,17 @@ enum SyncCoordinator {
                 projectIconsByID[record.id] = preference
             }
         }
+        return conflictCount
+    }
 
-        var monthReviewsByID = Dictionary(uniqueKeysWithValues: localMonthReviewRows.map { ($0.id, $0) })
-
-        for record in remoteMonthReviews {
+    private static func mergeMonthReviews(
+        _ records: [RemoteMonthReview],
+        context: ModelContext,
+        monthReviewsByID: inout [UUID: MonthReview],
+        conflictResolution: ConflictResolution
+    ) -> Int {
+        var conflictCount = 0
+        for record in records {
             guard MonthReview.isValid(note: record.note),
                   let monthStart = SyncDateCodec.parseDay(record.monthStart),
                   SyncDateCodec.dayString(monthStart).hasSuffix("-01"),
@@ -541,10 +603,17 @@ enum SyncCoordinator {
                 monthReviewsByID[record.id] = review
             }
         }
+        return conflictCount
+    }
 
-        var headingsByID = Dictionary(uniqueKeysWithValues: localHeadings.map { ($0.id, $0) })
-
-        for record in applicableHeadings {
+    private static func mergeHeadings(
+        _ records: [RemoteHeading],
+        context: ModelContext,
+        headingsByID: inout [UUID: Heading],
+        conflictResolution: ConflictResolution
+    ) -> Int {
+        var conflictCount = 0
+        for record in records {
             guard SyncValidation.isValidHeading(title: record.title),
                   let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt),
                   let date = SyncDateCodec.parseDay(record.date) else { continue }
@@ -576,10 +645,18 @@ enum SyncCoordinator {
                 headingsByID[record.id] = heading
             }
         }
+        return conflictCount
+    }
 
-        var entriesByID = Dictionary(uniqueKeysWithValues: localEntries.map { ($0.id, $0) })
-
-        for record in applicableEntries {
+    private static func mergeEntries(
+        _ records: [RemoteEntry],
+        context: ModelContext,
+        clientsByID: [UUID: Client],
+        entriesByID: inout [UUID: Entry],
+        conflictResolution: ConflictResolution
+    ) -> Int {
+        var conflictCount = 0
+        for record in records {
             guard let owner = clientsByID[record.clientID] else { continue }
             guard SyncValidation.isValidEntry(amount: record.amount.decimal,
                                               currencyCode: record.currencyCode,
@@ -630,9 +707,7 @@ enum SyncCoordinator {
                 entriesByID[record.id] = entry
             }
         }
-
-        if conflictCount > 0 { throw SyncConflictError.detected(conflictCount) }
-        return maxUpdatedAt
+        return conflictCount
     }
 
     // Every entity has an explicit delete path so a malformed tombstone cannot

@@ -30,7 +30,6 @@ struct SettingsView: View {
     /// reformatted per character, which made typing here visibly lag on a
     /// large ledger. `nil` means "not editing": the field shows the model.
     @State private var rateDraft: Double?
-    @FocusState private var rateFieldFocused: Bool
     @State private var pendingSyncRecoveryAction: SyncRecoveryAction?
     @State private var isResettingLocalData = false
     @State private var stressSeedNote: String?
@@ -167,7 +166,17 @@ struct SettingsView: View {
                 }
             }
 
-            conversionRateSection
+            ConversionRateSettingsSection(
+                baseCurrencyCode: appModel.baseCurrencyCode,
+                secondaryCurrencyCode: appModel.secondaryCurrencyCode,
+                secondaryExample: appModel.secondaryString(100),
+                rate: rateFieldBinding,
+                isFetchingRate: isFetchingRate,
+                rateFetchFailed: rateFetchFailed,
+                rateFetchNote: rateFetchNote,
+                onCommitRate: commitRateDraft,
+                onFetchRate: fetchRate
+            )
 
             Section("About") {
                 aboutContent
@@ -241,7 +250,11 @@ struct SettingsView: View {
                 #endif
 
                 Section {
-                    developerSyncContent
+                    DeveloperSyncSettingsContent(
+                        pendingSyncCount: pendingSyncCount,
+                        isResettingLocalData: isResettingLocalData,
+                        onUseCloudCopy: { pendingSyncRecoveryAction = .useCloudCopy }
+                    )
                 } header: {
                     Text("Sync")
                 } footer: {
@@ -252,7 +265,14 @@ struct SettingsView: View {
 
                 #if DEBUG
                 Section {
-                    developerDataContent
+                    DeveloperDataSettingsContent(
+                        workspaceDisplayName: app.workspaceDisplayName,
+                        isResettingLocalData: isResettingLocalData,
+                        isSyncing: app.isSyncing,
+                        onResetAndPull: { pendingSyncRecoveryAction = .reloadCurrent },
+                        onImportSample: importSampleLedger,
+                        onSeedStressData: seedStressDataset
+                    )
                 } header: {
                     Text("Data")
                 } footer: {
@@ -347,130 +367,6 @@ struct SettingsView: View {
     // MARK: Building blocks
 
     @ViewBuilder
-    private var conversionRateSection: some View {
-        Section {
-            HStack {
-                SettingsRowLabel(verbatim: "1 \(appModel.baseCurrencyCode)",
-                                 glyph: "chart.line.uptrend.xyaxis")
-                Spacer()
-                // The decimal pad has no return key, so the draft commits when
-                // focus leaves the field or the sheet goes away.
-                TextField("Rate", value: rateFieldBinding, format: .number)
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 110)
-                    .focused($rateFieldFocused)
-                    .onChange(of: rateFieldFocused) { _, focused in
-                        if !focused { commitRateDraft() }
-                    }
-                    .onDisappear(perform: commitRateDraft)
-                Text(appModel.secondaryCurrencyCode)
-                    .foregroundStyle(.secondary)
-            }
-            Button(action: fetchRate) {
-                HStack {
-                    SettingsRowLabel(isFetchingRate ? Text("Fetching rate...") : Text("Fetch current rate"),
-                                     glyph: "arrow.clockwise")
-                    Spacer()
-                    if isFetchingRate { ProgressView() }
-                }
-            }
-            .disabled(isFetchingRate)
-        } header: {
-            Text("Display conversion rate")
-        } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                if let rateFetchNote {
-                    Label(rateFetchNote,
-                          systemImage: rateFetchFailed ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                        .foregroundStyle(rateFetchFailed ? Theme.statusProgress : .secondary)
-                }
-                // swiftlint:disable:next line_length
-                Text("Example: \(CurrencyFormatter.string(100, code: appModel.baseCurrencyCode)) = \(appModel.secondaryString(100)). Changing this rate updates converted displays; original entry amounts do not change.")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var developerSupabaseContent: some View {
-        HStack(spacing: 12) {
-            SettingsRowGlyph(glyph: "network")
-            TextField("Project URL", text: Bindable(appModel).supabaseURLString)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-        }
-        HStack(spacing: 12) {
-            SettingsRowGlyph(glyph: "key.horizontal")
-            TextField("Publishable key", text: Bindable(appModel).supabaseKey)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-        }
-        Picker(selection: Bindable(appModel).workspaceEnvironment) {
-            ForEach(AppModel.WorkspaceEnvironment.allCases) { environment in
-                Text(environment.title).tag(environment)
-            }
-        } label: {
-            SettingsRowLabel("Workspace", glyph: "externaldrive")
-        }
-        .pickerStyle(.menu)
-        .tint(valueGray)
-        .accessibilityIdentifier("settings.workspace")
-    }
-
-    @ViewBuilder
-    private var developerSyncContent: some View {
-        valueRow("Status", value: appModel.syncMessage)
-        valueRow("Pending", value: "\(pendingSyncCount)")
-        if let lastSyncAt = appModel.lastSyncAt {
-            valueRow("Last sync", value: DateFormat.dotted(lastSyncAt))
-        }
-        Button {
-            Task { await appModel.syncNow(context: context) }
-        } label: {
-            HStack {
-                SettingsRowLabel(appModel.isSyncing ? Text("Syncing...") : Text("Sync now"),
-                                 glyph: "arrow.triangle.2.circlepath")
-                Spacer()
-                if appModel.isSyncing { ProgressView() }
-            }
-        }
-        .disabled(appModel.isSyncing || !appModel.isSupabaseConfigured)
-
-        if appModel.syncConflictCount > 0 {
-            Button {
-                Task { await appModel.keepLocalConflictChanges(context: context) }
-            } label: {
-                SettingsRowLabel("Keep changes from this iPhone", glyph: "iphone")
-            }
-            .disabled(appModel.isSyncing)
-
-            Button {
-                pendingSyncRecoveryAction = .useCloudCopy
-            } label: {
-                SettingsRowLabel("Use cloud copy", glyph: "icloud.and.arrow.down")
-            }
-            .disabled(appModel.isSyncing || isResettingLocalData)
-        }
-    }
-
-    @ViewBuilder
-    private var developerDataContent: some View {
-        developerButton(title: "Reset and pull",
-                        glyph: "arrow.counterclockwise",
-                        value: appModel.workspaceDisplayName,
-                        action: .reloadCurrent)
-        Button(action: importSampleLedger) {
-            SettingsRowLabel("Import sample ledger", glyph: "square.and.arrow.down")
-        }
-        .disabled(isResettingLocalData)
-        Button(action: seedStressDataset) {
-            SettingsRowLabel("Seed stress dataset", glyph: "speedometer")
-        }
-        .disabled(isResettingLocalData)
-    }
-
-    @ViewBuilder
     private var aboutContent: some View {
         valueRow("Version", value: appVersion)
             .accessibilityIdentifier("settings.version")
@@ -544,30 +440,6 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Accent color")
         .accessibilityValue(selection.wrappedValue.title)
-    }
-
-    private func developerButton(title: LocalizedStringKey,
-                                 glyph: String,
-                                 value: String,
-                                 action: SyncRecoveryAction) -> some View {
-        Button { pendingSyncRecoveryAction = action } label: {
-            HStack {
-                SettingsRowLabel(title, glyph: glyph)
-                Spacer()
-                if isResettingLocalData {
-                    ProgressView()
-                } else {
-                    Text(value)
-                        // Explicit gray: `.secondary` inside an accent-tinted
-                        // Button renders as washed-out accent, which made this
-                        // one trailing value blue while every other is gray.
-                        .foregroundStyle(valueGray)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-        }
-        .disabled(isResettingLocalData || appModel.isSyncing)
     }
 
     private var syncRecoveryConfirmationBinding: Binding<Bool> {
@@ -793,7 +665,7 @@ private enum SyncRecoveryAction {
 
 /// Shared Settings icon language: precise monochrome symbols with no decorative
 /// tile or background. Each symbol is selected for the action it represents.
-private struct SettingsRowLabel: View {
+struct SettingsRowLabel: View {
     @Environment(\.isEnabled) private var isEnabled
     private let title: Text
     private let glyph: String

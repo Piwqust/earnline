@@ -93,6 +93,7 @@ private struct WorkspaceContainerHost: View {
             }
         }
             .environment(app)
+            .environment(app.mutations)
             .tint(app.accentColor)
             // Honor Reduce Motion app-wide: every explicit `.animation` /
             // `withAnimation` in the tree routes its transaction through here,
