@@ -6,6 +6,7 @@ import SwiftUI
 /// Settings, so its entry query never adds work to the everyday settings path.
 struct ProjectIconsSettingsView: View {
     @Environment(\.modelContext) private var context
+    @Environment(LedgerMutationStore.self) private var mutations
     @Query(sort: \ProjectIconPreference.projectKey) private var preferences: [ProjectIconPreference]
     @State private var projects: [ProjectCatalogRow] = []
     @State private var isLoading = true
@@ -49,10 +50,12 @@ struct ProjectIconsSettingsView: View {
         .navigationTitle("Project icons")
         .navigationBarTitleDisplayMode(.inline)
         .background(Theme.background)
-        .task { await reloadProjects() }
-        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
-            Task { await reloadProjects() }
-        }
+        // `dataRevision`, not `ModelContext.didSave`: the notification fires for
+        // every container the host keeps alive, and a sync pass saves three
+        // times per pass — so this catalog reloaded on unrelated stores and
+        // three times over for one pull. The revision advances once per
+        // committed mutation and once per completed sync pass.
+        .task(id: mutations.dataRevision) { await reloadProjects() }
         .saveErrorAlert($loadError, title: "Could not load projects")
     }
 

@@ -6,6 +6,7 @@ import SwiftData
 /// independent from the size of the ledger.
 struct InsightsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -18,14 +19,19 @@ struct InsightsView: View {
     @State private var dashboard: InsightsDashboardSnapshot?
     @State private var dashboardError: String?
     @State private var dashboardReloadToken = 0
-    @State private var dashboardDataRevision = 0
 
     /// Every saved mutation invalidates the private-model-actor snapshot. This
     /// avoids bringing the entire entry query onto SwiftUI's render path merely
     /// to detect an update.
+    ///
+    /// `mutations.dataRevision`, not `ModelContext.didSave`: the notification
+    /// fires for every container the host keeps alive, and a sync pass saves
+    /// three times — so the dashboard reloaded on unrelated workspaces and
+    /// visibly restarted its loading state three times per pull. The revision
+    /// advances once per committed mutation and once per completed pass.
     private var dashboardRevision: DashboardRevision {
         DashboardRevision(
-            dataRevision: dashboardDataRevision,
+            dataRevision: mutations.dataRevision,
             reloadToken: dashboardReloadToken,
             baseCurrencyCode: app.baseCurrencyCode,
             secondaryCurrencyCode: app.secondaryCurrencyCode,
@@ -51,9 +57,6 @@ struct InsightsView: View {
         .presentationBackground(Theme.background)
         .accessibilityIdentifier("insights.sheet")
         .task(id: dashboardRevision) { await loadDashboard() }
-        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
-            dashboardDataRevision &+= 1
-        }
     }
 
     private struct DashboardRevision: Hashable {
