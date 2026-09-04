@@ -246,9 +246,9 @@ jobs:
         run: xcodegen generate
       - name: Build the true Release binary and reject test hooks
         env:
-          EARNLINE_SUPABASE_PRODUCTION_URL: https://audit.invalid
-          EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY: sb_publishable_audit_placeholder
-          EARNLINE_PRIVACY_POLICY_URL: https://audit.invalid/privacy
+          EARNLINE_SUPABASE_PRODUCTION_URL: ${{ secrets.SUPABASE_URL }}
+          EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          EARNLINE_PRIVACY_POLICY_URL: https://github.com/Piwqust/earnline/blob/main/PRIVACY.md
         run: |
           set -euo pipefail
           derived_data="$PWD/.ci-derived-data"

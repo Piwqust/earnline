@@ -5,7 +5,8 @@ Released September 4, 2026.
 Earnline 1.1.0 is a stable GitHub update aimed at local-first daily use. It is
 not an App Store distribution: the attached IPA files are unsigned
 review artifacts and must be re-signed or built from source before installation.
-Optional Supabase synchronization remains a separately configured beta feature.
+Supabase synchronization and Google/GitHub OAuth use the configured workspace;
+provider secrets and redirect allowlists remain managed in Supabase Dashboard.
 
 ## Highlights
 
@@ -41,9 +42,10 @@ connected iPhone.
 
 - Signed archive, install, and launch were not verified on a physical iPhone for
   this GitHub release.
-- The public artifacts contain no production Supabase endpoint. Cloud sync,
-  OAuth, row-level security, and multi-device behavior require the operator's
-  own configured deployment and separate end-to-end verification.
+- The public artifacts use the configured Supabase workspace and contain only
+  its publishable client key; provider secrets and service-role keys are not
+  included. Cloud sync and OAuth still require the corresponding providers,
+  redirect URLs, policies, and functions to be configured in Supabase.
 - Existing foreign-currency lines are displayed using the current configured
   conversion rate; Earnline does not preserve the historical rate per entry.
 - This release has not been submitted to App Store review.
