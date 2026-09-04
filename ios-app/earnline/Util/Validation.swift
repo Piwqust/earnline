@@ -11,6 +11,34 @@ enum Limits {
     static let supportedCurrencyCodes = ["USD", "EUR", "GBP", "RUB", "UAH"]
 }
 
+/// Supabase publishable/anon keys are safe for a client app; secret and
+/// service-role keys are server credentials and must fail closed everywhere.
+/// Keep this check shared by the Debug connection editor, runtime setup, and
+/// release configuration tests so those paths cannot drift apart.
+enum SupabaseKeyValidation {
+    static func looksLikeSecretKey(_ rawKey: String) -> Bool {
+        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key.lowercased().hasPrefix("sb_secret_") { return true }
+
+        let parts = key.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              let payloadData = base64URLDecoded(String(parts[1])),
+              let payload = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
+              let role = payload["role"] as? String else {
+            return key.localizedCaseInsensitiveContains("service_role")
+        }
+        return role.caseInsensitiveCompare("service_role") == .orderedSame
+    }
+
+    private static func base64URLDecoded(_ value: String) -> Data? {
+        var base64 = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        return Data(base64Encoded: base64)
+    }
+}
+
 enum ClientNameValidation: Equatable {
     case valid(String)
     case empty
@@ -34,10 +62,12 @@ enum ClientNameValidation: Equatable {
 }
 
 enum Validation {
-    /// Clamp an amount into (0, maxAmount].
+    /// Clamp an amount into (0, maxAmount] and snap to cents. Local rows must
+    /// match the `numeric(14, 2)` wire contract; extra fraction digits used to
+    /// display one total until the next sync pull rewrote them.
     static func clampAmount(_ value: Decimal) -> Decimal {
         if value < 0 { return 0 }
-        return min(value, Limits.maxAmount)
+        return min(value, Limits.maxAmount).rounded(2)
     }
 
     /// Keep only digits and a single decimal separator (capped digits) as the user types.

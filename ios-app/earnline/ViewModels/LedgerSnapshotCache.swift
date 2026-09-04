@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import SwiftData
 
 /// Owns the expensive, derived ledger data that is shared by the visible
@@ -33,6 +34,13 @@ final class LedgerSnapshotCache {
     private(set) var searchSnapshot: Insights.LedgerSnapshot?
     private(set) var searchFilterSource: EntrySearch.FilterSource?
     private(set) var searchStats = SearchStats()
+    private(set) var searchHitIDs: Set<UUID> = []
+    private(set) var loadError: String?
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.earnline.app",
+        category: "ledger-data"
+    )
 
     private var windowMonthCount = 8
     /// Held rather than fire-and-forgotten. `LedgerView` is `.id`-keyed on the
@@ -58,7 +66,17 @@ final class LedgerSnapshotCache {
     /// results avoids retaining SwiftData models that a sync pull can
     /// invalidate while search is open.
     func refreshSearchStats(_ inputs: Inputs) {
-        searchStats = inputs.isSearching ? scanSearchHits(inputs) : SearchStats()
+        guard inputs.isSearching else {
+            searchHitIDs = []
+            searchStats = SearchStats()
+            return
+        }
+        do {
+            applySearchScan(try scanSearchHits(inputs))
+        } catch {
+            Self.logger.error("Could not scan search hits: \(error.localizedDescription, privacy: .public)")
+            loadError = String(localized: "Could not search your ledger. Your last saved view is still shown. Try again.")
+        }
     }
 
     /// Search deliberately spans every month, while the normal ledger remains
@@ -67,25 +85,60 @@ final class LedgerSnapshotCache {
     /// The scan is unconditional here: this *is* the transition into search, so
     /// it must not depend on the caller's `isSearching` already agreeing.
     func beginSearch(_ inputs: Inputs) {
-        searchSnapshot = inputs.app.insights.ledgerSnapshot(inputs.clients)
-        searchFilterSource = buildSearchFilterSource(clients: inputs.clients)
-        searchStats = scanSearchHits(inputs)
+        do {
+            let entries = try inputs.context.fetch(FetchDescriptor<Entry>())
+            searchSnapshot = fullLedgerSnapshot(entries: entries, inputs: inputs)
+            searchFilterSource = buildSearchFilterSource(clients: inputs.clients, entries: entries)
+            applySearchScan(scanSearchHits(entries: entries, inputs: inputs))
+            loadError = nil
+        } catch {
+            Self.logger.error("Could not open search: \(error.localizedDescription, privacy: .public)")
+            loadError = String(localized: "Could not search your ledger. Your last saved view is still shown. Try again.")
+        }
     }
 
-    private func scanSearchHits(_ inputs: Inputs) -> SearchStats {
-        let hits = inputs.rowBuilder.searchHits
-        return SearchStats(
+    private struct SearchScan {
+        let stats: SearchStats
+        let ids: Set<UUID>
+    }
+
+    private func applySearchScan(_ scan: SearchScan) {
+        searchHitIDs = scan.ids
+        searchStats = scan.stats
+    }
+
+    private func scanSearchHits(_ inputs: Inputs) throws -> SearchScan {
+        scanSearchHits(entries: try inputs.context.fetch(FetchDescriptor<Entry>()), inputs: inputs)
+    }
+
+    private func scanSearchHits(entries: [Entry], inputs: Inputs) -> SearchScan {
+        let startedAt = ContinuousClock.now
+        let filter = EntrySearch.Filter(query: inputs.rowBuilder.searchQuery, tokens: inputs.rowBuilder.searchTokens)
+        let hits: [Entry]
+        if filter.isActive {
+            hits = entries.filter { entry in
+                guard !entry.isInvalidated, let client = entry.client, !client.isInvalidated else { return false }
+                return filter.matches(entry, clientID: client.id, clientName: client.name)
+            }
+        } else {
+            hits = []
+        }
+        let stats = SearchStats(
             hitCount: hits.count,
             earnedTotal: hits.reduce(.zero) { total, entry in
                 guard entry.status.isIncludedInEarnedTotals else { return total }
                 return total + inputs.app.toBase(entry.amount, code: entry.currencyCode)
             }
         )
+        let elapsed = startedAt.duration(to: .now)
+        Self.logger.debug("Search scanned \(hits.count) matching entries in \(elapsed, privacy: .public)")
+        return SearchScan(stats: stats, ids: Set(hits.map(\.id)))
     }
 
     func endSearch() {
         searchSnapshot = nil
         searchFilterSource = nil
+        searchHitIDs = []
         searchStats = SearchStats()
     }
 
@@ -96,29 +149,39 @@ final class LedgerSnapshotCache {
         let context = inputs.context
         let start = windowStart
         let inWindow = FetchDescriptor<Entry>(predicate: #Predicate { $0.date >= start })
-        let entries = (try? context.fetch(inWindow)) ?? []
         let older = FetchDescriptor<Entry>(predicate: #Predicate { $0.date < start })
-        let olderCount = (try? context.fetchCount(older)) ?? 0
         let inProgressRaw = EntryStatus.inProgress.rawValue
         let pending = FetchDescriptor<Entry>(predicate: #Predicate { $0.statusRaw == inProgressRaw })
-        let pendingCount = (try? context.fetchCount(pending)) ?? 0
-        let visibleHeadingMonths = inputs.headings.compactMap { heading -> Date? in
-            guard !heading.isInvalidated, heading.date >= start else { return nil }
-            return DateFormat.monthStart(of: heading.date)
-        }
-        let hasOlderHeadings = inputs.headings.contains { heading in
-            !heading.isInvalidated && heading.date < start
-        }
-        ledgerSnapshot = inputs.app.insights.ledgerSnapshot(
-            windowed: entries,
-            hasOlderMonths: olderCount > 0 || hasOlderHeadings,
-            hasAnyEntries: olderCount > 0 || !entries.isEmpty,
-            pendingCount: pendingCount,
-            additionalMonths: visibleHeadingMonths
-        )
-        if inputs.isSearching {
-            searchSnapshot = inputs.app.insights.ledgerSnapshot(inputs.clients)
-            searchStats = scanSearchHits(inputs)
+        do {
+            let entries = try context.fetch(inWindow)
+            let olderCount = try context.fetchCount(older)
+            let pendingCount = try context.fetchCount(pending)
+            let visibleHeadingMonths = inputs.headings.compactMap { heading -> Date? in
+                guard !heading.isInvalidated, heading.date >= start else { return nil }
+                return DateFormat.monthStart(of: heading.date)
+            }
+            let hasOlderHeadings = inputs.headings.contains { heading in
+                !heading.isInvalidated && heading.date < start
+            }
+            ledgerSnapshot = inputs.app.insights.ledgerSnapshot(
+                windowed: entries,
+                hasOlderMonths: olderCount > 0 || hasOlderHeadings,
+                hasAnyEntries: olderCount > 0 || !entries.isEmpty,
+                pendingCount: pendingCount,
+                additionalMonths: visibleHeadingMonths
+            )
+            if inputs.isSearching {
+                let allEntries = try context.fetch(FetchDescriptor<Entry>())
+                searchSnapshot = fullLedgerSnapshot(entries: allEntries, inputs: inputs)
+                searchFilterSource = buildSearchFilterSource(clients: inputs.clients, entries: allEntries)
+                applySearchScan(scanSearchHits(entries: allEntries, inputs: inputs))
+            }
+            loadError = nil
+        } catch {
+            Self.logger.error("Could not refresh ledger snapshot: \(error.localizedDescription, privacy: .public)")
+            // Preserve the last known-good snapshot. Showing an empty ledger
+            // after a read failure is indistinguishable from data loss.
+            loadError = String(localized: "Could not load your ledger. Your last saved view is still shown. Try again.")
         }
     }
 
@@ -158,20 +221,39 @@ final class LedgerSnapshotCache {
         requestWindowExtension(inputs)
     }
 
-    private func buildSearchFilterSource(clients: [Client]) -> EntrySearch.FilterSource {
+    /// Search needs every month, but it should still be one table fetch rather
+    /// than walking `client.entries` and faulting the whole graph twice.
+    private func fullLedgerSnapshot(entries: [Entry], inputs: Inputs) -> Insights.LedgerSnapshot {
+        let pendingCount = entries.reduce(into: 0) { count, entry in
+            if !entry.isDeleted && entry.status == .inProgress { count += 1 }
+        }
+        let extraMonths = inputs.headings.compactMap { heading -> Date? in
+            guard !heading.isInvalidated else { return nil }
+            return DateFormat.monthStart(of: heading.date)
+        }
+        return inputs.app.insights.ledgerSnapshot(
+            windowed: entries,
+            hasOlderMonths: false,
+            hasAnyEntries: !entries.isEmpty,
+            pendingCount: pendingCount,
+            additionalMonths: extraMonths
+        )
+    }
+
+    private func buildSearchFilterSource(clients: [Client], entries: [Entry]) -> EntrySearch.FilterSource {
         var source = EntrySearch.FilterSource()
         source.months = searchSnapshot?.months ?? []
         var seenProjects: Set<String> = []
         var projects: [String] = []
         for client in clients where !client.isInvalidated {
             source.clients.append(.init(id: client.id, name: client.name))
-            for entry in client.entries where !entry.isInvalidated {
-                guard let project = entry.project,
-                      !project.isEmpty,
-                      seenProjects.insert(EntrySearch.normalized(project)).inserted
-                else { continue }
-                projects.append(project)
-            }
+        }
+        for entry in entries where !entry.isInvalidated {
+            guard let project = entry.project,
+                  !project.isEmpty,
+                  seenProjects.insert(EntrySearch.normalized(project)).inserted
+            else { continue }
+            projects.append(project)
         }
         source.projects = projects.sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending

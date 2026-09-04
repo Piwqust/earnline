@@ -170,6 +170,33 @@ struct SyncCoordinatorTests {
         #expect(!MockTransport.recorded.contains { $0.method == "POST" && $0.table == "earnline_profiles" })
     }
 
+    @Test func newerCloudProfileConflictsBeforeThisIPhonePushes() async throws {
+        MockTransport.reset()
+        MockTransport.respond("GET", "earnline_profiles", json: """
+        [{"workspace_id":"\(workspace)","base_currency_code":"USD",
+          "secondary_currency_code":"RUB","exchange_rate":"72.5",
+          "updated_at":"2026-07-13T00:00:00.000Z"}]
+        """)
+
+        let payload = WorkspaceProfilePayload(workspaceID: workspace,
+                                              baseCurrencyCode: "EUR",
+                                              secondaryCurrencyCode: "GBP",
+                                              exchangeRate: 89.125)
+        await #expect(throws: SyncCoordinator.SyncConflictError.detected(1)) {
+            try await SyncCoordinator.syncWorkspaceProfile(
+                client: makeClient(),
+                workspaceID: workspace,
+                local: payload,
+                pushLocal: true,
+                expectedRemoteUpdatedAt: timestamp("2026-07-12T00:00:00.000Z")
+            )
+        }
+
+        #expect(!MockTransport.recorded.contains {
+            $0.method == "POST" && $0.table == "earnline_profiles"
+        })
+    }
+
     @Test func pullInsertsRemoteRowsAndAdvancesCursor() async throws {
         MockTransport.reset()
         let container = try makeContainer()
@@ -257,6 +284,44 @@ struct SyncCoordinatorTests {
         #expect(preference.symbol == .paintpalette)
         #expect(preference.syncState == .synced)
         #expect(cursor.rowUpdatedAt == timestamp("2026-07-04T10:00:00.000Z"))
+    }
+
+    @Test func pullMergesProjectIconByKeyWhenRemoteIdDiffers() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let localID = try #require(ProjectIconResolver.preferenceID(for: "Launch Kit"))
+        let remoteID = UUID()
+        let baseline = timestamp("2026-07-01T10:00:00.000Z")
+        context.insert(ProjectIconPreference(
+            id: localID,
+            projectKey: "launch kit",
+            symbol: .folder,
+            createdAt: baseline,
+            updatedAt: baseline,
+            syncState: .synced,
+            lastSyncedAt: baseline
+        ))
+        try context.save()
+
+        MockTransport.respond("GET", "earnline_project_icons", json: """
+        [{"id":"\(remoteID.uuidString)","workspace_id":"\(workspace)",
+          "project_key":"launch kit","symbol_name":"paintpalette",
+          "created_at":"2026-07-01T09:00:00.000Z","updated_at":"2026-07-04T10:00:00.000Z"}]
+        """)
+
+        _ = try await SyncCoordinator.sync(
+            context: context,
+            client: makeClient(),
+            workspaceID: workspace
+        )
+
+        let icons = try context.fetch(FetchDescriptor<ProjectIconPreference>())
+        #expect(icons.count == 1)
+        let preference = try #require(icons.first)
+        #expect(preference.id == localID)
+        #expect(preference.symbol == .paintpalette)
+        #expect(preference.syncState == .synced)
     }
 
     @Test func pullInsertsMonthReviewAndAdvancesCursor() async throws {

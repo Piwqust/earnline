@@ -148,14 +148,22 @@ struct LineParserTests {
 
     @Test func readsEUFormatAmounts() {
         // Dot-grouped thousands with comma decimals, and the US form still works.
-        #expect(LineParser.decimal(from: "1.000,50") == Decimal(string: "1000.50"))
-        #expect(LineParser.decimal(from: "1.000.000,50") == Decimal(string: "1000000.50"))
-        #expect(LineParser.decimal(from: "1,000.50") == Decimal(string: "1000.50"))
-        #expect(LineParser.decimal(from: "1,000,000.50") == Decimal(string: "1000000.50"))
+        let posix = Locale(identifier: "en_US_POSIX")
+        #expect(LineParser.decimal(from: "1.000,50") == Decimal(string: "1000.50", locale: posix))
+        #expect(LineParser.decimal(from: "1.000.000,50") == Decimal(string: "1000000.50", locale: posix))
+        #expect(LineParser.decimal(from: "1,000.50") == Decimal(string: "1000.50", locale: posix))
+        #expect(LineParser.decimal(from: "1,000,000.50") == Decimal(string: "1000000.50", locale: posix))
 
         let p = LineParser.parse("€1.000,50 Acme: Retainer")
         #expect(p.currencyCode == "EUR")
-        #expect(p.amount == Decimal(string: "1000.50"))
+        #expect(p.amount == Decimal(string: "1000.50", locale: Locale(identifier: "en_US_POSIX")))
+    }
+
+    @Test func decimalParsingDoesNotDependOnDeviceGroupingRules() {
+        let posix = Locale(identifier: "en_US_POSIX")
+        #expect(LineParser.decimal(from: "99.50") == Decimal(string: "99.50", locale: posix))
+        #expect(LineParser.decimal(from: "1 000,50") == Decimal(string: "1000.50", locale: posix))
+        #expect(LineParser.decimal(from: "1.000,50") == Decimal(string: "1000.50", locale: posix))
     }
 
     @Test func doesNotTreatDueInsideAWordAsHold() {

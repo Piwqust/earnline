@@ -23,7 +23,8 @@ Both apps read and write the **same** Supabase tables with an identical
 convention, so a line added on the phone shows up in the browser and vice-versa.
 That contract is:
 
-- amounts as 2-decimal strings, days as `yyyy-MM-dd` (UTC), timestamps ISO-8601;
+- amounts as 2-decimal strings, days as timezone-independent calendar values in
+  `yyyy-MM-dd`, timestamps ISO-8601;
 - snake_case columns, status in `{paid, inProgress, canceled}`, a `workspace_id`
   on every row;
 - a deterministic ID hash shared by both clients (`DeterministicID.swift` ↔

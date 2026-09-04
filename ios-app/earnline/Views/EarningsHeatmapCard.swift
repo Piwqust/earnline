@@ -18,6 +18,8 @@ struct EarningsHeatmapCard: View {
     @Binding var selectedDay: Date?
 
     @State private var hasRevealedData = false
+    @State private var selectedRows: [(entry: Entry, amount: Decimal, isHeldSlice: Bool)] = []
+    @State private var dayLoadError: String?
 
     // Fixed cell metrics — the grid keeps one comfortable size and scrolls
     // horizontally for longer windows rather than shrinking to fit.
@@ -70,6 +72,9 @@ struct EarningsHeatmapCard: View {
             withAnimation(reduceMotion ? nil : .smooth(duration: 0.32)) {
                 hasRevealedData = true
             }
+        }
+        .task(id: selectedDay) {
+            loadDayDetails(for: selectedDay)
         }
         .sensoryFeedback(.selection, trigger: selectedDay)
     }
@@ -352,10 +357,7 @@ struct EarningsHeatmapCard: View {
     @ViewBuilder
     private func dayDetail(day: Date, map: [Date: Decimal], heatTotal: Decimal) -> some View {
         let dayTotal = map[calendar.startOfDay(for: day)] ?? 0
-        let rows = app.insights.dayContributions(
-            on: day,
-            candidates: Insights.dayContributionCandidates(on: day, in: context)
-        )
+        let rows = selectedRows
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -393,7 +395,12 @@ struct EarningsHeatmapCard: View {
                 .background(Theme.label(0.04), in: .rect(cornerRadius: 14, style: .continuous))
             }
 
-            if rows.isEmpty {
+            if let dayLoadError {
+                Label(dayLoadError, systemImage: "exclamationmark.triangle")
+                    .appFont(13)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 2)
+            } else if rows.isEmpty {
                 Text("No income recorded on this day")
                     .appFont(13)
                     .foregroundStyle(.tertiary)
@@ -410,6 +417,23 @@ struct EarningsHeatmapCard: View {
                     }
                 }
             }
+        }
+    }
+
+    private func loadDayDetails(for day: Date?) {
+        guard let day else {
+            selectedRows = []
+            dayLoadError = nil
+            return
+        }
+
+        do {
+            let candidates = try Insights.dayContributionCandidates(on: day, in: context)
+            selectedRows = app.insights.dayContributions(on: day, candidates: candidates)
+            dayLoadError = nil
+        } catch {
+            selectedRows = []
+            dayLoadError = String(localized: "Could not load income details for this day.")
         }
     }
 

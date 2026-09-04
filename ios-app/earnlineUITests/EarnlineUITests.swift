@@ -73,6 +73,21 @@ final class EarnlineUITests: XCTestCase {
         waitForExpectations(timeout: 3)
     }
 
+    func testStressLedgerSummaryFollowsVisibleMonth() {
+        let app = launchApp(["-demoStressLedger"])
+        let summary = app.descendants(matching: .any)["ledger.earned.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 8))
+
+        let initialMonth = summary.label
+        for _ in 0..<16 where summary.label == initialMonth {
+            app.swipeUp()
+        }
+
+        let changedMonth = NSPredicate(format: "label != %@", initialMonth)
+        expectation(for: changedMonth, evaluatedWith: summary)
+        waitForExpectations(timeout: 3)
+    }
+
     func testSearchOpensWithNativeFiltersMenu() {
         let app = launchApp()
 
@@ -251,12 +266,18 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["insights.selectedDay"].exists)
     }
 
-    func testStatsCardIsInformationalAndInsightsRemainInMoreMenu() {
+    func testStatsCardOpensInsights() {
         let app = launchApp(["-demoLedger"])
 
-        let stats = app.descendants(matching: .any)["ledger.stats.summary"]
+        let stats = app.buttons["ledger.stats.summary"]
         XCTAssertTrue(stats.waitForExistence(timeout: 8))
-        XCTAssertFalse(app.buttons["ledger.stats"].exists)
+        XCTAssertTrue(stats.isHittable)
+        stats.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["insights.sheet"].waitForExistence(timeout: 5))
+    }
+
+    func testInsightsRemainInMoreMenu() {
+        let app = launchApp(["-demoLedger"])
 
         let menu = app.buttons["ledger.menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 3))
@@ -345,7 +366,7 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
     }
 
-    func testProjectIconCanBeChosenFromSettings() {
+    func testProjectIconCanBeChosenAndPersistsInSettings() {
         let app = launchApp(["-demoSettings", "-demoInsights"])
 
         let projectIcons = app.buttons["settings.projectIcons"]
@@ -379,6 +400,8 @@ final class EarnlineUITests: XCTestCase {
         let projectIconsBack = app.buttons["Project icons"]
         XCTAssertTrue(projectIconsBack.waitForExistence(timeout: 3))
         projectIconsBack.tap()
+        XCTAssertTrue(project.waitForExistence(timeout: 3))
+        XCTAssertEqual(project.value as? String, "Invoice")
 
         let settingsBack = app.buttons["Settings"]
         XCTAssertTrue(settingsBack.waitForExistence(timeout: 3))
@@ -387,10 +410,6 @@ final class EarnlineUITests: XCTestCase {
         let close = app.buttons["Close"]
         XCTAssertTrue(returnToSettingsHeader(in: app, close: close))
         close.tap()
-
-        let ledgerIcon = app.images.matching(identifier: "entry.projectIcon").firstMatch
-        XCTAssertTrue(ledgerIcon.waitForExistence(timeout: 5))
-        XCTAssertEqual(ledgerIcon.value as? String, "receipt")
     }
 
     func testAboutIsAvailableOutsideDeveloperMode() {

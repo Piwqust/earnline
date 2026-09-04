@@ -174,7 +174,9 @@ final class AuthGateUITests: XCTestCase {
         app.launchEnvironment["EARNLINE_UI_TEST_FLAGS"] = launchArguments.joined(separator: " ")
         app.launch()
 
-        let entry = app.buttons["$760, Ops Console, Component library, In progress, 19.07.26"]
+        let entry = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "entry.row.")
+        ).firstMatch
         XCTAssertTrue(entry.waitForExistence(timeout: 5))
         entry.press(forDuration: 1.1)
         XCTAssertTrue(app.descendants(matching: .any)["Delete"].waitForExistence(timeout: 3))

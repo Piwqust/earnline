@@ -7,6 +7,8 @@ import SwiftData
 struct LedgerRowsView: View {
     @Environment(AppModel.self) private var app
     @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
+    @State private var visibleRowIDs: Set<LedgerScrollTarget> = []
+    @State private var lastReportedVisibleMonth: Date?
 
     let rows: [LedgerRow]
     let isSearching: Bool
@@ -19,13 +21,26 @@ struct LedgerRowsView: View {
     let onDeleteEntry: (UUID) -> Void
     let onEditHeading: (UUID) -> Void
     let onDeleteHeading: (UUID) -> Void
+    let onTopVisibleMonthChange: (Date?) -> Void
 
     var body: some View {
         ForEach(rows) { row in
             rowView(row)
+                // `List` does not currently report changing row identities
+                // through `scrollPosition` or target visibility on iOS 27.
+                // Native visibility callbacks on the virtualized rows do;
+                // they update only when a row crosses the threshold, instead
+                // of measuring every row on every layout pass.
+                .onScrollVisibilityChange(threshold: 0.01) { isVisible in
+                    updateVisibility(of: row.id, isVisible: isVisible)
+                }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(insets(for: row))
+        }
+        .onChange(of: rows.map(\.id)) { _, rowIDs in
+            visibleRowIDs.formIntersection(Set(rowIDs))
+            reportTopVisibleMonth()
         }
     }
 
@@ -46,10 +61,8 @@ struct LedgerRowsView: View {
         switch row {
         case .month(let month, let total):
             MonthDivider(title: DateFormat.month(month), total: total)
-                .background(monthAnchorReader(month))
-        case .heading(let heading, let month):
+        case .heading(let heading, _):
             headingRow(heading)
-                .background(monthAnchorReader(month))
         case .client(let client, let month, let total):
             ClientChip(
                 client: client,
@@ -59,14 +72,14 @@ struct LedgerRowsView: View {
                 onOpen: { onOpenClient(client.id) },
                 onAdd: { onToggleComposer(client, month) }
             )
-            .background(monthAnchorReader(month))
         case .composer(let client, let month):
+            // The actual composer uses its explicit route month when present;
+            // the row identifier continues to carry the represented month for
+            // the surrounding scroll target layout.
             SmartComposer(client: client, month: composerMonth ?? month)
                 .transition(.opacity)
-                .background(monthAnchorReader(month))
-        case .entry(let entry, let month):
+        case .entry(let entry, _):
             entryRow(entry)
-                .background(monthAnchorReader(month))
         }
     }
 
@@ -101,6 +114,29 @@ struct LedgerRowsView: View {
         return projectIconPreferences.first { $0.projectKey == key }?.symbol
     }
 
+    private func updateVisibility(of rowID: LedgerScrollTarget, isVisible: Bool) {
+        if isVisible {
+            visibleRowIDs.insert(rowID)
+        } else {
+            visibleRowIDs.remove(rowID)
+        }
+        reportTopVisibleMonth()
+    }
+
+    private func reportTopVisibleMonth() {
+        // Rows are grouped newest-month first. The visible set stays small
+        // because `List` virtualizes its cells, so choose from it instead of
+        // scanning the complete ledger after every row visibility change.
+        guard let visibleMonth = visibleRowIDs.map(\.representedMonth).max() else { return }
+        let month = DateFormat.monthStart(of: visibleMonth)
+        guard lastReportedVisibleMonth.map({
+            !Calendar.current.isDate($0, equalTo: month, toGranularity: .month)
+        }) ?? true else { return }
+        lastReportedVisibleMonth = month
+        guard !isSearching else { return }
+        onTopVisibleMonthChange(month)
+    }
+
     private func headingRow(_ heading: Heading) -> some View {
         let title = heading.title.isEmpty ? String(localized: "Untitled") : heading.title
         let date = DateFormat.dotted(heading.date)
@@ -132,6 +168,14 @@ struct LedgerRowsView: View {
         }
         .buttonStyle(.plain)
         .contentShape(.rect)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                onDeleteHeading(heading.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(Theme.statusCanceled)
+        }
         .contextMenu {
             Button(role: .destructive) {
                 onDeleteHeading(heading.id)
@@ -143,22 +187,6 @@ struct LedgerRowsView: View {
         }
         .accessibilityLabel("\(noteLabel): \(title), \(date)")
         .accessibilityHint("Edits note")
-    }
-
-    /// List does not currently report changing row identities through
-    /// `scrollPosition` on the iOS 27 runtime. Emit the month for the rows
-    /// already on screen instead; the ledger chooses the row nearest its top
-    /// edge, so both summary cards track the visible month.
-    private func monthAnchorReader(_ month: Date) -> some View {
-        GeometryReader { geometry in
-            Color.clear.preference(
-                key: MonthAnchorKey.self,
-                value: [MonthAnchor(
-                    month: month,
-                    y: geometry.frame(in: .named("ledger")).minY
-                )]
-            )
-        }
     }
 
     private func insets(for row: LedgerRow) -> EdgeInsets {

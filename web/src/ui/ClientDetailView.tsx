@@ -60,7 +60,7 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
   const clients = useClients();
   const entries = useEntries();
   const settings = useSettings();
-  const cs = currencySettings(settings);
+  const cs = useMemo(() => currencySettings(settings), [settings]);
   const [editing, setEditing] = useState<Entry | null>(null);
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [deletingClient, setDeletingClient] = useState(false);
@@ -74,7 +74,7 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
 
   const model = useMemo(
     () => buildClientDetailModel(client.id, entries, cs),
-    [client.id, entries, settings.baseCurrencyCode, settings.rate, settings.secondaryCurrencyCode],
+    [client.id, cs, entries],
   );
   const list = model.entries;
   const totalAll = model.total;
@@ -85,7 +85,8 @@ function ClientDetailBody({ client, onBack }: { client: Client; onBack: () => vo
   const unsupportedCount = model.unsupportedCount;
 
   useEffect(() => {
-    setName(client.name);
+    const frame = requestAnimationFrame(() => setName(client.name));
+    return () => cancelAnimationFrame(frame);
   }, [client.name]);
 
   async function commitName() {

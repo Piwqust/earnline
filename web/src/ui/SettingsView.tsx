@@ -47,7 +47,10 @@ export function SettingsView() {
   const [localError, setLocalError] = useState<string | null>(null);
   const restoreInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => setRateDraft(String(settings.rate)), [settings.rate]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setRateDraft(String(settings.rate)));
+    return () => cancelAnimationFrame(frame);
+  }, [settings.rate]);
 
   const pending = clients.filter(needsSync).length + entries.filter(needsSync).length +
     headings.filter(needsSync).length + tombstoneCount;

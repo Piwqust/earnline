@@ -12,6 +12,7 @@ struct LedgerSummaryHeader: View {
     var searchEarnedTotal: Decimal = 0
     var hasSearchFilter = false
     var hasAnyEntries = true
+    let onOpenInsights: () -> Void
 
     private var displayedTotal: Decimal {
         monthlyTotals[Insights.monthKey(of: app.displayedMonth)] ?? .zero
@@ -35,7 +36,8 @@ struct LedgerSummaryHeader: View {
                 SummaryCards(
                     month: app.displayedMonth,
                     total: displayedTotal,
-                    trend: displayedTrend
+                    trend: displayedTrend,
+                    onOpenInsights: onOpenInsights
                 )
             }
         }

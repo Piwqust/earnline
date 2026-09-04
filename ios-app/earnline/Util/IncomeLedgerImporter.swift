@@ -77,7 +77,10 @@ enum IncomeLedgerImporter {
         // duplicate clients or entries during a later import, so propagate it
         // to the existing Settings error surface instead.
         let existingClients = try context.fetch(FetchDescriptor<Client>())
-        var clientsByName = Dictionary(uniqueKeysWithValues: existingClients.map { ($0.name.normalizedLedgerKey, $0) })
+        var clientsByName = Dictionary(
+            existingClients.map { ($0.name.normalizedLedgerKey, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let existingEntries = try context.fetch(FetchDescriptor<Entry>())
         let existingEntryIDs = Set(existingEntries.map(\.id))
         var inserted = 0

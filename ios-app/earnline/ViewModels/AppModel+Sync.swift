@@ -24,7 +24,9 @@ extension AppModel {
         guard let url = URL(string: urlText),
               url.scheme?.lowercased() == "https",
               url.host() != nil else { return false }
-        return !supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let key = supabaseKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !key.isEmpty
+            && !SupabaseKeyValidation.looksLikeSecretKey(key)
             && !workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -122,10 +124,19 @@ extension AppModel {
         }
         let generation = syncGeneration
         var passError: String?
+        var syncTransactionStarted = false
         isSyncing = true
         syncMessage = String(localized: "Syncing...")
         syncError = nil
         do {
+            // Every user-facing mutation normally saves immediately, but a
+            // form or an external caller can still leave this context dirty.
+            // Commit that work before the sync transaction starts so a later
+            // rollback only discards the pass's own remote merge changes.
+            if context.hasChanges {
+                try context.save()
+                mutations.recordExternalSave()
+            }
             let client = try supabase()
             let profileStamp = profileEditGeneration
             let localProfile = WorkspaceProfilePayload(
@@ -138,7 +149,9 @@ extension AppModel {
                 client: client,
                 workspaceID: workspaceID,
                 local: localProfile,
-                pushLocal: profileNeedsSync
+                pushLocal: profileNeedsSync,
+                expectedRemoteUpdatedAt: profileRemoteUpdatedAt,
+                conflictResolution: conflictResolution
             )
             guard generation == syncGeneration else {
                 finishStaleSyncPass()
@@ -152,6 +165,7 @@ extension AppModel {
                 followUpSyncRequested = true
             }
 
+            syncTransactionStarted = true
             let nextCursor = try await SyncCoordinator.sync(context: context,
                                                             client: client,
                                                             workspaceID: workspaceID,
@@ -176,7 +190,9 @@ extension AppModel {
                 finishStaleSyncPass()
                 return nil
             }
-            context.rollback()
+            if syncTransactionStarted {
+                context.rollback()
+            }
             if let conflict = error as? SyncCoordinator.SyncConflictError {
                 syncConflictCount = conflict.count
                 syncMessage = String(localized: "Resolve conflict")
@@ -209,7 +225,7 @@ extension AppModel {
     /// This intentionally does not enqueue tombstones: the user is switching
     /// sources of truth, not deleting remote income rows.
     @discardableResult
-    func resetLocalDataAndPull(context: ModelContext) async -> String? {
+    func resetLocalDataAndPull(context: ModelContext, discardLocalProfile: Bool = false) async -> String? {
         guard isSupabaseConfigured else {
             syncMessage = String(localized: "Offline")
             return String(localized: "Add the Supabase URL and publishable key first.")
@@ -225,6 +241,10 @@ extension AppModel {
             try Self.clearLocalStore(context)
             syncCursor = nil
             lastSyncAt = nil
+            if discardLocalProfile {
+                profileNeedsSync = false
+                defaults.set(false, forKey: workspaceDefaultKey("profileNeedsSync"))
+            }
             defaults.set(false, forKey: SampleData.autoSeededDemoKey)
             // Report what *this* pass produced. Reading `syncError` here also
             // surfaced a stale realtime-subscription warning, so a reset that
@@ -417,6 +437,7 @@ extension AppModel {
 
     func loadWorkspaceProfileSyncState() {
         profileNeedsSync = defaults.bool(forKey: workspaceDefaultKey("profileNeedsSync"))
+        profileRemoteUpdatedAt = defaults.object(forKey: workspaceDefaultKey("profileRemoteUpdatedAt")) as? Date
         profileEditGeneration += 1
     }
 
@@ -436,6 +457,12 @@ extension AppModel {
         isApplyingRemoteProfile = false
         profileNeedsSync = false
         defaults.set(false, forKey: workspaceDefaultKey("profileNeedsSync"))
+        profileRemoteUpdatedAt = SyncDateCodec.parseTimestamp(profile.updatedAt)
+        if let profileRemoteUpdatedAt {
+            defaults.set(profileRemoteUpdatedAt, forKey: workspaceDefaultKey("profileRemoteUpdatedAt"))
+        } else {
+            defaults.removeObject(forKey: workspaceDefaultKey("profileRemoteUpdatedAt"))
+        }
     }
 
     /// Load the Supabase URL/key for the active environment: the user's stored

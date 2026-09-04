@@ -35,7 +35,7 @@ export const Sidebar = forwardRef<
   const clients = useClients();
   const entries = useEntries();
   const settings = useSettings();
-  const cs = currencySettings(settings);
+  const cs = useMemo(() => currencySettings(settings), [settings]);
   const sync = useSyncStatus();
   const [newClient, setNewClient] = useState(false);
   const localRef = useRef<HTMLElement>(null);
@@ -67,7 +67,7 @@ export const Sidebar = forwardRef<
       totals.set(entry.clientId, (totals.get(entry.clientId) ?? 0) + converted);
     }
     return totals;
-  }, [clients, entries, settings.baseCurrencyCode, settings.rate, settings.secondaryCurrencyCode]);
+  }, [clients, cs, entries]);
 
   const resolvedDark =
     settings.theme === "dark" ||

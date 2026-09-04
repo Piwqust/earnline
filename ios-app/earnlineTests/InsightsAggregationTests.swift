@@ -277,6 +277,20 @@ struct InsightsAggregationTests {
         #expect(snapshot.clientTotals.map(\.name) == ["Acme"])
     }
 
+    @Test func dashboardSnapshotExcludesFutureDatedIncomeFromYearToDate() {
+        let client = Client(name: "Acme")
+        client.entries = [
+            Entry(amount: 500, task: "scheduled", date: date(2026, 12, 1), status: .paid)
+        ]
+
+        let snapshot = InsightsDashboardInput(
+            clients: [client],
+            converter: CurrencyConverter(baseCurrencyCode: "USD", secondaryCurrencyCode: "RUB", rate: 83)
+        ).dashboardSnapshot(windowMonths: 1, now: date(2026, 7, 11))
+
+        #expect(snapshot.yearToDateTotal == .zero)
+    }
+
     // MARK: Client profile snapshot
 
     @Test func clientDetailSnapshotBuildsAllBreakdownsInOnePass() {

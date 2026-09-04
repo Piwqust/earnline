@@ -1,5 +1,5 @@
 import { BrowserQRCodeReader } from "@zxing/browser";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { toDataURL } from "qrcode";
 import { authStore, type AuthState, type PairedDevice, useAuthState } from "./authStore";
@@ -146,17 +146,22 @@ export function AccountDevicesPanel() {
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<PairedDevice | null>(null);
+  const [renderedAt] = useState(Date.now);
+  const canManageDevices = auth.status === "ready" && auth.role === "owner" && !auth.isPairedDevice;
 
-  const loadDevices = async () => {
-    if (auth.status !== "ready" || auth.role !== "owner" || auth.isPairedDevice) return;
+  const loadDevices = useCallback(async () => {
+    if (!canManageDevices) return;
     setDevicesLoading(true);
     setDeviceError(null);
     try { setDevices(await authStore.listDevices()); }
     catch (error) { setDeviceError(error instanceof Error ? error.message : "Could not load paired devices."); }
     finally { setDevicesLoading(false); }
-  };
+  }, [canManageDevices]);
 
-  useEffect(() => { void loadDevices(); }, [auth.status]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => void loadDevices());
+    return () => cancelAnimationFrame(frame);
+  }, [loadDevices]);
 
   const removeDevice = async () => {
     if (!pendingRemoval) return;
@@ -187,7 +192,7 @@ export function AccountDevicesPanel() {
         ) : <ul className="paired-devices__list">
           {devices.map((device) => <li key={device.userId}>
             <span><strong>Paired device</strong><small>{device.lastSignInAt
-              ? `Last signed in ${new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round((new Date(device.lastSignInAt).getTime() - Date.now()) / 86_400_000), "day")}`
+              ? `Last signed in ${new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(Math.round((new Date(device.lastSignInAt).getTime() - renderedAt) / 86_400_000), "day")}`
               : `Added ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(device.createdAt))}`}</small></span>
             <Button variant="danger" onClick={() => setPendingRemoval(device)}>Remove</Button>
           </li>)}
@@ -234,15 +239,18 @@ function PairingCodeDialog({ onClose }: { onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const load = async () => {
+  const load = useCallback(async () => {
     setError(null); setUrl(null);
     try {
       const token = await authStore.createPairingToken();
       setExpiresAt(token.expiresAt);
       setUrl(await toDataURL(`earnline-pairing://v1/${token.token}`, { margin: 1, width: 280, errorCorrectionLevel: "M" }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not create a pairing code."); }
-  };
-  useEffect(() => { void load(); }, []);
+  }, []);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => void load());
+    return () => cancelAnimationFrame(frame);
+  }, [load]);
   return <Dialog title="Pair another device" onClose={onClose}>
     <p>Scan this QR code on the device you want to pair. It authorizes only that device.</p>
     {url ? <img className="pairing-qr" src={url} alt="One-time device pairing QR code" /> : !error && <div className="auth-status" role="status"><span className="auth-spinner" aria-hidden />Creating a secure code…</div>}
@@ -254,12 +262,12 @@ function PairingCodeDialog({ onClose }: { onClose: () => void }) {
 
 function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const dialog = useRef<HTMLElement>(null);
-  const opener = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = requestAnimationFrame(() => dialog.current?.querySelector<HTMLElement>("button, input, [tabindex]:not([tabindex='-1'])")?.focus());
     return () => {
       cancelAnimationFrame(frame);
-      opener.current?.focus({ preventScroll: true });
+      opener?.focus({ preventScroll: true });
     };
   }, []);
   const close = (event: MouseEvent<HTMLDivElement>) => { if (event.target === event.currentTarget) onClose(); };

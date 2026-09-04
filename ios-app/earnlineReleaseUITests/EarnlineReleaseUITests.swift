@@ -26,4 +26,18 @@ final class EarnlineReleaseUITests: XCTestCase {
         XCTAssertTrue(guest.waitForExistence(timeout: 5) || ledger.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["auth.failure"].exists)
     }
+
+    func testReleaseBinaryShowsAnEntryPointAtAccessibilityTextSize() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launch()
+
+        let guest = app.buttons["Continue without an account"]
+        let ledger = app.buttons["ledger.menu"]
+        XCTAssertTrue(guest.waitForExistence(timeout: 5) || ledger.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["auth.failure"].exists)
+    }
 }

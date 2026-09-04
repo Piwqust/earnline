@@ -334,7 +334,10 @@ enum LineParser {
                 s = s.replacingOccurrences(of: ".", with: "")
             }
         }
-        return Decimal(string: s)
+        // The string is already normalized to `.` as the decimal separator.
+        // Device locale must not get another vote: ru_RU treats `.` as grouping
+        // and would turn "99.50" into 9950, or fail to parse it at all.
+        return Decimal(string: s, locale: Locale(identifier: "en_US_POSIX"))
     }
 
     // MARK: - Hold date

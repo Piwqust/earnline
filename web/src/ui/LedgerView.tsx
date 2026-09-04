@@ -43,7 +43,7 @@ export function LedgerView() {
   const headings = useHeadings();
   const dataReady = useDataReady();
   const settings = useSettings();
-  const cs = currencySettings(settings);
+  const cs = useMemo(() => currencySettings(settings), [settings]);
 
   const [composerClientId, setComposerClientId] = useState<string | null>(null);
   const [showNewClient, setShowNewClient] = useState(false);
@@ -64,7 +64,7 @@ export function LedgerView() {
 
   const ledgerModel = useMemo(
     () => buildLedgerModel(clients, entries, headings, cs),
-    [clients, entries, headings, settings.baseCurrencyCode, settings.rate, settings.secondaryCurrencyCode],
+    [clients, cs, entries, headings],
   );
   const months = ledgerModel.months;
   const showEmpty = clients.length === 0 && entries.length === 0 && headings.length === 0;
@@ -114,14 +114,16 @@ export function LedgerView() {
 
   // Keep the composer aimed at a valid (most-recent) client.
   useEffect(() => {
+    let nextClientId: string | null = composerClientId;
     if (clients.length === 0) {
-      if (composerClientId !== null) setComposerClientId(null);
-      return;
-    }
-    if (composerClientId == null || !clients.some((c) => c.id === composerClientId)) {
+      nextClientId = null;
+    } else if (composerClientId == null || !clients.some((c) => c.id === composerClientId)) {
       const recent = [...clients].sort((a, b) => b.createdAt - a.createdAt)[0];
-      setComposerClientId(recent.id);
+      nextClientId = recent.id;
     }
+    if (nextClientId === composerClientId) return;
+    const frame = requestAnimationFrame(() => setComposerClientId(nextClientId));
+    return () => cancelAnimationFrame(frame);
   }, [clients, composerClientId]);
 
   // Land on the most recent funded month once data has loaded (once only, so it
@@ -130,11 +132,14 @@ export function LedgerView() {
     if (didInit.current) return;
     if (clients.length === 0 && entries.length === 0) return;
     didInit.current = true;
-    setDisplayedMonth(firstFundedMonth);
+    const frame = requestAnimationFrame(() => setDisplayedMonth(firstFundedMonth));
+    return () => cancelAnimationFrame(frame);
   }, [clients.length, entries.length, firstFundedMonth]);
 
   useEffect(() => {
-    if (months.length && !months.includes(displayedMonth)) setDisplayedMonth(firstFundedMonth);
+    if (!months.length || months.includes(displayedMonth)) return;
+    const frame = requestAnimationFrame(() => setDisplayedMonth(firstFundedMonth));
+    return () => cancelAnimationFrame(frame);
   }, [months, displayedMonth, firstFundedMonth]);
 
   const updateDisplayedMonthFromScroll = useCallback(() => {
@@ -156,7 +161,7 @@ export function LedgerView() {
       }
     }
     setDisplayedMonth((current) => (current === chosen ? current : chosen));
-  }, []);
+  }, [setDisplayedMonth]);
 
   const measureMonthOffsets = useCallback(() => {
     const scroller = scrollRef.current;
@@ -442,7 +447,9 @@ function HeadingRow({ heading, onDelete }: { heading: Heading; onDelete: () => v
   const cancelCommit = useRef(false);
 
   useEffect(() => {
-    if (!editing) setTitle(heading.title);
+    if (editing) return;
+    const frame = requestAnimationFrame(() => setTitle(heading.title));
+    return () => cancelAnimationFrame(frame);
   }, [heading.title, editing]);
 
   async function commit() {

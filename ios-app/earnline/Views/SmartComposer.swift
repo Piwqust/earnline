@@ -38,6 +38,7 @@ struct SmartComposer: View {
     @State private var showHoldPicker = false
     @State private var primed = false
     @State private var saveError: String?
+    @State private var projectLoadError: String?
     /// Haptics ride `.sensoryFeedback` like every other surface in the app,
     /// rather than instantiating UIKit generators at the call site: one idiom,
     /// and the system owns preparation and the accessibility preference.
@@ -119,6 +120,7 @@ struct SmartComposer: View {
             if let holdUntil, holdUntil < newValue { self.holdUntil = newValue }
         }
         .saveErrorAlert($saveError, title: "Could not save line")
+        .saveErrorAlert($projectLoadError, title: "Could not load projects")
         .sensoryFeedback(.impact(weight: .medium), trigger: commitFeedback)
         .sensoryFeedback(.warning, trigger: rejectedFeedback)
     }
@@ -225,7 +227,15 @@ struct SmartComposer: View {
         // Only `project` is read below; leaving the rest unfaulted keeps this
         // off the ledger's hot path even on a large store.
         descriptor.propertiesToFetch = [\.project]
-        let recent = (try? context.fetch(descriptor)) ?? []
+        let recent: [Entry]
+        do {
+            recent = try context.fetch(descriptor)
+        } catch {
+            existingProjects = []
+            projectLoadError = String(localized: "Could not load recent projects. You can still enter a project manually.")
+            return
+        }
+        projectLoadError = nil
 
         var seen = Set<String>()
         var result: [String] = []
@@ -393,7 +403,13 @@ struct SmartComposer: View {
             sortBy: [SortDescriptor(\Entry.sortIndex, order: .forward)]
         )
         lowestIndex.fetchLimit = 1
-        let minIndex = (try? context.fetch(lowestIndex))?.first?.sortIndex ?? 0
+        let minIndex: Int
+        do {
+            minIndex = try context.fetch(lowestIndex).first?.sortIndex ?? 0
+        } catch {
+            saveError = String(localized: "Could not read the existing income lines. Your new line was not added.")
+            return
+        }
         let entry = Entry(
             amount: amount,
             currencyCode: currencyCode,

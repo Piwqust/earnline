@@ -17,7 +17,8 @@ struct EditClientSheet: View {
     /// Names of every *other* client — the duplicate check must not trip on
     /// the client's own current name.
     let otherClientNames: [String]
-    /// Runs after the sheet closes; the page owns the pop-then-delete dance.
+    /// Runs after this sheet closes. The profile page deletes only after a
+    /// successful save, then pops; a failed save stays on the profile with an alert.
     var onDelete: () -> Void
 
     @State private var name: String

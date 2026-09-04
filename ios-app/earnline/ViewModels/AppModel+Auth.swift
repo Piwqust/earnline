@@ -56,6 +56,8 @@ extension AppModel {
         }
     }
 
+    private static let acceptedMembershipRoles: Set<String> = ["owner", "member", "device"]
+
     /// The last server-verified membership lets an already authenticated owner
     /// open their *local* ledger while transport is unavailable. It is never
     /// used for a server denial or for a different Supabase user, so an offline
@@ -502,6 +504,11 @@ extension AppModel {
             guard let membership = rows.first else {
                 accountState = .awaitingWorkspace(isPairedDevice: isPairedIdentity(session))
                 return
+            }
+
+            guard !membership.workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  Self.acceptedMembershipRoles.contains(membership.membershipRole) else {
+                throw AccountAuthError.invalidResponse
             }
 
             let pairedDevice = isPairedIdentity(session)

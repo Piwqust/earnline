@@ -24,7 +24,7 @@ struct LedgerView: View {
     @State private var feedback = LedgerFeedbackState()
     @State private var didRunDemo = false
     @State private var saveError: String?
-
+    @State private var dataLoadError: String?
     // MARK: Derived
 
     private var isSearching: Bool { search.isPresented }
@@ -46,6 +46,7 @@ struct LedgerView: View {
     private var searchSnapshot: Insights.LedgerSnapshot? { snapshotCache.searchSnapshot }
     private var searchFilterSource: EntrySearch.FilterSource? { snapshotCache.searchFilterSource }
     private var searchStats: LedgerSnapshotCache.SearchStats { snapshotCache.searchStats }
+    private var searchHitIDs: Set<UUID> { snapshotCache.searchHitIDs }
     /// A large first-earnings header is useful context but cannot remain fixed
     /// above the onboarding card at accessibility sizes: it would cover the
     /// card as the person scrolls to its primary action. Let it scroll with the
@@ -70,7 +71,10 @@ struct LedgerView: View {
     }
 
     private func ledgerRows(_ snapshot: Insights.LedgerSnapshot) -> [LedgerRow] {
-        rowBuilder.rows(in: snapshot, isSearching: isSearching, searchSnapshot: searchSnapshot)
+        rowBuilder.rows(in: snapshot,
+                        isSearching: isSearching,
+                        searchSnapshot: searchSnapshot,
+                        searchHitIDs: searchHitIDs)
     }
 
     /// The snapshot's only inputs that change *without* a context save: the
@@ -123,8 +127,12 @@ struct LedgerView: View {
             Button("Cancel", role: .cancel) { confirmationRoute = nil }
         } message: { confirmationMessage($0) }
         .saveErrorAlert($saveError)
+        .saveErrorAlert($dataLoadError, title: "Could not load ledger")
         .sensoryFeedback(.impact(weight: .light), trigger: feedback.impact)
         .sensoryFeedback(.success, trigger: feedback.success)
+        .onChange(of: snapshotCache.loadError) { _, error in
+            if let error { dataLoadError = error }
+        }
     }
 
     @ViewBuilder
@@ -206,6 +214,11 @@ struct LedgerView: View {
     private var ledgerNavigationContent: some View {
         ledgerCore
             .navigationDestination(for: LedgerRoute.self, destination: navigationDestination)
+            // The ledger has no navigation title and all of its chrome is in the
+            // bottom bar, so an empty navigation bar would just reserve a blank
+            // strip above the summary cards. Hiding it puts the cards directly
+            // under the status bar.
+            .toolbar(.hidden, for: .navigationBar)
             .searchable(text: $search.query,
                         tokens: $search.tokens,
                         isPresented: $search.isPresented,
@@ -291,7 +304,8 @@ struct LedgerView: View {
             searchHitCount: searchStats.hitCount,
             searchEarnedTotal: searchStats.earnedTotal,
             hasSearchFilter: hasSearchFilter,
-            hasAnyEntries: hasAnyEntries
+            hasAnyEntries: hasAnyEntries,
+            onOpenInsights: { sheetRoute = .insights }
         )
     }
 
@@ -335,7 +349,6 @@ struct LedgerView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 1)
-        .coordinateSpace(name: "ledger")
         // Pull-to-refresh mirrors the standard syncable-list affordance; a
         // no-op while Supabase isn't configured. Disabled in search mode so
         // a pull doesn't fight the keyboard.
@@ -371,10 +384,6 @@ struct LedgerView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollDismissesKeyboard(.interactively)
-        .onPreferenceChange(MonthAnchorKey.self) { anchors in
-            guard !isSearching else { return }
-            updateDisplayedMonth(anchors)
-        }
         // Runs after the first frame commits — the app appears immediately and
         // the ledger fills in a beat later — then again when the currency
         // settings re-price the totals. Data edits arrive via `didSave` below.
@@ -434,7 +443,8 @@ struct LedgerView: View {
             onEditEntry: { sheetRoute = .editEntry($0) },
             onDeleteEntry: { confirmationRoute = .deleteEntry($0) },
             onEditHeading: { sheetRoute = .editHeading($0) },
-            onDeleteHeading: { confirmationRoute = .deleteHeading($0) }
+            onDeleteHeading: { confirmationRoute = .deleteHeading($0) },
+            onTopVisibleMonthChange: updateDisplayedMonth
         )
     }
 
@@ -574,12 +584,9 @@ struct LedgerView: View {
 
     // MARK: Month tracking
 
-    private func updateDisplayedMonth(_ anchors: [MonthAnchor]) {
-        guard !anchors.isEmpty else { return }
-        let anchorsAboveHeader = anchors.filter { $0.y <= 44 }
-        guard let anchor = anchorsAboveHeader.max(by: { $0.y < $1.y })
-            ?? anchors.min(by: { $0.y < $1.y }) else { return }
-        let m = DateFormat.monthStart(of: anchor.month)
+    private func updateDisplayedMonth(_ month: Date?) {
+        guard let month else { return }
+        let m = DateFormat.monthStart(of: month)
         if !Calendar.current.isDate(m, equalTo: app.displayedMonth, toGranularity: .month) {
             // The month only changes once after crossing a boundary, not for
             // every scroll tick. Owning the transaction here lets the pinned

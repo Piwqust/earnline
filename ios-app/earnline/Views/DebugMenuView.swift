@@ -289,7 +289,7 @@ struct DebugMenuView: View {
             }
             actionRow("Seed insights demo ledger",
                       "Deterministic multi-month earnings history — the fixture the Insights charts are designed against.") {
-                let count = SampleData.seedGenerated(context)
+                let count = (try? SampleData.seedGenerated(context)) ?? 0
                 save(note: "Seeded \(count) generated insights entries.")
             }
             actionRow("Seed stress ledger",

@@ -7,12 +7,15 @@ import Foundation
 enum ExchangeRateService {
     enum FetchError: LocalizedError, Equatable {
         case unsupportedPair(String)
+        case httpStatus(Int)
         case malformedResponse
 
         var errorDescription: String? {
             switch self {
             case .unsupportedPair(let code):
                 return String(localized: "No rate available for \(code).")
+            case .httpStatus:
+                return String(localized: "The rate service is temporarily unavailable.")
             case .malformedResponse:
                 return String(localized: "The rate service sent an unexpected response.")
             }
@@ -29,9 +32,27 @@ enum ExchangeRateService {
     /// keep their precision while the field stays readable.
     static func fetch(base: String, secondary: String,
                       session: URLSession = .shared) async throws -> Double {
-        let url = URL(string: "https://open.er-api.com/v6/latest/\(base)")!
-        let (data, _) = try await session.data(from: url)
-        return try rate(from: data, secondary: secondary)
+        let normalizedBase = base.uppercased()
+        let normalizedSecondary = secondary.uppercased()
+        guard Limits.supportedCurrencyCodes.contains(normalizedBase),
+              Limits.supportedCurrencyCodes.contains(normalizedSecondary),
+              normalizedBase != normalizedSecondary else {
+            throw FetchError.unsupportedPair(normalizedSecondary)
+        }
+        guard let url = URL(string: "https://open.er-api.com/v6/latest/\(normalizedBase)") else {
+            throw FetchError.malformedResponse
+        }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 15
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw FetchError.malformedResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw FetchError.httpStatus(http.statusCode)
+        }
+        return try rate(from: data, secondary: normalizedSecondary)
     }
 
     /// Decode + validate a response payload (split out for tests).

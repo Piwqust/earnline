@@ -16,7 +16,7 @@ export function RightRail({ monthMs }: { monthMs: number }) {
   const clients = useClients();
   const entries = useEntries();
   const settings = useSettings();
-  const cs = currencySettings(settings);
+  const cs = useMemo(() => currencySettings(settings), [settings]);
   const base = settings.baseCurrencyCode;
 
   const { allTime, allTimeUnsupported, trend, rows, grand, earned, hasMonthData, monthUnsupported, topClients } =
@@ -81,7 +81,7 @@ export function RightRail({ monthMs }: { monthMs: number }) {
         monthUnsupported,
         topClients,
       };
-    }, [clients, entries, monthMs, settings.baseCurrencyCode, settings.rate, settings.secondaryCurrencyCode]);
+    }, [clients, cs, entries, monthMs]);
   const trendMax = Math.max(1, ...trend.map((item) => item.value));
 
   const monthLabel = monthNameOfDay(monthMs);

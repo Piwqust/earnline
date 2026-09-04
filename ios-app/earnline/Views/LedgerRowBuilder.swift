@@ -65,10 +65,11 @@ struct LedgerRowBuilder {
     func rows(
         in snapshot: Insights.LedgerSnapshot,
         isSearching: Bool,
-        searchSnapshot: Insights.LedgerSnapshot?
+        searchSnapshot: Insights.LedgerSnapshot?,
+        searchHitIDs: Set<UUID> = []
     ) -> [LedgerRow] {
         if isSearching {
-            return searchRows(in: searchSnapshot ?? snapshot)
+            return searchRows(in: searchSnapshot ?? snapshot, hitIDs: searchHitIDs)
         }
 
         var rows: [LedgerRow] = []
@@ -104,7 +105,7 @@ struct LedgerRowBuilder {
         return result
     }
 
-    private func searchRows(in snapshot: Insights.LedgerSnapshot) -> [LedgerRow] {
+    private func searchRows(in snapshot: Insights.LedgerSnapshot, hitIDs: Set<UUID>) -> [LedgerRow] {
         let filter = searchFilter
         guard filter.isActive else { return [] }
         var rows: [LedgerRow] = []
@@ -115,8 +116,13 @@ struct LedgerRowBuilder {
             for block in blocks(in: month, snapshot: snapshot) {
                 guard case .client(let client) = block, !client.isInvalidated else { continue }
                 let matches = snapshot.entries(of: client, monthKey: key).filter { entry in
-                    !entry.isInvalidated
-                        && filter.matches(entry, clientID: client.id, clientName: client.name)
+                    guard !entry.isInvalidated else { return false }
+                    // The screen supplies the cache's one-pass match set. The
+                    // fallback keeps this pure projection usable in previews
+                    // and tests that call it without the screen cache.
+                    return hitIDs.isEmpty
+                        ? filter.matches(entry, clientID: client.id, clientName: client.name)
+                        : hitIDs.contains(entry.id)
                 }
                 guard !matches.isEmpty else { continue }
                 let earned = matches

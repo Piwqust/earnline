@@ -43,12 +43,16 @@ enum SyncCoordinator {
     }
 
     /// Synchronize the single workspace profile. A locally edited currency
-    /// tuple wins on the next pass; otherwise the cloud copy is applied. When
-    /// the row does not exist yet, the current device seeds it.
+    /// tuple is pushed only if the remote row still matches the last profile
+    /// observed by this device; otherwise the existing conflict UI gets to
+    /// decide which copy should win. When the row does not exist yet, the
+    /// current device seeds it.
     static func syncWorkspaceProfile(client: SupabaseClient,
                                      workspaceID: String,
                                      local: WorkspaceProfilePayload,
-                                     pushLocal: Bool) async throws -> RemoteWorkspaceProfile {
+                                     pushLocal: Bool,
+                                     expectedRemoteUpdatedAt: Date? = nil,
+                                     conflictResolution: ConflictResolution = .requireUserChoice) async throws -> RemoteWorkspaceProfile {
         let remote: [RemoteWorkspaceProfile] = try await client
             .from("earnline_profiles")
             .select()
@@ -57,17 +61,36 @@ enum SyncCoordinator {
             .execute()
             .value
 
-        if !pushLocal, let existing = remote.first {
-            return existing
+        if let existing = remote.first {
+            guard let remoteUpdatedAt = SyncDateCodec.parseTimestamp(existing.updatedAt) else {
+                throw SyncError.invalidRemoteProfile
+            }
+
+            if !pushLocal {
+                return existing
+            }
+
+            let baselineMatches = expectedRemoteUpdatedAt.map { $0 == remoteUpdatedAt } ?? false
+            guard conflictResolution == .preferLocal || baselineMatches else {
+                // A pending local profile edit without a matching baseline
+                // cannot safely prove that the remote value is still the one
+                // the user saw.
+                throw SyncConflictError.detected(1)
+            }
         }
 
-        return try await client
+        let updated: RemoteWorkspaceProfile = try await client
             .from("earnline_profiles")
             .upsert(local, onConflict: "workspace_id")
             .select()
             .single()
             .execute()
             .value
+
+        guard SyncDateCodec.parseTimestamp(updated.updatedAt) != nil else {
+            throw SyncError.invalidRemoteProfile
+        }
+        return updated
     }
 
     /// Runs a full sync pass and returns the server-managed row cursor.
@@ -374,7 +397,10 @@ enum SyncCoordinator {
 
         let localHeadings = try localHeadings(ids: applicableHeadings.map(\.id), context: context)
         let localEntries = try localEntries(ids: applicableEntries.map(\.id), context: context)
-        let localProjectIcons = try localProjectIcons(ids: remoteProjectIcons.map(\.id), context: context)
+        // Icons are unique on project key as well as id. An incremental id
+        // fetch would miss a local row that already owns the incoming key
+        // under a different id, and inserting then fails the unique save.
+        let localProjectIcons = try context.fetch(FetchDescriptor<ProjectIconPreference>())
         let localMonthReviewRows = try localMonthReviews(
             ids: remoteMonthReviews.map(\.id),
             context: context
@@ -515,6 +541,10 @@ enum SyncCoordinator {
         conflictResolution: ConflictResolution
     ) -> Int {
         var conflictCount = 0
+        var projectIconsByKey: [String: ProjectIconPreference] = [:]
+        for icon in projectIconsByID.values {
+            projectIconsByKey[icon.projectKey] = icon
+        }
         for record in records {
             let projectKey = ProjectIconResolver.normalizedKey(for: record.projectKey)
             guard !projectKey.isEmpty,
@@ -523,7 +553,10 @@ enum SyncCoordinator {
                   let symbol = ProjectSymbol(rawValue: record.symbolName),
                   let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }
             let createdAt = SyncDateCodec.parseTimestamp(record.createdAt) ?? remoteUpdatedAt
-            if let local = projectIconsByID[record.id] {
+            // Icons are unique on both id and project key. A remote row that
+            // reused the key under a different id must update the local row,
+            // not insert a duplicate that then fails the whole sync save.
+            if let local = projectIconsByID[record.id] ?? projectIconsByKey[projectKey] {
                 if conflictsWithDirtyLocal(remoteUpdatedAt: remoteUpdatedAt,
                                            localLastSyncedAt: local.lastSyncedAt,
                                            localState: local.syncState) {
@@ -531,11 +564,17 @@ enum SyncCoordinator {
                     continue
                 }
                 guard shouldApplyRemote(localState: local.syncState) else { continue }
+                let previousKey = local.projectKey
                 local.projectKey = projectKey
                 local.symbol = symbol
                 local.createdAt = createdAt
                 local.updatedAt = remoteUpdatedAt
                 local.markSynced(at: remoteUpdatedAt)
+                if previousKey != projectKey {
+                    projectIconsByKey.removeValue(forKey: previousKey)
+                }
+                projectIconsByKey[projectKey] = local
+                projectIconsByID[local.id] = local
             } else {
                 let preference = ProjectIconPreference(
                     id: record.id,
@@ -548,6 +587,7 @@ enum SyncCoordinator {
                 )
                 context.insert(preference)
                 projectIconsByID[record.id] = preference
+                projectIconsByKey[projectKey] = preference
             }
         }
         return conflictCount

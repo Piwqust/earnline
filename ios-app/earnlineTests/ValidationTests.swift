@@ -13,6 +13,13 @@ struct ValidationTests {
         #expect(Validation.clampAmount(240) == 240)
     }
 
+    @Test func snapsAmountsToTwoDecimalPlaces() {
+        #expect(Validation.clampAmount(Decimal(string: "10.999", locale: Locale(identifier: "en_US_POSIX"))!)
+                == Decimal(string: "11.00", locale: Locale(identifier: "en_US_POSIX"))!)
+        #expect(Validation.clampAmount(Decimal(string: "10.994", locale: Locale(identifier: "en_US_POSIX"))!)
+                == Decimal(string: "10.99", locale: Locale(identifier: "en_US_POSIX"))!)
+    }
+
     @Test func sanitizeStripsLetters() {
         #expect(Validation.sanitizeAmountInput("12a3b") == "123")
     }
@@ -50,5 +57,15 @@ struct ValidationTests {
     @Test func clientNameValidationAppliesMaxLength() {
         let long = String(repeating: "a", count: Limits.maxClientNameLength + 10)
         #expect(Validation.validateClientName(long, existingNames: []) == .valid(String(long.prefix(Limits.maxClientNameLength))))
+    }
+
+    @Test func detectsSupabaseSecretKeyPrefixes() {
+        #expect(SupabaseKeyValidation.looksLikeSecretKey("sb_secret_live_value"))
+        #expect(!SupabaseKeyValidation.looksLikeSecretKey("sb_publishable_test_value"))
+    }
+
+    @Test func detectsServiceRoleJWTs() {
+        let serviceRolePayload = "eyJyb2xlIjoic2VydmljZV9yb2xlIn0"
+        #expect(SupabaseKeyValidation.looksLikeSecretKey("header.\(serviceRolePayload).signature"))
     }
 }

@@ -11,10 +11,12 @@ import SwiftData
 /// totals elsewhere in the app.
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(LedgerMutationStore.self) private var mutations
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
     @State private var saveError: String?
+    @State private var diagnosticsError: String?
     /// Counts shown in the form, refreshed on demand via `fetchCount` (a SQL
     /// COUNT). The previous live `@Query`s materialized every synced row and
     /// re-filtered them on each keystroke/pick, which made the
@@ -45,6 +47,7 @@ struct SettingsView: View {
     @State private var showingDebugMenu = false
     #endif
     @State private var csvTransferRoute: CSVTransferRoute?
+    @State private var backupTransferRoute: LedgerBackupTransferRoute?
     private let currencies = AppModel.supportedCurrencyCodes
 
     var body: some View {
@@ -231,6 +234,22 @@ struct SettingsView: View {
 
                 #if DEBUG
                 Section {
+                    // Production and Test are two separate Supabase projects
+                    // with their own stores, currency profiles, and workspace
+                    // IDs. `workspaceEnvironment.didSet` owns the switch; this
+                    // row is the only way to reach it, so it belongs beside the
+                    // connection it selects.
+                    Picker(selection: $app.workspaceEnvironment) {
+                        ForEach(AppModel.WorkspaceEnvironment.allCases) { environment in
+                            Text(environment.title).tag(environment)
+                        }
+                    } label: {
+                        SettingsRowLabel("Workspace", glyph: "externaldrive")
+                    }
+                    .pickerStyle(.menu)
+                    .tint(valueGray)
+                    .accessibilityIdentifier("settings.workspace")
+
                     NavigationLink {
                         SupabaseConnectionSettingsView()
                     } label: {
@@ -295,11 +314,21 @@ struct SettingsView: View {
                 } label: {
                     SettingsRowLabel("Import CSV", glyph: "square.and.arrow.down")
                 }
+                Button {
+                    backupTransferRoute = .export
+                } label: {
+                    SettingsRowLabel("Export full backup", glyph: "externaldrive.badge.plus")
+                }
+                Button {
+                    backupTransferRoute = .import
+                } label: {
+                    SettingsRowLabel("Import full backup", glyph: "externaldrive.badge.arrow.down")
+                }
             } header: {
                 Text("Data")
             } footer: {
                 // swiftlint:disable:next line_length
-                Text("Export or import ledger income lines in a standard CSV file. This is not a backup and does not include notes, settings, or sync history.")
+                Text("CSV is for exchanging income lines. The full JSON backup also includes notes, project icons, month reviews, and settings; it is merge-only and does not replay sync deletes.")
             }
         }
         .scrollContentBackground(.hidden)
@@ -359,8 +388,12 @@ struct SettingsView: View {
             Text("The \(guestLedgerCountText) you saved with “Continue without an account” will be added to this account and synced. Your on-device copy is left untouched, and importing again won’t create duplicates.")
         }
         .saveErrorAlert($saveError)
+        .saveErrorAlert($diagnosticsError, title: "Could not load sync status")
         .sheet(item: $csvTransferRoute) { route in
             CSVTransferView(route: route)
+        }
+        .sheet(item: $backupTransferRoute) { route in
+            LedgerBackupTransferView(route: route)
         }
     }
 
@@ -495,23 +528,41 @@ struct SettingsView: View {
         let unsupported = FetchDescriptor<Entry>(
             predicate: #Predicate { $0.currencyCode != base && $0.currencyCode != secondary }
         )
-        let dirtyClients = FetchDescriptor<Client>(predicate: #Predicate { $0.syncStateRaw != synced })
-        let dirtyEntries = FetchDescriptor<Entry>(predicate: #Predicate { $0.syncStateRaw != synced })
-        let dirtyHeadings = FetchDescriptor<Heading>(predicate: #Predicate { $0.syncStateRaw != synced })
+        // Match `SyncCoordinator.pushLocalRows`: SQL `NULL != 'synced'` is not
+        // true, so a never-stamped row would otherwise vanish from this count
+        // while still being pushed on the next pass.
+        let dirtyClients = FetchDescriptor<Client>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }
+        )
+        let dirtyEntries = FetchDescriptor<Entry>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }
+        )
+        let dirtyHeadings = FetchDescriptor<Heading>(
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }
+        )
         let dirtyProjectIcons = FetchDescriptor<ProjectIconPreference>(
-            predicate: #Predicate { $0.syncStateRaw != synced }
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }
         )
         let dirtyMonthReviews = FetchDescriptor<MonthReview>(
-            predicate: #Predicate { $0.syncStateRaw != synced }
+            predicate: #Predicate { $0.syncStateRaw == nil || $0.syncStateRaw != synced }
         )
         let tombstones = FetchDescriptor<SyncTombstone>()
-        unsupportedCurrencyCount = (try? context.fetchCount(unsupported)) ?? 0
-        pendingSyncCount = ((try? context.fetchCount(dirtyClients)) ?? 0)
-            + ((try? context.fetchCount(dirtyEntries)) ?? 0)
-            + ((try? context.fetchCount(dirtyHeadings)) ?? 0)
-            + ((try? context.fetchCount(dirtyProjectIcons)) ?? 0)
-            + ((try? context.fetchCount(dirtyMonthReviews)) ?? 0)
-            + ((try? context.fetchCount(tombstones)) ?? 0)
+        do {
+            let unsupportedCount = try context.fetchCount(unsupported)
+            let pendingClients = try context.fetchCount(dirtyClients)
+            let pendingEntries = try context.fetchCount(dirtyEntries)
+            let pendingHeadings = try context.fetchCount(dirtyHeadings)
+            let pendingProjectIcons = try context.fetchCount(dirtyProjectIcons)
+            let pendingMonthReviews = try context.fetchCount(dirtyMonthReviews)
+            let pendingTombstones = try context.fetchCount(tombstones)
+            let pendingCount = pendingClients + pendingEntries + pendingHeadings
+                + pendingProjectIcons + pendingMonthReviews + pendingTombstones
+            unsupportedCurrencyCount = unsupportedCount
+            pendingSyncCount = pendingCount
+            diagnosticsError = nil
+        } catch {
+            diagnosticsError = String(localized: "Could not read local sync status. Your data was not changed.")
+        }
     }
 
     private func setAppLock(_ enable: Bool) {
@@ -587,9 +638,13 @@ struct SettingsView: View {
     private func importSampleLedger() {
         do {
             let inserted = try IncomeLedgerImporter.importBundledLedger(into: context)
-            if inserted > 0 { appModel.queueSync(context: context) }
+            if inserted > 0 {
+                mutations.recordExternalSave()
+                appModel.queueSync(context: context)
+            }
             refreshCounts()
         } catch {
+            context.rollback()
             saveError = error.localizedDescription
         }
     }
@@ -625,6 +680,7 @@ struct SettingsView: View {
         do {
             let summary = try GuestLedgerMigration.importGuestLedgerFromDisk(into: context)
             if summary.total > 0 {
+                mutations.recordExternalSave()
                 appModel.queueSync(context: context)
                 guestImportNote = summary.entries == 1
                     ? String(localized: "Imported 1 line. Syncing to your account.")
@@ -635,6 +691,7 @@ struct SettingsView: View {
             refreshGuestLedger()
             refreshCounts()
         } catch {
+            context.rollback()
             saveError = error.localizedDescription
         }
         isImportingGuestLedger = false
@@ -646,8 +703,10 @@ struct SettingsView: View {
         Task { @MainActor in
             let error: String?
             switch action {
-            case .reloadCurrent, .useCloudCopy:
+            case .reloadCurrent:
                 error = await appModel.resetLocalDataAndPull(context: context)
+            case .useCloudCopy:
+                error = await appModel.resetLocalDataAndPull(context: context, discardLocalProfile: true)
             }
             refreshCounts()
             isResettingLocalData = false

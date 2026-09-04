@@ -12,19 +12,31 @@ enum SampleData {
     static let autoSeededDemoKey = "bundledLedgerAutoSeeded"
 
     static func seedIfNeeded(_ context: ModelContext) {
-        let existing = try? context.fetch(FetchDescriptor<Client>())
-        if existing?.isEmpty ?? true {
-            importBundledLedgerIfNeeded(context)
+        do {
+            let existing = try context.fetch(FetchDescriptor<Client>())
+            guard existing.isEmpty else { return }
+            _ = importBundledLedgerIfNeeded(context)
+        } catch {
+            return
         }
     }
 
     @discardableResult
     static func importBundledLedgerIfNeeded(_ context: ModelContext, defaults: UserDefaults = .standard) -> Int {
         guard defaults.integer(forKey: bundledLedgerImportKey) < bundledLedgerImportVersion else { return 0 }
-        let inserted = seedGenerated(context)
-        defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
-        if inserted > 0 { defaults.set(true, forKey: autoSeededDemoKey) }
-        return inserted
+        do {
+            let existing = try context.fetch(FetchDescriptor<Client>())
+            guard existing.isEmpty else {
+                defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
+                return 0
+            }
+            let inserted = try seedGenerated(context)
+            defaults.set(bundledLedgerImportVersion, forKey: bundledLedgerImportKey)
+            if inserted > 0 { defaults.set(true, forKey: autoSeededDemoKey) }
+            return inserted
+        } catch {
+            return 0
+        }
     }
 
     /// The bundled demo ledger only auto-seeds while sync is unconfigured. If
@@ -322,11 +334,11 @@ enum SampleData {
     /// (dedupe by deterministic id). Returns the number of clients + entries
     /// inserted, matching what `purgeAutoSeededDemoIfNeeded` will later remove.
     @discardableResult
-    static func seedGenerated(_ context: ModelContext) -> Int {
+    static func seedGenerated(_ context: ModelContext) throws -> Int {
         let seed = generate()
-        let existingClients = (try? context.fetch(FetchDescriptor<Client>())) ?? []
+        let existingClients = try context.fetch(FetchDescriptor<Client>())
         var clientsByID = Dictionary(existingClients.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let existingEntryIDs = Set(((try? context.fetch(FetchDescriptor<Entry>())) ?? []).map(\.id))
+        let existingEntryIDs = Set(try context.fetch(FetchDescriptor<Entry>()).map(\.id))
         var inserted = 0
 
         for seedClient in seed.clients where clientsByID[seedClient.id] == nil {
@@ -346,7 +358,7 @@ enum SampleData {
             context.insert(entry)
             inserted += 1
         }
-        try? context.save()
+        try context.save()
         return inserted
     }
 

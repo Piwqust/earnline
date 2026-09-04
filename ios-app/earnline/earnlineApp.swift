@@ -192,7 +192,7 @@ private struct WorkspaceContainerHost: View {
             // empty and fast.
             if AppModel.hasUIAutomationLaunchFlag("-demoInsights")
                 || AppModel.hasUIAutomationLaunchFlag("-demoLedger") {
-                SampleData.seedGenerated(context)
+                _ = try? SampleData.seedGenerated(context)
             } else if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile")
                 || AppModel.hasUIAutomationLaunchFlag("-demoStressLedger") {
                 SampleData.seedStress(context)
@@ -236,7 +236,6 @@ private struct WorkspaceContainerHost: View {
         // not a demo, and must never hold rows the user didn't write.
         if !app.isSupabaseConfigured, app.accountSession?.isLocalOnly != true {
             SampleData.seedIfNeeded(context)
-            SampleData.importBundledLedgerIfNeeded(context)
         }
         do {
             try SampleData.cleanupLegacyDemoEntriesIfNeeded(context)

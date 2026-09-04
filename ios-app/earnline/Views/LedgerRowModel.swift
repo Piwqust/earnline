@@ -84,16 +84,3 @@ enum LedgerBlock: Identifiable {
     }
 
 }
-
-struct MonthAnchor: Equatable {
-    let month: Date
-    let y: CGFloat
-}
-
-struct MonthAnchorKey: PreferenceKey {
-    static let defaultValue: [MonthAnchor] = []
-
-    static func reduce(value: inout [MonthAnchor], nextValue: () -> [MonthAnchor]) {
-        value.append(contentsOf: nextValue())
-    }
-}

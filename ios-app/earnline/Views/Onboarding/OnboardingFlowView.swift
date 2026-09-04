@@ -192,7 +192,14 @@ struct OnboardingFlowView: View {
             predicate: #Predicate { $0.id == clientID }
         )
         clientDescriptor.fetchLimit = 1
-        guard let client = try? context.fetch(clientDescriptor).first else {
+        let client: Client?
+        do {
+            client = try context.fetch(clientDescriptor).first
+        } catch {
+            saveError = String(localized: "Could not restore setup. Your saved data was not changed.")
+            return
+        }
+        guard let client else {
             app.resetOnboardingForNextLaunch()
             app.isPresentingOnboarding = true
             return
@@ -206,11 +213,15 @@ struct OnboardingFlowView: View {
                 predicate: #Predicate { $0.id == entryID }
             )
             entryDescriptor.fetchLimit = 1
-            if let entry = try? context.fetch(entryDescriptor).first {
-                firstEntryAmount = CurrencyFormatter.string(entry.amount, code: entry.currencyCode)
-            } else {
-                app.stageOnboardingClient(client.id)
-                step = .income
+            do {
+                if let entry = try context.fetch(entryDescriptor).first {
+                    firstEntryAmount = CurrencyFormatter.string(entry.amount, code: entry.currencyCode)
+                } else {
+                    app.stageOnboardingClient(client.id)
+                    step = .income
+                }
+            } catch {
+                saveError = String(localized: "Could not restore setup. Your saved data was not changed.")
             }
         }
     }

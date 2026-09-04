@@ -412,7 +412,7 @@ struct SyncModelTests {
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        #expect(SampleData.seedGenerated(context) > 0)
+        #expect(try SampleData.seedGenerated(context) > 0)
         #expect(SampleData.seedStress(context) > 0)
 
         let demoClientID = DeterministicID.uuid("earnline-seed-client:Acme Studio")

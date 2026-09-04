@@ -42,23 +42,24 @@ export function AppShell() {
 
   useEffect(() => {
     const media = window.matchMedia(NARROW_QUERY);
-    const update = () => setIsNarrow(media.matches);
+    const update = () => {
+      setIsNarrow(media.matches);
+      if (!media.matches) setNavOpen(false);
+    };
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
-    if (!isNarrow) setNavOpen(false);
-  }, [isNarrow]);
-
-  useEffect(() => {
     const backgroundIsInert = isNarrow && navOpen;
-    if (mainRef.current) mainRef.current.inert = backgroundIsInert;
-    if (mobileBarRef.current) mobileBarRef.current.inert = backgroundIsInert;
+    const main = mainRef.current;
+    const mobileBar = mobileBarRef.current;
+    if (main) main.inert = backgroundIsInert;
+    if (mobileBar) mobileBar.inert = backgroundIsInert;
     return () => {
-      if (mainRef.current) mainRef.current.inert = false;
-      if (mobileBarRef.current) mobileBarRef.current.inert = false;
+      if (main) main.inert = false;
+      if (mobileBar) mobileBar.inert = false;
     };
   }, [isNarrow, navOpen]);
 
@@ -73,8 +74,10 @@ export function AppShell() {
     document.title = `${currentRouteName} · earn›line`;
     if (previousPath.current === pathname) return;
     previousPath.current = pathname;
-    setNavOpen(false);
-    const frame = requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }));
+    const frame = requestAnimationFrame(() => {
+      setNavOpen(false);
+      mainRef.current?.focus({ preventScroll: true });
+    });
     return () => cancelAnimationFrame(frame);
   }, [currentRouteName, pathname]);
 

@@ -1,5 +1,32 @@
 # What's new
 
+## September 3, 2026
+
+### Reliability
+- The Stats summary card opens Insights reliably on iOS 27 instead of sometimes accepting the tap without presenting the sheet.
+- Amounts typed in the composer now parse the same way on a Russian (or any non-US) region setting, so `99.50` can no longer be read as `9950`.
+- Settings’ pending-sync count now includes rows that have never been marked synced, matching what the next sync actually pushes.
+- Importing a backup, on-device ledger, or sample ledger now rolls back if the copy fails, and a successful import refreshes the ledger immediately.
+- Sync no longer crashes a pass when a project icon arrives from the cloud under a different id than this iPhone stored.
+- Deleting a client now reports a save failure on the profile instead of returning to the ledger with the client still there and no explanation.
+- CSV import now rejects names, tasks, and projects that the cloud would refuse, so one oversized spreadsheet cell cannot stall every later sync.
+- Amounts typed in the composer and editor snap to cents before they are saved, matching the money format Earnline syncs.
+
+### Ledger
+- Event notes can be deleted with the same trailing swipe as income lines.
+
+## August 1, 2026
+
+### Reliability
+- Ledger and Insights now surface local read failures instead of replacing a missing result with an empty ledger or zero count.
+- Sync saves pending local edits before merging cloud data and detects workspace-profile conflicts before a currency change can overwrite a newer cloud value.
+- Release configuration rejects secret Supabase keys, and exchange-rate requests now validate currency pairs, HTTP status, and timeouts.
+
+## July 30, 2026
+
+### Ledger
+- The **Stats** card opens **Insights** again, while **Insights** remains available from the **…** menu. Long ledgers now track the visible month without measuring every row during scrolling.
+
 ## July 29, 2026
 
 ### Sync and account safety

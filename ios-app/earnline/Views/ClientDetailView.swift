@@ -407,24 +407,19 @@ struct ClientDetailView: View {
     }
 
     private func deleteClient() {
-        let target = client
-        let snapshot = UndoableDelete.client(ClientSnapshot(target))
-        let context = context
-        dismiss()
-        // Delete after the pop so nothing in this hierarchy renders a dead model.
-        Task { @MainActor in
-            SyncDeleteQueue.enqueue(.client, id: target.id, in: context)
-            context.delete(target)
-            // Same save + sync + undo contract as LedgerMutationStore.delete: the
-            // toast is only staged once the delete actually persisted —
-            // offering to restore a delete that failed would undo nothing.
-            if mutations.save(context) == nil {
-                // Staged after the pop: the toast shows on the ledger underneath.
-                mutations.stageUndo(snapshot)
-            } else {
-                context.rollback()
-            }
+        let snapshot = UndoableDelete.client(ClientSnapshot(client))
+        SyncDeleteQueue.enqueue(.client, id: client.id, in: context)
+        context.delete(client)
+        // Stay on this page until the delete is durable. Popping first used to
+        // swallow a failed save: the ledger reappeared with the client still
+        // there and no alert. `body` already renders an empty canvas if the
+        // model is invalidated, so a successful delete can dismiss afterward.
+        if let error = mutations.save(context) {
+            snapshotError = error
+            return
         }
+        mutations.stageUndo(snapshot)
+        dismiss()
     }
 
     // MARK: Helpers

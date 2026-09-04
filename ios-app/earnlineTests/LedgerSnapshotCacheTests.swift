@@ -96,11 +96,13 @@ struct LedgerSnapshotCacheTests {
         #expect(cache.searchSnapshot?.hasEntries == true)
         #expect(cache.searchStats.hitCount == 1)
         #expect(cache.searchStats.earnedTotal == 240)
+        #expect(cache.searchHitIDs == [entry.id])
         #expect(cache.searchFilterSource?.clients.map(\.name) == ["Acme"])
 
         cache.endSearch()
         #expect(cache.searchSnapshot == nil)
         #expect(cache.searchFilterSource == nil)
+        #expect(cache.searchHitIDs.isEmpty)
         #expect(cache.searchStats.hitCount == 0)
     }
 

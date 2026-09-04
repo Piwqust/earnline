@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The floating glass header from the Figma: two side-by-side cards — "Earned
-/// in <month>" with the running total on the left, and a static "Stats" card
+/// in <month>" with the running total on the left, and a tappable "Stats" card
 /// with a faded sparkline and the month-over-month change on the right.
 struct SummaryCards: View {
     @Environment(AppModel.self) private var app
@@ -11,6 +11,7 @@ struct SummaryCards: View {
     /// Earned base-currency totals ending at `month`, oldest first — drives the
     /// sparkline and the growth figure so both track the displayed month.
     let trend: [Decimal]
+    let onOpenInsights: () -> Void
 
     /// Tracks the prior total for value-transition direction when a user edits
     /// a line or switches an explicit display context.
@@ -85,30 +86,34 @@ struct SummaryCards: View {
     // MARK: Stats
 
     private var statsCard: some View {
-        ZStack(alignment: .bottomLeading) {
-            Sparkline(values: trend.map(doubleValue))
-                .padding(.top, 22)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Stats")
-                    .appFont(14, .medium)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Spacer(minLength: 12)
-                Text(growthText)
-                    .appFont(20, .medium, design: .rounded)
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.label)
-                    .contentTransition(.numericText())
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        Button(action: onOpenInsights) {
+            ZStack(alignment: .bottomLeading) {
+                Sparkline(values: trend.map(doubleValue))
+                    .padding(.top, 22)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Stats")
+                        .appFont(14, .medium)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer(minLength: 12)
+                    Text(growthText)
+                        .appFont(20, .medium, design: .rounded)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.label)
+                        .contentTransition(.numericText())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(16)
+            .contentShape(.rect)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.roundedRectangle(radius: Theme.Radius.summary))
         .accessibilityLabel("Stats")
         .accessibilityValue(growthText)
+        .accessibilityHint("Opens Insights")
         .accessibilityIdentifier("ledger.stats.summary")
     }
 

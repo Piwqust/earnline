@@ -1,6 +1,17 @@
 import Foundation
 import SwiftData
 
+enum InsightsDataError: LocalizedError {
+    case invalidDay
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidDay:
+            return String(localized: "Could not load income details for this day.")
+        }
+    }
+}
+
 /// Immutable, actor-independent input for the Insights dashboard. SwiftData
 /// models are copied once by a private model actor, then all dashboard
 /// aggregation can run away from SwiftUI's render path without crossing model
@@ -93,7 +104,10 @@ struct InsightsDashboardInput: Sendable {
                 if visibleKeys.contains(entryMonthKey) {
                     totalsByClient[client.id, default: .zero] += base
                 }
-                if calendar.component(.year, from: entry.date) == currentYear {
+                // "This year" is year-to-date, not a forecast. A future-dated
+                // line can still be present in the ledger, but it must not
+                // appear in a completed-income total before its date arrives.
+                if entry.date <= now && calendar.component(.year, from: entry.date) == currentYear {
                     yearToDate += base
                 }
 
@@ -299,10 +313,12 @@ struct Insights {
     /// The hold set is bounded by how many held lines exist in history, which
     /// is a small fraction of the ledger. `dayContributions` then applies the
     /// exact span test to the union.
-    static func dayContributionCandidates(on day: Date, in context: ModelContext) -> [Entry] {
+    static func dayContributionCandidates(on day: Date, in context: ModelContext) throws -> [Entry] {
         let calendar = Calendar.current
         let dayStart = calendar.startOfDay(for: day)
-        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            throw InsightsDataError.invalidDay
+        }
 
         let onTheDay = FetchDescriptor<Entry>(
             predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
@@ -310,8 +326,8 @@ struct Insights {
         let heldFromEarlier = FetchDescriptor<Entry>(
             predicate: #Predicate { $0.holdUntil != nil && $0.date < dayStart }
         )
-        let sameDay = (try? context.fetch(onTheDay)) ?? []
-        let held = (try? context.fetch(heldFromEarlier)) ?? []
+        let sameDay = try context.fetch(onTheDay)
+        let held = try context.fetch(heldFromEarlier)
 
         var seen = Set(sameDay.map(\.id))
         return sameDay + held.filter { seen.insert($0.id).inserted }

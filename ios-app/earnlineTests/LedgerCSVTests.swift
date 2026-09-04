@@ -61,6 +61,19 @@ struct LedgerCSVTests {
         #expect(!preview.isReadyToImport)
     }
 
+    @Test func rejectsRowsThatWouldFailTheCloudContract() {
+        let longClient = String(repeating: "A", count: Limits.maxClientNameLength + 1)
+        let csv = """
+        date,client,project,task,amount,currency_code,status,hold_date
+        2026-02-10,\(longClient),,Task,100,USD,paid,
+        """
+
+        let preview = LedgerCSV.preview(Data(csv.utf8))
+        #expect(preview.rows.isEmpty)
+        #expect(preview.issues.count == 1)
+        #expect(!preview.isReadyToImport)
+    }
+
     @Test func rejectsAmountsThatWouldChangeOrFailDuringSync() {
         let csv = """
         date,client,project,task,amount,currency_code,status,hold_date

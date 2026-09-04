@@ -247,6 +247,16 @@ enum LedgerCSV {
         }
         guard !client.isEmpty else { return .failure(ValidationError("Client is required.")) }
         guard !task.isEmpty else { return .failure(ValidationError("Task is required.")) }
+        guard client.count <= Limits.maxClientNameLength else {
+            return .failure(ValidationError("Client name must be at most \(Limits.maxClientNameLength) characters."))
+        }
+        guard task.count <= Limits.maxTaskLength else {
+            return .failure(ValidationError("Task must be at most \(Limits.maxTaskLength) characters."))
+        }
+        let parsedProject = project.isEmpty ? nil : project
+        if let parsedProject, parsedProject.count > Limits.maxProjectLength {
+            return .failure(ValidationError("Project must be at most \(Limits.maxProjectLength) characters."))
+        }
         guard let parsedAmount = Decimal(string: amount, locale: posixLocale), parsedAmount > 0 else {
             return .failure(ValidationError("Amount must be a positive number using a decimal point."))
         }
@@ -267,6 +277,15 @@ enum LedgerCSV {
         guard let parsedStatus = parsedStatus(status) else {
             return .failure(ValidationError("Status must be Paid, In progress, or Canceled."))
         }
+        guard SyncValidation.isValidEntry(
+            amount: parsedAmount,
+            currencyCode: code,
+            project: parsedProject,
+            task: task,
+            status: parsedStatus.rawValue
+        ) else {
+            return .failure(ValidationError("This row does not match Earnline's income-line rules."))
+        }
         let parsedHoldDate: Date?
         if holdDate.isEmpty {
             parsedHoldDate = nil
@@ -280,7 +299,7 @@ enum LedgerCSV {
             rowNumber: rowNumber,
             date: parsedDate,
             client: client,
-            project: project.isEmpty ? nil : project,
+            project: parsedProject,
             task: task,
             amount: parsedAmount,
             currencyCode: code,

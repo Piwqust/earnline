@@ -7,8 +7,8 @@
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
-	<!-- Data collected when a user signs in and syncs. Both are linked to the
-	     account identity and used only to run the app; neither is used for
+	<!-- Data collected when a user signs in and syncs. These types are linked to the
+	     account identity and used only to run the app; none is used for
 	     tracking. Keep these in sync with the App Store Connect privacy answers. -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
@@ -26,10 +26,23 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- The income ledger itself (amounts, client names, projects, tasks),
+			<!-- User-authored ledger context (client names, projects, tasks and notes),
 			     synced to the user's own workspace. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Income amounts and their payment state, synced to the user's own workspace. -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherFinancialInfo</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>
 			<true/>
 			<key>NSPrivacyCollectedDataTypeTracking</key>

@@ -77,6 +77,7 @@ struct SyncRate: Codable, Equatable {
 enum SyncError: LocalizedError {
     case missingConfiguration
     case invalidRemoteCursor(table: String)
+    case invalidRemoteProfile
 
     var errorDescription: String? {
         switch self {
@@ -84,6 +85,8 @@ enum SyncError: LocalizedError {
             return "Supabase is not configured."
         case .invalidRemoteCursor(let table):
             return "The sync service returned an invalid cursor for \(table)."
+        case .invalidRemoteProfile:
+            return "The sync service returned an invalid workspace profile."
         }
     }
 }
@@ -101,12 +104,10 @@ enum SyncDateCodec {
         return formatter
     }
 
-    /// Wire invariant (shared with the web client): a `yyyy-MM-dd` value IS the
-    /// calendar day the user sees — not an instant. So days are formatted from
-    /// and parsed into the *local* calendar. Formatting in UTC shifted every
-    /// local-midnight date (DatePicker, parsed hold dates) to the previous day
-    /// for UTC-positive timezones, and parsing in UTC displayed every synced
-    /// date a day early for UTC-negative ones.
+    /// Wire invariant (shared with the web client): a `yyyy-MM-dd` value is a
+    /// calendar day, not an instant. The local noon anchor below is only an
+    /// in-memory representation used to keep that day stable while the device
+    /// formats and displays it in its current calendar.
     private static func dayFormatter() -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

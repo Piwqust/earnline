@@ -278,33 +278,10 @@ enum SupabaseConnectionValidator {
         guard !key.isEmpty else {
             return .invalid("Enter a publishable key.")
         }
-        guard !looksLikeSecretKey(key) else {
+        guard !SupabaseKeyValidation.looksLikeSecretKey(key) else {
             return .invalid("Use a publishable or anon key, never a secret or service-role key.")
         }
         return .valid(url, key)
-    }
-
-    private static func looksLikeSecretKey(_ key: String) -> Bool {
-        if key.lowercased().hasPrefix("sb_secret_") {
-            return true
-        }
-
-        let parts = key.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 3,
-              let payloadData = base64URLDecoded(String(parts[1])),
-              let payload = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
-              let role = payload["role"] as? String else {
-            return false
-        }
-        return role.lowercased() == "service_role"
-    }
-
-    private static func base64URLDecoded(_ value: String) -> Data? {
-        var base64 = value
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
-        return Data(base64Encoded: base64)
     }
 
     static func verify(projectURL: URL, publishableKey: String) async throws {

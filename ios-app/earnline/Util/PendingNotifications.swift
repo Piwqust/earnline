@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import UserNotifications
 
 /// Local reminders for in-progress lines that carry a `holdUntil` date.
@@ -9,6 +10,10 @@ import UserNotifications
 /// untouched. The pure `desiredRequests` step is unit-tested; the
 /// `UNUserNotificationCenter` plumbing is not.
 enum PendingNotifications {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.earnline.app",
+        category: "notifications"
+    )
     /// One reminder we want scheduled.
     struct Request: Equatable, Sendable {
         let id: String              // entry.id.uuidString — stable, so rebuilds are idempotent
@@ -43,8 +48,14 @@ enum PendingNotifications {
     }
 
     /// Ask once for permission (alert + sound). Safe to call repeatedly.
-    static func requestAuthorization(center: UNUserNotificationCenter = .current()) async {
-        _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+    @discardableResult
+    static func requestAuthorization(center: UNUserNotificationCenter = .current()) async -> Bool {
+        do {
+            return try await center.requestAuthorization(options: [.alert, .sound, .badge])
+        } catch {
+            logger.error("Notification permission request failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 
     /// Reconcile scheduled reminders with `entries`. Permission is requested
@@ -54,14 +65,23 @@ enum PendingNotifications {
         let desired = desiredRequests(for: entries)
         // The center is obtained inside the task: UNUserNotificationCenter is
         // not Sendable, so it must not be captured across the Task boundary.
-        Task { await reconcile(desired, center: .current()) }
+        Task {
+            do {
+                try await reconcile(desired, center: .current())
+            } catch {
+                logger.error("Notification reconciliation failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
-    static func reconcile(_ desired: [Request], center: UNUserNotificationCenter) async {
+    static func reconcile(_ desired: [Request], center: UNUserNotificationCenter) async throws {
         if !desired.isEmpty {
             let settings = await center.notificationSettings()
             if settings.authorizationStatus == .notDetermined {
-                await requestAuthorization(center: center)
+                guard await requestAuthorization(center: center) else { return }
+            } else if settings.authorizationStatus == .denied {
+                logger.info("Notifications are disabled; keeping existing requests unchanged")
+                return
             }
         }
 
@@ -85,7 +105,7 @@ enum PendingNotifications {
             content.body = want.body
             content.sound = .default
             let trigger = UNCalendarNotificationTrigger(dateMatching: want.dateComponents, repeats: false)
-            try? await center.add(UNNotificationRequest(identifier: want.id, content: content, trigger: trigger))
+            try await center.add(UNNotificationRequest(identifier: want.id, content: content, trigger: trigger))
         }
     }
 

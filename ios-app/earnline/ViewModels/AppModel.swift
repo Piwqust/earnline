@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import OSLog
 import SwiftData
 import Supabase
 import Network
@@ -8,6 +9,10 @@ import Network
 @MainActor
 @Observable
 final class AppModel {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.earnline.app",
+        category: "app-data"
+    )
     /// The side-by-side `earnline Dev` target is a companion for local UI
     /// work, never a second client for a production workspace. Keeping this
     /// compile-time (rather than a stored preference) means a clean Dev
@@ -371,6 +376,7 @@ final class AppModel {
     @ObservationIgnored var lastSyncFailed = false
     @ObservationIgnored var profileNeedsSync = false
     @ObservationIgnored var profileEditGeneration = 0
+    @ObservationIgnored var profileRemoteUpdatedAt: Date?
     @ObservationIgnored var isApplyingRemoteProfile = false
     @ObservationIgnored let pathMonitor = NWPathMonitor()
     @ObservationIgnored var pathMonitorStarted = false
@@ -428,6 +434,10 @@ final class AppModel {
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID")
         defaults.set(resolvedWorkspaceID, forKey: "workspaceID.\(resolvedEnvironment.rawValue)")
         profileNeedsSync = defaults.bool(forKey: "profileNeedsSync.\(resolvedEnvironment.rawValue)")
+        profileRemoteUpdatedAt = defaults.object(forKey: Self.workspaceDefaultKey(
+            "profileRemoteUpdatedAt",
+            environment: resolvedEnvironment
+        )) as? Date
         let onboardingCompletedKey = Self.onboardingDefaultKey(
             "onboardingCompleted",
             environment: resolvedEnvironment,
@@ -619,8 +629,14 @@ final class AppModel {
         let descriptor = FetchDescriptor<Entry>(
             predicate: #Predicate { $0.holdUntil != nil && $0.statusRaw == inProgress }
         )
-        let entries = (try? context.fetch(descriptor)) ?? []
-        PendingNotifications.sync(entries)
+        do {
+            PendingNotifications.sync(try context.fetch(descriptor))
+        } catch {
+            // A failed read must not be interpreted as "there are no holds":
+            // that would remove valid reminders. Keep existing notifications
+            // intact and leave an OSLog trail for diagnosis.
+            Self.logger.error("Could not refresh pending reminders: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     static func workspaceDefaultKey(_ key: String, environment: WorkspaceEnvironment) -> String {
@@ -804,6 +820,8 @@ final class AppModel {
 }
 
 extension Decimal {
+    /// Half away from zero — the same midpoint rule `SyncMoney` uses on the wire
+    /// (`NumberFormatter.RoundingMode.halfUp`) for positive money values.
     func rounded(_ scale: Int = 0) -> Decimal {
         var result = Decimal()
         var value = self
