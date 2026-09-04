@@ -20,8 +20,6 @@ Optional Supabase synchronization remains a separately configured beta feature.
 - Restored reliable access to Insights from the Stats summary card.
 - Added Russian camera and Face ID permission text and completed the new backup
   interface translations.
-- Removed 19 React hook and compiler warnings from the optional web companion,
-  including stale memo dependencies and synchronous effect-driven rerenders.
 - Fixed the Dev companion packaging so it no longer embeds a second copy of the
   primary app bundle.
 - Updated Supabase Swift to 2.55.1.
@@ -30,7 +28,7 @@ Optional Supabase synchronization remains a separately configured beta feature.
 
 - `earnline-1.1.0-unsigned.ipa` — primary app, Release configuration.
 - `earnline-dev-1.1.0-unsigned.ipa` — separate local-only development companion.
-- `SHA256SUMS.txt` — SHA-256 checksums for both archives.
+- `SHA256SUMS-earnline-1.1.0.txt` — SHA-256 checksums for both archives.
 
 ## Installation boundary
 

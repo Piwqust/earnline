@@ -10,7 +10,7 @@ Add a line in seconds. See the month clearly. Keep the ledger on your phone,
 then connect a private workspace only when you want your own devices to stay in
 sync.
 
-[Download](#download-earnline-110) · [Run from Xcode](#run-from-xcode) · [Why it feels right on iPhone](#why-it-feels-right-on-iphone) · [Optional web companion](#the-web-is-optional) · [Contribute](CONTRIBUTING.md)
+[Download](#download-earnline-110) · [Run from Xcode](#run-from-xcode) · [Why it feels right on iPhone](#why-it-feels-right-on-iphone) · [Contribute](CONTRIBUTING.md)
 
 ## Download Earnline 1.1.0
 
@@ -81,20 +81,11 @@ For agent-assisted iOS work, use Xcode 27 and its native Xcode MCP server as
 the project baseline. Verify the app on an iPhone 17 with the iOS 27 runtime;
 this does not change the app's iOS 26 deployment target.
 
-## The web is optional
-
-The React app is a desktop-first companion for people who specifically want a
-browser view of the same private ledger. It is useful at a desk, but it does
-not set the product's interaction direction or replace the iPhone experience.
-
-[Open the web companion guide →](web/README.md)
-
 ## Repository guide
 
 | Area | Role | Start here |
 | --- | --- | --- |
 | [`ios-app/`](ios-app) | **Primary product:** native SwiftUI income ledger | [iPhone guide](ios-app/README.md) |
-| [`web/`](web) | Optional desktop companion | [Web guide](web/README.md) |
 | [`supabase/`](supabase) | Private sync and device-pairing infrastructure | [Backend guide](supabase/README.md) |
 | [`docs/`](docs) | Operator runbooks and security records | [Documentation map](docs/README.md) |
 
@@ -115,8 +106,7 @@ sample data. They contain no customer records, credentials, or stock mockups.
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing the shared sync
-contract. iOS is the primary product surface; web and Supabase changes follow
-when a feature needs them.
+contract. The native iPhone app is the primary product surface.
 
 ## License
 
