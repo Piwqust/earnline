@@ -354,16 +354,18 @@ final class EarnlineUITests: XCTestCase {
     }
 
     func testClientTransactionDrillDownKeepsTheLedgerRowsReachable() {
-        let app = launchApp(["-demoClientProfile"])
+        // Keep this routing assertion independent from the large-profile
+        // aggregation benchmark above. The compact fixture verifies the same
+        // destination and rows without asking a preview iOS 26 runner to lay
+        // out hundreds of off-screen profile records before every gesture.
+        let app = launchApp(["-demoClientProfileCompact"])
         let allTransactions = app.buttons.matching(
             NSPredicate(format: "label BEGINSWITH %@", "All Transactions")
         ).firstMatch
         XCTAssertTrue(allTransactions.waitForExistence(timeout: 12))
-
-        for _ in 0..<6 where !allTransactions.isHittable {
-            app.swipeUp()
-        }
-        XCTAssertTrue(allTransactions.isHittable)
+        // XCUI performs the same semantic scroll-to-visible gesture a user
+        // gets from tapping this native button, without assuming how many
+        // profile cards precede it at a particular Dynamic Type size.
         allTransactions.tap()
 
         XCTAssertTrue(app.navigationBars["All Transactions"].waitForExistence(timeout: 5))

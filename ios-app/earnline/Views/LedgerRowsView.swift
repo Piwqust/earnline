@@ -8,6 +8,9 @@ struct LedgerRowsView: View {
     @Environment(AppModel.self) private var app
     @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
     @State private var monthMarkerOffsets: [LedgerScrollTarget: CGFloat] = [:]
+    @State private var monthTrackingTopY: CGFloat?
+    @State private var monthTrackingAnchorID: LedgerScrollTarget?
+    @State private var activeMonthMarkerID: LedgerScrollTarget?
     @State private var lastReportedVisibleMonth: Date?
 
     let rows: [LedgerRow]
@@ -25,14 +28,28 @@ struct LedgerRowsView: View {
 
     var body: some View {
         ForEach(rows) { row in
+            let rowID = row.id
+            let isMonth = row.isMonthMarker
             rowView(row)
-                .background { monthPositionReader(for: row) }
+                .onGeometryChange(for: CGFloat?.self) { proxy in
+                    guard isMonth else { return nil }
+                    return proxy.frame(in: .named("ledger.scroll")).minY
+                } action: { minY in
+                    guard let minY else { return }
+                    updateMonthPosition(for: rowID, minY: minY)
+                }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(insets(for: row))
         }
         .onChange(of: rows.map(\.id)) { _, rowIDs in
             monthMarkerOffsets = monthMarkerOffsets.filter { rowIDs.contains($0.key) }
+            let newestMarkerID = newestMonthMarkerID
+            if monthTrackingAnchorID != newestMarkerID {
+                monthTrackingAnchorID = newestMarkerID
+                monthTrackingTopY = nil
+                activeMonthMarkerID = newestMarkerID
+            }
             reportTopVisibleMonth()
         }
     }
@@ -107,29 +124,44 @@ struct LedgerRowsView: View {
         return projectIconPreferences.first { $0.projectKey == key }?.symbol
     }
 
-    @ViewBuilder
-    private func monthPositionReader(for row: LedgerRow) -> some View {
-        if case .month = row {
-            Color.clear
-                // `onScrollVisibilityChange` leaves stale visible rows behind
-                // in an iOS 26 `List`. Month dividers are sparse, so tracking
-                // only their positions is both deterministic and cheap: the
-                // newest divider that crossed the viewport top owns the header.
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.frame(in: .named("ledger.scroll")).minY
-                } action: { minY in
-                    monthMarkerOffsets[row.id] = minY
-                    reportTopVisibleMonth()
-                }
+    private func updateMonthPosition(for rowID: LedgerScrollTarget, minY: CGFloat) {
+        // `onScrollVisibilityChange` leaves stale visible rows behind in an
+        // iOS 26 `List`. Month dividers are sparse, so tracking only their
+        // actual row positions is both deterministic and cheap.
+        if rowID == newestMonthMarkerID {
+            monthTrackingAnchorID = rowID
+            // The first month divider reveals the actual content boundary
+            // below the safe-area summary. That boundary differs between iOS
+            // 26 and 27, so retain its highest observed resting position
+            // instead of assuming zero.
+            monthTrackingTopY = max(monthTrackingTopY ?? minY, minY)
+            if activeMonthMarkerID == nil {
+                activeMonthMarkerID = rowID
+            }
         }
+        let previousY = monthMarkerOffsets[rowID]
+        monthMarkerOffsets[rowID] = minY
+        guard let monthTrackingTopY, let previousY else {
+            reportTopVisibleMonth()
+            return
+        }
+
+        if previousY > monthTrackingTopY, minY <= monthTrackingTopY {
+            // Scrolling toward older entries: the divider that just reached
+            // the header becomes the active month.
+            activeMonthMarkerID = rowID
+        } else if previousY <= monthTrackingTopY,
+                  minY > monthTrackingTopY,
+                  activeMonthMarkerID == rowID {
+            // Scrolling back toward newer entries: hand ownership to the
+            // immediately newer divider in ledger order.
+            activeMonthMarkerID = newerMonthMarkerID(than: rowID)
+        }
+        reportTopVisibleMonth()
     }
 
     private func reportTopVisibleMonth() {
-        guard !monthMarkerOffsets.isEmpty else { return }
-        let crossedTop = monthMarkerOffsets.filter { $0.value <= 1 }
-        let activeMarker = (crossedTop.max { $0.value < $1.value }
-            ?? monthMarkerOffsets.min { $0.value < $1.value })?.key
-        guard let activeMarker else { return }
+        guard let activeMarker = activeMonthMarkerID ?? newestMonthMarkerID else { return }
         let month = DateFormat.monthStart(of: activeMarker.representedMonth)
         guard lastReportedVisibleMonth.map({
             !Calendar.current.isDate($0, equalTo: month, toGranularity: .month)
@@ -137,6 +169,23 @@ struct LedgerRowsView: View {
         lastReportedVisibleMonth = month
         guard !isSearching else { return }
         onTopVisibleMonthChange(month)
+    }
+
+    private var newestMonthMarkerID: LedgerScrollTarget? {
+        rows.lazy.compactMap { row in
+            if case .month = row { return row.id }
+            return nil
+        }.first
+    }
+
+    private func newerMonthMarkerID(than markerID: LedgerScrollTarget) -> LedgerScrollTarget? {
+        let markerIDs = rows.compactMap { row in
+            row.isMonthMarker ? row.id : nil
+        }
+        guard let index = markerIDs.firstIndex(of: markerID), index > markerIDs.startIndex else {
+            return markerIDs.first
+        }
+        return markerIDs[markerIDs.index(before: index)]
     }
 
     private func headingRow(_ heading: Heading) -> some View {

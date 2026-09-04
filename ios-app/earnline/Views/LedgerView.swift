@@ -545,6 +545,10 @@ struct LedgerView: View {
                   let stressClient = clients.first(where: { $0.name == "Stress Client 1" }) {
             didRunDemo = true
             navigationPath.append(.client(stressClient.id))
+        } else if AppModel.hasUIAutomationLaunchFlag("-demoClientProfileCompact"),
+                  let demoClient = clients.first(where: { $0.name == "Acme Studio" }) {
+            didRunDemo = true
+            navigationPath.append(.client(demoClient.id))
         }
         #endif
     }

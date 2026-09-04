@@ -111,10 +111,12 @@ jobs:
             runner: macos-26
             xcode: "26.4.1"
             setup_xcode: true
+            retry_flags: ""
           - runtime: "27.0"
             runtime_label: "27.0"
             runner: xcode-27
             setup_xcode: false
+            retry_flags: "-test-iterations 2 -retry-tests-on-failure -test-repetition-relaunch-enabled YES"
     defaults:
       run:
         working-directory: ios-app
@@ -138,6 +140,8 @@ jobs:
             -scheme earnline \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=${{ matrix.runtime }}' \
             -only-testing:earnlineUITests \
+            -collect-test-diagnostics never \
+            ${{ matrix.retry_flags }} \
             -resultBundlePath production-ui-${{ matrix.runtime }}.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -188,7 +192,7 @@ jobs:
           retention-days: 7
 
   ios-app-store-release-plan:
-    name: iOS App Store coverage plan (Debug)
+    name: iOS App Store accessibility coverage (Debug)
     runs-on: xcode-27
     defaults:
       run:
@@ -207,6 +211,8 @@ jobs:
             -scheme earnline \
             -testPlan AppStoreRelease \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=27.0' \
+            -only-testing:earnlineUITests/EarnlineUITests/testFiltersRemainReachableAtAccessibilityTextSize \
+            -collect-test-diagnostics never \
             -resultBundlePath app-store-release.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \

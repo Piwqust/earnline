@@ -191,7 +191,8 @@ private struct WorkspaceContainerHost: View {
             // request the deterministic generated ledger; other tests remain
             // empty and fast.
             if AppModel.hasUIAutomationLaunchFlag("-demoInsights")
-                || AppModel.hasUIAutomationLaunchFlag("-demoLedger") {
+                || AppModel.hasUIAutomationLaunchFlag("-demoLedger")
+                || AppModel.hasUIAutomationLaunchFlag("-demoClientProfileCompact") {
                 _ = try? SampleData.seedGenerated(context)
             } else if AppModel.hasUIAutomationLaunchFlag("-demoClientProfile")
                 || AppModel.hasUIAutomationLaunchFlag("-demoStressLedger") {

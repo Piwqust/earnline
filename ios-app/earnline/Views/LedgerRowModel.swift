@@ -52,6 +52,11 @@ enum LedgerRow: Identifiable {
 
     var representedMonth: Date { id.representedMonth }
 
+    var isMonthMarker: Bool {
+        if case .month = self { return true }
+        return false
+    }
+
     /// A sync pull can invalidate a model while a recycled List row still
     /// exists. Registration metadata remains safe to inspect in that window.
     var isInvalidated: Bool {
