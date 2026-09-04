@@ -2,6 +2,10 @@
 
 Released September 4, 2026.
 
+Maintenance build 3 restores the configured Supabase connection when updating
+over an earlier install that retained the old placeholder in local settings.
+The migration does not delete the local ledger or account data.
+
 Earnline 1.1.0 is a stable GitHub update aimed at local-first daily use. It is
 not an App Store distribution: the attached IPA files are unsigned
 review artifacts and must be re-signed or built from source before installation.
