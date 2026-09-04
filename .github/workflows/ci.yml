@@ -134,6 +134,9 @@ jobs:
             -scheme earnline \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=${{ matrix.runtime }}' \
             -only-testing:earnlineUITests \
+            -test-iterations 2 \
+            -retry-tests-on-failure \
+            -test-repetition-relaunch-enabled YES \
             -resultBundlePath production-ui-${{ matrix.runtime }}.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -168,6 +171,9 @@ jobs:
             -scheme earnline-dev \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=27.0' \
             -only-testing:earnlineDevUITests \
+            -test-iterations 2 \
+            -retry-tests-on-failure \
+            -test-repetition-relaunch-enabled YES \
             -resultBundlePath dev-ui.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -200,6 +206,9 @@ jobs:
             -scheme earnline \
             -testPlan AppStoreRelease \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=27.0' \
+            -test-iterations 2 \
+            -retry-tests-on-failure \
+            -test-repetition-relaunch-enabled YES \
             -resultBundlePath app-store-release.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -239,6 +248,9 @@ jobs:
             -configuration Release \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=27.0' \
             -derivedDataPath "$derived_data" \
+            -test-iterations 2 \
+            -retry-tests-on-failure \
+            -test-repetition-relaunch-enabled YES \
             -resultBundlePath release-binary.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
