@@ -4,6 +4,21 @@ import Testing
 @testable import earnline
 
 struct SyncModelTests {
+    @Test @MainActor func staleSupabasePlaceholdersDoNotShadowBundledConfiguration() {
+        #expect(AppModel.configuredSupabaseValue(
+            " https://audit.invalid ",
+            fallback: "https://workspace.supabase.co"
+        ) == "https://workspace.supabase.co")
+        #expect(AppModel.configuredSupabaseValue(
+            "sb_publishable_audit_placeholder",
+            fallback: "sb_publishable_live_value"
+        ) == "sb_publishable_live_value")
+        #expect(AppModel.configuredSupabaseValue(
+            "https://personal.supabase.co",
+            fallback: "https://workspace.supabase.co"
+        ) == "https://personal.supabase.co")
+    }
+
     /// `AppModel` no longer forwards saves; it composes the store and wires the
     /// debounced sync scheduler into it. That wiring is what this covers — the
     /// save/revision/undo contract itself lives in `LedgerMutationStoreTests`.

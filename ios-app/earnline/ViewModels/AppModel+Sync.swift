@@ -482,13 +482,27 @@ extension AppModel {
         )
     }
 
-    /// A previous missing-configuration build may have persisted an empty
-    /// developer override. Empty values should never shadow a later valid
-    /// build-time configuration, while nonempty overrides remain available to
-    /// the local developer surface.
+    /// A previous missing-configuration build may have persisted an empty or
+    /// placeholder developer override. Empty values and the old audit
+    /// placeholder must never shadow a later valid build-time configuration,
+    /// while nonempty personal overrides remain available to the local
+    /// developer surface.
     static func configuredSupabaseValue(_ saved: String?, fallback: String) -> String {
         guard let saved else { return fallback }
-        return saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : saved
+        let trimmed = saved.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isLegacySupabasePlaceholder(trimmed) else { return fallback }
+        return saved
+    }
+
+    /// `v1.1.0` was once installed with audit-only placeholder values. Keep
+    /// an update over that build from retaining those values in UserDefaults;
+    /// arbitrary personal Supabase connections are intentionally preserved.
+    private static func isLegacySupabasePlaceholder(_ value: String) -> Bool {
+        let normalized = value.lowercased()
+        let legacyPlaceholderHost = ["audit", "invalid"].joined(separator: ".")
+        let legacyPlaceholderKeyMarker = ["audit", "placeholder"].joined(separator: "_")
+        return URL(string: value)?.host?.lowercased() == legacyPlaceholderHost
+            || (normalized.hasPrefix("sb_publishable_") && normalized.contains(legacyPlaceholderKeyMarker))
     }
 
     /// The Settings fields fire their didSets on every keystroke — debounce

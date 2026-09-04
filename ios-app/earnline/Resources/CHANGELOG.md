@@ -4,6 +4,7 @@
 
 ### Reliability
 - The ledger summary now follows month boundaries consistently on iOS 26 and iOS 27, including long histories.
+- Updates now discard the old Supabase placeholder saved by an earlier release, so the built-in account connection is restored without deleting the local ledger.
 
 ## September 3, 2026
 
