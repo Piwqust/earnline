@@ -11,21 +11,17 @@ permissions:
   contents: read
 
 env:
-  XCODE_VERSION: "27.0"
   IOS_SIMULATOR_NAME: "iPhone 17"
 
 jobs:
   ios-project:
     name: iOS project generation
-    runs-on: macos-15
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
       - name: Confirm Xcode
         run: xcodebuild -version
       - name: Install XcodeGen
@@ -37,7 +33,7 @@ jobs:
 
   ios-lint:
     name: iOS lint
-    runs-on: macos-15
+    runs-on: macos-26
     defaults:
       run:
         working-directory: ios-app
@@ -50,19 +46,29 @@ jobs:
 
   ios-unit:
     name: iOS unit tests (${{ matrix.runtime }})
-    runs-on: macos-15
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        runtime: ["26.4.1", "27.0"]
+        include:
+          - runtime: "26.4.1"
+            runner: macos-26
+            xcode: "26.4.1"
+            setup_xcode: true
+          - runtime: "27.0"
+            runner: xcode-27
+            setup_xcode: false
     defaults:
       run:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
+      - if: matrix.setup_xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+          xcode-version: ${{ matrix.xcode }}
+      - name: Confirm Xcode
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -89,19 +95,29 @@ jobs:
 
   ios-production-ui:
     name: iOS production UI (${{ matrix.runtime }})
-    runs-on: macos-15
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        runtime: ["26.4.1", "27.0"]
+        include:
+          - runtime: "26.4.1"
+            runner: macos-26
+            xcode: "26.4.1"
+            setup_xcode: true
+          - runtime: "27.0"
+            runner: xcode-27
+            setup_xcode: false
     defaults:
       run:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
+      - if: matrix.setup_xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+          xcode-version: ${{ matrix.xcode }}
+      - name: Confirm Xcode
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -128,15 +144,14 @@ jobs:
 
   ios-dev-ui:
     name: iOS Dev companion UI
-    runs-on: macos-15
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+      - name: Confirm Xcode
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -163,15 +178,14 @@ jobs:
 
   ios-app-store-release-plan:
     name: iOS App Store coverage plan (Debug)
-    runs-on: macos-15
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+      - name: Confirm Xcode
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -196,15 +210,14 @@ jobs:
 
   ios-release-build:
     name: iOS Release binary test and guard
-    runs-on: macos-15
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: ios-app
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: ${{ env.XCODE_VERSION }}
+      - name: Confirm Xcode
+        run: xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
