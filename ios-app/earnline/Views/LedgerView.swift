@@ -348,6 +348,7 @@ struct LedgerView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .coordinateSpace(.named("ledger.scroll"))
         .environment(\.defaultMinListRowHeight, 1)
         // Pull-to-refresh mirrors the standard syncable-list affordance; a
         // no-op while Supabase isn't configured. Disabled in search mode so

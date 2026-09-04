@@ -7,7 +7,7 @@ import SwiftData
 struct LedgerRowsView: View {
     @Environment(AppModel.self) private var app
     @Query(sort: \ProjectIconPreference.projectKey) private var projectIconPreferences: [ProjectIconPreference]
-    @State private var visibleRowIDs: Set<LedgerScrollTarget> = []
+    @State private var monthMarkerOffsets: [LedgerScrollTarget: CGFloat] = [:]
     @State private var lastReportedVisibleMonth: Date?
 
     let rows: [LedgerRow]
@@ -26,20 +26,13 @@ struct LedgerRowsView: View {
     var body: some View {
         ForEach(rows) { row in
             rowView(row)
-                // `List` does not currently report changing row identities
-                // through `scrollPosition` or target visibility on iOS 27.
-                // Native visibility callbacks on the virtualized rows do;
-                // they update only when a row crosses the threshold, instead
-                // of measuring every row on every layout pass.
-                .onScrollVisibilityChange(threshold: 0.01) { isVisible in
-                    updateVisibility(of: row.id, isVisible: isVisible)
-                }
+                .background { monthPositionReader(for: row) }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(insets(for: row))
         }
         .onChange(of: rows.map(\.id)) { _, rowIDs in
-            visibleRowIDs.formIntersection(Set(rowIDs))
+            monthMarkerOffsets = monthMarkerOffsets.filter { rowIDs.contains($0.key) }
             reportTopVisibleMonth()
         }
     }
@@ -114,21 +107,30 @@ struct LedgerRowsView: View {
         return projectIconPreferences.first { $0.projectKey == key }?.symbol
     }
 
-    private func updateVisibility(of rowID: LedgerScrollTarget, isVisible: Bool) {
-        if isVisible {
-            visibleRowIDs.insert(rowID)
-        } else {
-            visibleRowIDs.remove(rowID)
+    @ViewBuilder
+    private func monthPositionReader(for row: LedgerRow) -> some View {
+        if case .month = row {
+            Color.clear
+                // `onScrollVisibilityChange` leaves stale visible rows behind
+                // in an iOS 26 `List`. Month dividers are sparse, so tracking
+                // only their positions is both deterministic and cheap: the
+                // newest divider that crossed the viewport top owns the header.
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.frame(in: .named("ledger.scroll")).minY
+                } action: { minY in
+                    monthMarkerOffsets[row.id] = minY
+                    reportTopVisibleMonth()
+                }
         }
-        reportTopVisibleMonth()
     }
 
     private func reportTopVisibleMonth() {
-        // Rows are grouped newest-month first. The visible set stays small
-        // because `List` virtualizes its cells, so choose from it instead of
-        // scanning the complete ledger after every row visibility change.
-        guard let visibleMonth = visibleRowIDs.map(\.representedMonth).max() else { return }
-        let month = DateFormat.monthStart(of: visibleMonth)
+        guard !monthMarkerOffsets.isEmpty else { return }
+        let crossedTop = monthMarkerOffsets.filter { $0.value <= 1 }
+        let activeMarker = (crossedTop.max { $0.value < $1.value }
+            ?? monthMarkerOffsets.min { $0.value < $1.value })?.key
+        guard let activeMarker else { return }
+        let month = DateFormat.monthStart(of: activeMarker.representedMonth)
         guard lastReportedVisibleMonth.map({
             !Calendar.current.isDate($0, equalTo: month, toGranularity: .month)
         }) ?? true else { return }

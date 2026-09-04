@@ -1,5 +1,10 @@
 # What's new
 
+## September 4, 2026
+
+### Reliability
+- The ledger summary now follows month boundaries consistently on iOS 26 and iOS 27, including long histories.
+
 ## September 3, 2026
 
 ### Reliability

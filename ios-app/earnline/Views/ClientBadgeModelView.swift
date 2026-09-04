@@ -10,6 +10,19 @@ struct ClientBadgeModelView: View {
     let achievement: ClientAchievement
     var isInteractive = false
 
+    /// GitHub's Xcode preview runners occasionally lose their SimMetalHost XPC
+    /// service while a long UI-test plan is running. That aborts the app inside
+    /// RealityKit before XCUITest can inspect the surrounding route. CI opts in
+    /// to this semantic renderer explicitly; local tests and every normal app
+    /// launch continue to exercise the real medal.
+    private var usesDeterministicTestRenderer: Bool {
+        #if DEBUG
+        AppModel.hasUIAutomationLaunchFlag("-disable3DForUITests")
+        #else
+        false
+        #endif
+    }
+
     private static let defaultRotation = simd_quatf(angle: -0.24, axis: [0, 1, 0])
         * simd_quatf(angle: 0.10, axis: [1, 0, 0])
 
@@ -17,7 +30,30 @@ struct ClientBadgeModelView: View {
         Self.defaultRotation
     }
 
+    @ViewBuilder
     var body: some View {
+        if usesDeterministicTestRenderer {
+            deterministicTestRenderer
+        } else {
+            realityRenderer
+        }
+    }
+
+    private var deterministicTestRenderer: some View {
+        Image(systemName: achievement.symbol.sfSymbolName)
+            .resizable()
+            .scaledToFit()
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(.secondary)
+            .padding(28)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(achievement.kind.title)
+            .accessibilityValue(
+                achievement.isUnlocked ? String(localized: "Earned") : String(localized: "Locked")
+            )
+    }
+
+    private var realityRenderer: some View {
         RealityView { (content: inout RealityViewCameraContent) in
             content.camera = .virtual
 

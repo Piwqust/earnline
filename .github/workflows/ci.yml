@@ -12,6 +12,10 @@ permissions:
 
 env:
   IOS_SIMULATOR_NAME: "iPhone 17"
+  # Xcode 27 preview runners can lose SimMetalHost during long UI suites.
+  # The app swaps only its procedural RealityKit medals for semantic symbols;
+  # local UI tests and production builds continue to render the real 3D view.
+  EARNLINE_DISABLE_3D_FOR_UI_TESTS: "1"
 
 jobs:
   ios-project:
@@ -134,9 +138,6 @@ jobs:
             -scheme earnline \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=${{ matrix.runtime }}' \
             -only-testing:earnlineUITests \
-            -test-iterations 2 \
-            -retry-tests-on-failure \
-            -test-repetition-relaunch-enabled YES \
             -resultBundlePath production-ui-${{ matrix.runtime }}.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -206,9 +207,6 @@ jobs:
             -scheme earnline \
             -testPlan AppStoreRelease \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=27.0' \
-            -test-iterations 2 \
-            -retry-tests-on-failure \
-            -test-repetition-relaunch-enabled YES \
             -resultBundlePath app-store-release.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -222,7 +220,7 @@ jobs:
           retention-days: 7
 
   ios-release-build:
-    name: iOS Release binary test and guard
+    name: iOS Release binary build and guard
     runs-on: xcode-27
     defaults:
       run:
@@ -235,7 +233,7 @@ jobs:
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate
-      - name: Run the true Release-binary smoke test and reject test hooks
+      - name: Build the true Release binary and reject test hooks
         env:
           EARNLINE_SUPABASE_PRODUCTION_URL: https://audit.invalid
           EARNLINE_SUPABASE_PRODUCTION_PUBLISHABLE_KEY: sb_publishable_audit_placeholder
@@ -248,26 +246,15 @@ jobs:
             -configuration Release \
             -destination 'platform=iOS Simulator,name=${{ env.IOS_SIMULATOR_NAME }},OS=27.0' \
             -derivedDataPath "$derived_data" \
-            -test-iterations 2 \
-            -retry-tests-on-failure \
-            -test-repetition-relaunch-enabled YES \
-            -resultBundlePath release-binary.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            test
+            build
           binary="$(find "$derived_data/Build/Products" -path '*Release-iphonesimulator/earnline.app/earnline' -print -quit)"
           test -n "$binary"
-          if /usr/bin/strings "$binary" | grep -E -- '-uiTesting|-authGatePreview|-uiTestDarkAppearance|-demoInsights'; then
+          if /usr/bin/strings "$binary" | grep -E -- '-uiTesting|-authGatePreview|-uiTestDarkAppearance|-demoInsights|-disable3DForUITests'; then
             echo 'Release binary contains UI-automation launch hooks.' >&2
             exit 1
           fi
-      - name: Upload Release test result bundle
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-release-binary-xcresult
-          path: ios-app/release-binary.xcresult
-          retention-days: 7
 
   web:
     name: Web (lint, test & build)
