@@ -51,11 +51,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runtime: "26.4"
+          - runtime: "26.4.1"
+            runtime_label: "26.4"
             runner: macos-26
             xcode: "26.4.1"
             setup_xcode: true
           - runtime: "27.0"
+            runtime_label: "27.0"
             runner: xcode-27
             setup_xcode: false
     defaults:
@@ -74,7 +76,7 @@ jobs:
       - name: Generate project
         run: xcodegen generate
       - name: Require the pinned simulator runtime
-        run: xcrun simctl list runtimes | grep -F "iOS ${{ matrix.runtime }}"
+        run: xcrun simctl list runtimes | grep -F "iOS ${{ matrix.runtime_label }}"
       - name: Run unit tests
         run: |
           xcodebuild \
@@ -100,11 +102,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runtime: "26.4"
+          - runtime: "26.4.1"
+            runtime_label: "26.4"
             runner: macos-26
             xcode: "26.4.1"
             setup_xcode: true
           - runtime: "27.0"
+            runtime_label: "27.0"
             runner: xcode-27
             setup_xcode: false
     defaults:
@@ -123,7 +127,7 @@ jobs:
       - name: Generate project
         run: xcodegen generate
       - name: Require the pinned simulator runtime
-        run: xcrun simctl list runtimes | grep -F "iOS ${{ matrix.runtime }}"
+        run: xcrun simctl list runtimes | grep -F "iOS ${{ matrix.runtime_label }}"
       - name: Run production UI tests
         run: |
           xcodebuild \
