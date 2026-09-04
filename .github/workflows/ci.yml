@@ -51,7 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runtime: "26.4.1"
+          - runtime: "26.4"
             runner: macos-26
             xcode: "26.4.1"
             setup_xcode: true
@@ -100,7 +100,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runtime: "26.4.1"
+          - runtime: "26.4"
             runner: macos-26
             xcode: "26.4.1"
             setup_xcode: true
