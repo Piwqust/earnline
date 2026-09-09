@@ -762,7 +762,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перенесите %@, сохранённые в режиме «Продолжить без аккаунта», в этот аккаунт и синхронизируйте их. Копия на устройстве останется на этом iPhone."
+            "value" : "Перенеси %@ из локального режима в этот аккаунт и синхронизируй. Копия на iPhone останется."
           }
         }
       }
@@ -1441,7 +1441,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Настройки валюты показаны для справки и не применяются к текущему рабочему пространству автоматически."
+            "value" : "Валюты и курс из файла показаны для сравнения. Они не заменяют текущие настройки автоматически."
           }
         }
       }
@@ -1938,7 +1938,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Существующие строки не изменятся. Новые будут добавлены как локальные изменения и смогут синхронизироваться с этим рабочим пространством."
+            "value" : "Существующие записи останутся без изменений. Новые записи добавятся на iPhone и смогут синхронизироваться с этим пространством."
           }
         }
       }
@@ -2398,7 +2398,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Храните файл в безопасном месте: он содержит финансовые данные в открытом виде."
+            "value" : "Храни файл в безопасном месте. Он содержит финансовые данные в открытом виде."
           }
         }
       }
@@ -4061,7 +4061,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@, сохранённые в режиме «Продолжить без аккаунта», будут добавлены в этот аккаунт и синхронизированы. Копия на устройстве останется без изменений, а повторный импорт не создаст дубликатов."
+            "value" : "Данные из локального режима (%@) будут добавлены в аккаунт и синхронизированы. Копия на iPhone сохранится, а повторный импорт не создаст дубликаты."
           }
         }
       }
@@ -4636,6 +4636,1976 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вся работа — в одном месте"
+          }
+        }
+      }
+    },
+    "So far" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пока что"
+          }
+        }
+      }
+    },
+    "Production" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Основная"
+          }
+        }
+      }
+    },
+    "Test" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тестовая"
+          }
+        }
+      }
+    },
+    "System" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Как в системе"
+          }
+        }
+      }
+    },
+    "Light" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Светлая"
+          }
+        }
+      }
+    },
+    "Dark" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тёмная"
+          }
+        }
+      }
+    },
+    "Blue" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Синий"
+          }
+        }
+      }
+    },
+    "Purple" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фиолетовый"
+          }
+        }
+      }
+    },
+    "Green" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зелёный"
+          }
+        }
+      }
+    },
+    "Orange" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оранжевый"
+          }
+        }
+      }
+    },
+    "Pink" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Розовый"
+          }
+        }
+      }
+    },
+    "Teal" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бирюзовый"
+          }
+        }
+      }
+    },
+    "Your local ledger needs recovery" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужно восстановить журнал на iPhone"
+          }
+        }
+      }
+    },
+    "Create a new local cache" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Создать новый локальный кэш"
+          }
+        }
+      }
+    },
+    "Create new cache" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Создать кэш"
+          }
+        }
+      }
+    },
+    "Sync is not set up for this workspace." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Синхронизация этого пространства не настроена."
+          }
+        }
+      }
+    },
+    "Resolve conflict" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разрешить конфликт"
+          }
+        }
+      }
+    },
+    "Add the Supabase URL and publishable key first." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сначала укажи адрес Supabase и публичный ключ."
+          }
+        }
+      }
+    },
+    "This build is missing its Supabase configuration." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В этой сборке нет настроек Supabase."
+          }
+        }
+      }
+    },
+    "This device could not be paired." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось подключить это устройство."
+          }
+        }
+      }
+    },
+    "This paired device is no longer connected." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это устройство больше не подключено."
+          }
+        }
+      }
+    },
+    "You're offline. Showing your last verified workspace access on this iPhone." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет сети. Используется последнее подтверждение доступа на этом iPhone."
+          }
+        }
+      }
+    },
+    "The rate service is temporarily unavailable." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис курсов временно недоступен."
+          }
+        }
+      }
+    },
+    "This file is not a valid Earnline backup." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Этот файл не является резервной копией Earnline."
+          }
+        }
+      }
+    },
+    "Set a device passcode before turning on App Lock." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сначала установи код-пароль iPhone, затем включи блокировку приложения."
+          }
+        }
+      }
+    },
+    "Require Touch ID" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход по Touch ID"
+          }
+        }
+      }
+    },
+    "Require Optic ID" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход по Optic ID"
+          }
+        }
+      }
+    },
+    "Require Passcode" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход по код-паролю"
+          }
+        }
+      }
+    },
+    "Could not load income details for this day." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось загрузить доходы за этот день."
+          }
+        }
+      }
+    },
+    "This line's client no longer exists, so the line could not be restored." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Клиент этой записи удалён. Восстановить запись не удалось."
+          }
+        }
+      }
+    },
+    "App Lock was turned off because this iPhone no longer has a device passcode." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Блокировка приложения отключена: на iPhone больше нет код-пароля."
+          }
+        }
+      }
+    },
+    "New income line" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новая запись дохода"
+          }
+        }
+      }
+    },
+    "Project icon" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Значок проекта"
+          }
+        }
+      }
+    },
+    "App" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Приложение"
+          }
+        }
+      }
+    },
+    "Cloud" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Облако"
+          }
+        }
+      }
+    },
+    "Code" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Код"
+          }
+        }
+      }
+    },
+    "Fast" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скорость"
+          }
+        }
+      }
+    },
+    "Technology" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Технологии"
+          }
+        }
+      }
+    },
+    "Image" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изображение"
+          }
+        }
+      }
+    },
+    "Writing" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Текст"
+          }
+        }
+      }
+    },
+    "Studio" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Студия"
+          }
+        }
+      }
+    },
+    "Card" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Карта"
+          }
+        }
+      }
+    },
+    "Money" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Деньги"
+          }
+        }
+      }
+    },
+    "Team" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Команда"
+          }
+        }
+      }
+    },
+    "Store" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Магазин"
+          }
+        }
+      }
+    },
+    "Shopping" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Покупки"
+          }
+        }
+      }
+    },
+    "Book" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Книга"
+          }
+        }
+      }
+    },
+    "Learning" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обучение"
+          }
+        }
+      }
+    },
+    "Idea" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Идея"
+          }
+        }
+      }
+    },
+    "Goal" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цель"
+          }
+        }
+      }
+    },
+    "Art" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Искусство"
+          }
+        }
+      }
+    },
+    "Magic" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Магия"
+          }
+        }
+      }
+    },
+    "Audio" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Аудио"
+          }
+        }
+      }
+    },
+    "Sound" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Звук"
+          }
+        }
+      }
+    },
+    "Keyboard" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Клавиатура"
+          }
+        }
+      }
+    },
+    "Server" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервер"
+          }
+        }
+      }
+    },
+    "Network" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сеть"
+          }
+        }
+      }
+    },
+    "Tag" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Метка"
+          }
+        }
+      }
+    },
+    "Invoice" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Счёт"
+          }
+        }
+      }
+    },
+    "Phone" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Телефон"
+          }
+        }
+      }
+    },
+    "Email" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Почта"
+          }
+        }
+      }
+    },
+    "Collaboration" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Совместная работа"
+          }
+        }
+      }
+    },
+    "Location" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Место"
+          }
+        }
+      }
+    },
+    "Enter an amount up to 1,000,000,000 with at most two decimal places." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введи сумму не больше 1 000 000 000 и не больше двух знаков после запятой."
+          }
+        }
+      }
+    },
+    "Could not load recent projects. You can still enter a project manually." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось загрузить недавние проекты. Название можно ввести вручную."
+          }
+        }
+      }
+    },
+    "No hold date" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Без отсрочки"
+          }
+        }
+      }
+    },
+    "Could not read the existing income lines. Your new line was not added." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось прочитать журнал. Новая запись не добавлена."
+          }
+        }
+      }
+    },
+    "Import on-device ledger" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенести журнал с iPhone"
+          }
+        }
+      }
+    },
+    "Privacy policy" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Политика конфиденциальности"
+          }
+        }
+      }
+    },
+    "Apply currencies and rate" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Применить валюты и курс"
+          }
+        }
+      }
+    },
+    "Cancel currency changes" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить изменения валют"
+          }
+        }
+      }
+    },
+    "Enter or fetch a rate for this pair, then apply. Totals keep using the previous settings until then." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введи или загрузи курс для этой пары, затем примени изменения. До этого итоги рассчитываются по прежним настройкам."
+          }
+        }
+      }
+    },
+    "Debug menu" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отладка"
+          }
+        }
+      }
+    },
+    "Onboarding" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Первый запуск"
+          }
+        }
+      }
+    },
+    "Personal Supabase database" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Своя база Supabase"
+          }
+        }
+      }
+    },
+    "Connection" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключение"
+          }
+        }
+      }
+    },
+    "Connect a Supabase project you administer only when you intentionally need a separate database." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключай свой проект Supabase, только если нужна отдельная база данных."
+          }
+        }
+      }
+    },
+    "Export CSV" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Экспорт CSV"
+          }
+        }
+      }
+    },
+    "Import CSV" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Импорт CSV"
+          }
+        }
+      }
+    },
+    "Export full backup" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Экспорт резервной копии"
+          }
+        }
+      }
+    },
+    "Import full backup" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Импорт резервной копии"
+          }
+        }
+      }
+    },
+    "Import and sync" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенести и синхронизировать"
+          }
+        }
+      }
+    },
+    "What's new" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Что нового"
+          }
+        }
+      }
+    },
+    "Reload this workspace?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загрузить пространство заново?"
+          }
+        }
+      }
+    },
+    "Use the cloud copy?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использовать облачную копию?"
+          }
+        }
+      }
+    },
+    "Reset and pull" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сбросить и загрузить"
+          }
+        }
+      }
+    },
+    "Use cloud copy" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использовать облачную копию"
+          }
+        }
+      }
+    },
+    "Unsynced changes on this iPhone will be discarded and replaced by the cloud copy. Remote rows are not deleted." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Несинхронизированные правки на этом iPhone будут заменены облачной копией. Записи в облаке останутся."
+          }
+        }
+      }
+    },
+    "Only the selected local store on this iPhone will be removed. Supabase rows and the other workspace store will not be deleted." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Будет удалено только выбранное локальное хранилище на этом iPhone. Данные Supabase и другого пространства останутся."
+          }
+        }
+      }
+    },
+    "Could not read local sync status. Your data was not changed." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось проверить синхронизацию. Твои данные не изменены."
+          }
+        }
+      }
+    },
+    "Rate loaded. Apply to update totals." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Курс загружен. Примени его, чтобы пересчитать итоги."
+          }
+        }
+      }
+    },
+    "Stress rows already present. Reset and pull removes them." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тестовые записи уже добавлены. «Сбросить и загрузить» удалит их."
+          }
+        }
+      }
+    },
+    "1 income line" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 запись дохода"
+          }
+        }
+      }
+    },
+    "income lines" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "записи дохода"
+          }
+        }
+      }
+    },
+    "Imported 1 line. Syncing to your account." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перенесена 1 запись. Идёт синхронизация с аккаунтом."
+          }
+        }
+      }
+    },
+    "Your on-device ledger is already in this account." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Журнал с этого iPhone уже перенесён в аккаунт."
+          }
+        }
+      }
+    },
+    "Import backup" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Импорт резервной копии"
+          }
+        }
+      }
+    },
+    "Export backup" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Экспорт резервной копии"
+          }
+        }
+      }
+    },
+    "Format" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Формат"
+          }
+        }
+      }
+    },
+    "Type" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тип"
+          }
+        }
+      }
+    },
+    "Choose backup file" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрать резервную копию"
+          }
+        }
+      }
+    },
+    "File" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Файл"
+          }
+        }
+      }
+    },
+    "Workspace in file" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пространство в файле"
+          }
+        }
+      }
+    },
+    "Currencies in file" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Валюты в файле"
+          }
+        }
+      }
+    },
+    "Rate in file" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Курс в файле"
+          }
+        }
+      }
+    },
+    "Current currencies" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Текущие валюты"
+          }
+        }
+      }
+    },
+    "Current rate" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Текущий курс"
+          }
+        }
+      }
+    },
+    "Records" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Записи"
+          }
+        }
+      }
+    },
+    "Clients" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Клиенты"
+          }
+        }
+      }
+    },
+    "Income lines" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Записи дохода"
+          }
+        }
+      }
+    },
+    "Notes" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заметки"
+          }
+        }
+      }
+    },
+    "Month reviews" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обзоры месяцев"
+          }
+        }
+      }
+    },
+    "Saved on this iPhone" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранено на этом iPhone"
+          }
+        }
+      }
+    },
+    "Keep changes from this iPhone" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохранить правки с этого iPhone"
+          }
+        }
+      }
+    },
+    "Seed stress dataset" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавить нагрузочные данные"
+          }
+        }
+      }
+    },
+    "Excluded from consolidated totals because no conversion rate is set" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не входит в общие итоги: курс не задан"
+          }
+        }
+      }
+    },
+    "Choose a status for this line" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрать статус записи"
+          }
+        }
+      }
+    },
+    "Choose" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрать"
+          }
+        }
+      }
+    },
+    "No client" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Без клиента"
+          }
+        }
+      }
+    },
+    "Delete event note?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить заметку?"
+          }
+        }
+      }
+    },
+    "Sync needs attention" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нужна проверка синхронизации"
+          }
+        }
+      }
+    },
+    "Open Settings → Sync to resolve this." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открой «Настройки» → «Синхронизация», чтобы решить проблему."
+          }
+        }
+      }
+    },
+    "Note" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заметка"
+          }
+        }
+      }
+    },
+    "Edits note" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Редактировать заметку"
+          }
+        }
+      }
+    },
+    "Opens Insights" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть аналитику"
+          }
+        }
+      }
+    },
+    "Open the 3D award collection" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть коллекцию 3D-наград"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удалить"
+          }
+        }
+      }
+    },
+    "Paired devices" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключённые устройства"
+          }
+        }
+      }
+    },
+    "Remove device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отключить устройство"
+          }
+        }
+      }
+    },
+    "Swipe left to remove this device" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Смахни влево, чтобы отключить устройство"
+          }
+        }
+      }
+    },
+    "Event note" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Заметка о событии"
+          }
+        }
+      }
+    },
+    "Clear filters" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сбросить фильтры"
+          }
+        }
+      }
+    },
+    "Filters" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фильтры"
+          }
+        }
+      }
+    },
+    "No filters selected" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фильтры не выбраны"
+          }
+        }
+      }
+    },
+    "Couldn’t load insights" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось загрузить аналитику"
+          }
+        }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повторить"
+          }
+        }
+      }
+    },
+    "Other clients" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Другие клиенты"
+          }
+        }
+      }
+    },
+    "Current connection" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Текущее подключение"
+          }
+        }
+      }
+    },
+    "A personal connection is for a Supabase project you administer. It is separate from everyday ledger settings." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Свое подключение предназначено для проекта Supabase, которым ты управляешь. Оно не нужно для обычной работы с журналом."
+          }
+        }
+      }
+    },
+    "Set up a personal Supabase database" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключить свою базу Supabase"
+          }
+        }
+      }
+    },
+    "You will check the project before Earnline uses it. Nothing changes until you confirm." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сначала приложение проверит проект. Подключение изменится только после подтверждения."
+          }
+        }
+      }
+    },
+    "Personal database" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Своя база данных"
+          }
+        }
+      }
+    },
+    "Use the Project URL and publishable key from your Supabase project. Never paste a service-role or secret key into Earnline." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Укажи Project URL и публичный ключ своего проекта Supabase. Серверные ключи service-role и secret использовать нельзя."
+          }
+        }
+      }
+    },
+    "Use this database" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Использовать эту базу"
+          }
+        }
+      }
+    },
+    "Saving switches the sync client to this project. Your current ledger is not deleted." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "После сохранения синхронизация подключится к этому проекту. Текущий журнал останется."
+          }
+        }
+      }
+    },
+    "Return to built-in database" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вернуться к встроенной базе"
+          }
+        }
+      }
+    },
+    "This keeps the personal project untouched and reconnects Earnline to its built-in database." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earnline подключится к встроенной базе. Твой отдельный проект останется без изменений."
+          }
+        }
+      }
+    },
+    "Chart time range" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Период графика"
+          }
+        }
+      }
+    },
+    "Create and import" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Создать и импортировать"
+          }
+        }
+      }
+    },
+    "Included" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включено"
+          }
+        }
+      }
+    },
+    "Choose CSV file" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выбрать CSV-файл"
+          }
+        }
+      }
+    },
+    "Valid rows" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Корректные строки"
+          }
+        }
+      }
+    },
+    "Errors" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ошибки"
+          }
+        }
+      }
+    },
+    "New clients" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новые клиенты"
+          }
+        }
+      }
+    },
+    "Rows" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Строки"
+          }
+        }
+      }
+    },
+    "Manage paired devices" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Управлять устройствами"
+          }
+        }
+      }
+    },
+    "Could not restore setup. Your saved data was not changed." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось восстановить настройку. Сохранённые данные не изменены."
+          }
+        }
+      }
+    },
+    "Import this backup?" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Импортировать эту копию?"
+          }
+        }
+      }
+    },
+    "Backup imported" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Копия импортирована"
+          }
+        }
+      }
+    },
+    "Supabase is not configured." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supabase не настроен."
+          }
+        }
+      }
+    },
+    "The sync service returned an invalid workspace profile." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис синхронизации вернул некорректные настройки пространства."
+          }
+        }
+      }
+    },
+    "Secure sign-in storage returned unreadable data." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось прочитать защищённые данные входа."
+          }
+        }
+      }
+    },
+    "Earnline could not safely finish local ledger cleanup. Nothing was uploaded. Restart the app and try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось завершить очистку локального журнала. Ничего не отправлено. Перезапусти приложение и повтори попытку."
+          }
+        }
+      }
+    },
+    "Earnline could not safely decide whether onboarding is needed. Your ledger was not changed. Restart the app and try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось определить, нужна ли начальная настройка. Журнал не изменён. Перезапусти приложение и повтори попытку."
+          }
+        }
+      }
+    },
+    "Earnline could not safely remove local sample data before sync. Nothing was uploaded. Try again after restarting the app." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось удалить примеры перед синхронизацией. Ничего не отправлено. Перезапусти приложение и повтори попытку."
+          }
+        }
+      }
+    },
+    "Signed out on this iPhone. This paired device could not be disconnected from your workspace while offline. Reconnect it, then revoke it from your owner device." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход на этом iPhone завершён. Без сети отключить устройство от пространства не удалось. Подключись к сети и отключи его с основного устройства."
+          }
+        }
+      }
+    },
+    "Signed out on this iPhone. The server could not be reached to end this session remotely." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вход на этом iPhone завершён. Завершить сеанс на сервере не удалось: нет подключения."
+          }
+        }
+      }
+    },
+    "Earnline could not save this iPhone’s offline workspace check. Online sync still works, but offline access may require signing in again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось сохранить подтверждение доступа на этом iPhone. Синхронизация работает, но для доступа без сети может понадобиться повторный вход."
+          }
+        }
+      }
+    },
+    "Cloud and iPhone changes conflict. Pending changes: %lld. Choose which copy to keep in Settings → Sync." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Правки в облаке и на iPhone расходятся. Неотправленных правок: %lld. Выбери нужную копию в «Настройки» → «Синхронизация»."
+          }
+        }
+      }
+    },
+    "Secure sign-in storage could not be updated (Keychain status %d). Unlock this iPhone and try again." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось сохранить данные входа (код Keychain: %d). Разблокируй iPhone и повтори попытку."
+          }
+        }
+      }
+    },
+    "The sync service returned an invalid cursor for %@." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сервис синхронизации вернул некорректную версию данных: %@."
+          }
+        }
+      }
+    },
+    "This Earnline backup uses an unsupported format version: %lld." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Версия формата этой копии Earnline не поддерживается: %lld."
+          }
+        }
+      }
+    },
+    "This backup contains duplicate %@ records." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В копии есть повторяющиеся записи: %@."
+          }
+        }
+      }
+    },
+    "This backup refers to a missing client (%@)." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Копия ссылается на отсутствующего клиента (%@)."
+          }
+        }
+      }
+    },
+    "Income line %@ has no client." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "У записи дохода %@ нет клиента."
+          }
+        }
+      }
+    },
+    "Income line %@ has an invalid amount." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В записи дохода %@ указана некорректная сумма."
+          }
+        }
+      }
+    },
+    "This backup contains an unsupported currency: %@." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В копии указана неподдерживаемая валюта: %@."
+          }
+        }
+      }
+    },
+    "This backup contains an invalid project icon: %@." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В копии указан некорректный значок проекта: %@."
+          }
+        }
+      }
+    },
+    "Month review %@ is invalid." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обзор месяца %@ содержит некорректные данные."
+          }
+        }
+      }
+    },
+    "Import %lld records" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Импортировать записи: %lld"
+          }
+        }
+      }
+    },
+    "Includes clients, income lines, event notes, project icons, month reviews, and currency settings. Sign-in tokens and Supabase keys are never included." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Содержит клиентов, доходы, заметки, значки проектов, обзоры месяцев и настройки валют. Токены входа и ключи Supabase в копию не входят."
+          }
+        }
+      }
+    },
+    "The backup is checked completely before the ledger changes. Import adds missing records and never overwrites rows already in this workspace." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перед изменением журнала копия проверяется целиком. Импорт добавляет отсутствующие записи и не заменяет существующие."
+          }
+        }
+      }
+    },
+    "Includes clients, income lines, event notes, project icons, month reviews, and currency settings. Sync tombstones are excluded so an old backup cannot delete current cloud data." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Содержит клиентов, доходы, заметки, значки проектов, обзоры месяцев и настройки валют. Данные об удалениях не включены, чтобы старая копия не могла удалить текущие облачные записи."
+          }
+        }
+      }
+    },
+    "Versioned JSON" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JSON с версией формата"
+          }
+        }
+      }
+    },
+    "Date must use YYYY-MM-DD." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дата должна быть в формате ГГГГ-ММ-ДД."
+          }
+        }
+      }
+    },
+    "Client is required." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Укажи клиента."
+          }
+        }
+      }
+    },
+    "Task is required." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Укажи задачу."
+          }
+        }
+      }
+    },
+    "Client name must be at most %lld characters." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Имя клиента должно содержать не больше %lld знаков."
+          }
+        }
+      }
+    },
+    "Task must be at most %lld characters." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Задача должна содержать не больше %lld знаков."
+          }
+        }
+      }
+    },
+    "Project must be at most %lld characters." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Название проекта должно содержать не больше %lld знаков."
+          }
+        }
+      }
+    },
+    "Amount must be a positive number using a decimal point." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сумма должна быть положительным числом с точкой в качестве разделителя."
+          }
+        }
+      }
+    },
+    "Amount can use at most two decimal places." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В сумме допустимо не больше двух знаков после точки."
+          }
+        }
+      }
+    },
+    "Amount must not exceed %@." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сумма не должна превышать %@."
+          }
+        }
+      }
+    },
+    "Currency code must be one of %@." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Допустимые коды валют: %@."
+          }
+        }
+      }
+    },
+    "Status must be Paid, In progress, or Canceled." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Статус должен быть Paid, In progress или Canceled."
+          }
+        }
+      }
+    },
+    "This row does not match Earnline's income-line rules." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта строка не соответствует правилам записей Earnline."
+          }
+        }
+      }
+    },
+    "Hold date must use YYYY-MM-DD or be empty." : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дата отсрочки должна быть в формате ГГГГ-ММ-ДД или пустой."
           }
         }
       }

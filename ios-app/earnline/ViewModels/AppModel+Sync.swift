@@ -407,6 +407,18 @@ extension AppModel {
     /// Swap the cached currency tuple together with the selected workspace.
     /// The cache is only an offline/first-frame value; a configured workspace
     /// always reconciles it against `earnline_profiles` during bootstrap.
+    @discardableResult
+    func applyCurrencyDraft(_ draft: CurrencyProfileDraft) -> Bool {
+        guard draft.isValid, let newRate = draft.rate else { return false }
+        isApplyingRemoteProfile = true
+        baseCurrencyCode = draft.base
+        secondaryCurrencyCode = draft.secondary
+        rate = newRate
+        isApplyingRemoteProfile = false
+        markWorkspaceProfileDirtyIfNeeded()
+        return true
+    }
+
     func loadWorkspaceCurrencyProfile() {
         isApplyingRemoteProfile = true
         let base = Self.normalizedCurrencyCode(

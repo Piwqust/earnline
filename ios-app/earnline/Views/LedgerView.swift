@@ -318,6 +318,19 @@ struct LedgerView: View {
         // are many around launch — reuse it for free, and scrolling never
         // touches it: the header owns the `displayedMonth` read.
         List {
+            if let error = app.syncError, !error.isEmpty {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sync needs attention").font(.headline)
+                        Text(error).font(.subheadline)
+                        Text("Open Settings → Sync to resolve this.").font(.caption)
+                    }
+                } icon: {
+                    Image(systemName: "exclamationmark.icloud")
+                }
+                .foregroundStyle(Theme.statusProgress)
+                .accessibilityIdentifier("ledger.syncError")
+            }
             if showsInlineFirstEarningsHeader, let snapshot = ledgerSnapshot {
                 header(monthlyTotals: snapshot.earnedTotalByMonth, hasAnyEntries: snapshot.hasEntries)
                     .listRowSeparator(.hidden)

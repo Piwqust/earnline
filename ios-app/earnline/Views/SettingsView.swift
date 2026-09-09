@@ -31,7 +31,9 @@ struct SettingsView: View {
     /// graph — the whole ledger re-derived its rows and every money label
     /// reformatted per character, which made typing here visibly lag on a
     /// large ledger. `nil` means "not editing": the field shows the model.
-    @State private var rateDraft: Double?
+    @State private var currencyDraft: CurrencyProfileDraft?
+    @State private var rateRequest: Task<Void, Never>?
+    @State private var rateEditGeneration = 0
     @State private var pendingSyncRecoveryAction: SyncRecoveryAction?
     @State private var isResettingLocalData = false
     @State private var stressSeedNote: String?
@@ -84,6 +86,20 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                }
+            }
+
+            Section {
+                SyncSettingsContent(
+                    pendingSyncCount: pendingSyncCount,
+                    isResettingLocalData: isResettingLocalData,
+                    onUseCloudCopy: { pendingSyncRecoveryAction = .useCloudCopy }
+                )
+            } header: {
+                Text("Sync")
+            } footer: {
+                if let syncError = app.syncError, !syncError.isEmpty {
+                    Text(syncError).foregroundStyle(Theme.statusCanceled)
                 }
             }
 
@@ -151,10 +167,10 @@ struct SettingsView: View {
 
             Section {
                 currencyPicker("Primary",
-                               selection: $app.baseCurrencyCode, options: currencies)
+                               selection: currencyBinding(isBase: true), options: currencies)
                 currencyPicker("Secondary",
-                               selection: $app.secondaryCurrencyCode,
-                               options: currencies.filter { $0 != app.baseCurrencyCode })
+                               selection: currencyBinding(isBase: false),
+                               options: currencies.filter { $0 != editedCurrency.base })
             } header: {
                 Text("Currency")
             } footer: {
@@ -170,16 +186,29 @@ struct SettingsView: View {
             }
 
             ConversionRateSettingsSection(
-                baseCurrencyCode: appModel.baseCurrencyCode,
-                secondaryCurrencyCode: appModel.secondaryCurrencyCode,
-                secondaryExample: appModel.secondaryString(100),
+                baseCurrencyCode: editedCurrency.base,
+                secondaryCurrencyCode: editedCurrency.secondary,
+                secondaryExample: editedCurrency.rate.map {
+                    CurrencyFormatter.string(Decimal($0 * 100), code: editedCurrency.secondary)
+                } ?? "—",
                 rate: rateFieldBinding,
                 isFetchingRate: isFetchingRate,
                 rateFetchFailed: rateFetchFailed,
                 rateFetchNote: rateFetchNote,
-                onCommitRate: commitRateDraft,
+                onCommitRate: {},
                 onFetchRate: fetchRate
             )
+
+            if currencyDraft != nil {
+                Section {
+                    Button("Apply currencies and rate", action: commitRateDraft)
+                        .disabled(!editedCurrency.isValid)
+                        .accessibilityIdentifier("settings.currency.apply")
+                    Button("Cancel currency changes") { discardCurrencyDraft() }
+                } footer: {
+                    Text("Enter or fetch a rate for this pair, then apply. Totals keep using the previous settings until then.")
+                }
+            }
 
             Section("About") {
                 aboutContent
@@ -268,20 +297,6 @@ struct SettingsView: View {
                 }
                 #endif
 
-                Section {
-                    DeveloperSyncSettingsContent(
-                        pendingSyncCount: pendingSyncCount,
-                        isResettingLocalData: isResettingLocalData,
-                        onUseCloudCopy: { pendingSyncRecoveryAction = .useCloudCopy }
-                    )
-                } header: {
-                    Text("Sync")
-                } footer: {
-                    if let syncError = app.syncError, !syncError.isEmpty {
-                        Text(syncError).foregroundStyle(Theme.statusCanceled)
-                    }
-                }
-
                 #if DEBUG
                 Section {
                     DeveloperDataSettingsContent(
@@ -354,17 +369,16 @@ struct SettingsView: View {
         // The sheet outlives a workspace switch (it's presented by the host),
         // so re-read the counts from whatever store is now underneath.
         .onChange(of: appModel.workspaceEnvironment) {
-            rateDraft = nil
+            discardCurrencyDraft()
             rateFetchNote = nil
             refreshCounts()
         }
+        .onChange(of: appModel.workspaceStoreIdentity) { discardCurrencyDraft() }
+        .onDisappear { rateRequest?.cancel() }
         .onChange(of: appModel.baseCurrencyCode) { refreshCounts(); rateFetchNote = nil }
         .onChange(of: appModel.secondaryCurrencyCode) { refreshCounts(); rateFetchNote = nil }
         .onChange(of: appModel.isSyncing) { _, syncing in
             if !syncing { refreshCounts() }
-        }
-        .onChange(of: appModel.syncConflictCount) { _, count in
-            if count > 0 { appModel.developerModeEnabled = true }
         }
         .confirmationDialog(syncRecoveryConfirmationTitle,
                             isPresented: syncRecoveryConfirmationBinding,
@@ -582,45 +596,82 @@ struct SettingsView: View {
         }
     }
 
-    /// Shows the model's rate until the user edits, then their draft.
-    private var rateFieldBinding: Binding<Double> {
+    private var editedCurrency: CurrencyProfileDraft {
+        currencyDraft ?? CurrencyProfileDraft(base: appModel.baseCurrencyCode,
+                                              secondary: appModel.secondaryCurrencyCode,
+                                              rate: appModel.rate)
+    }
+
+    private func invalidateRateRequest() {
+        rateEditGeneration += 1
+        rateRequest?.cancel()
+        rateRequest = nil
+        isFetchingRate = false
+        rateFetchNote = nil
+    }
+
+    private func discardCurrencyDraft() {
+        invalidateRateRequest()
+        currencyDraft = nil
+    }
+
+    private func currencyBinding(isBase: Bool) -> Binding<String> {
         Binding(
-            get: { rateDraft ?? appModel.rate },
-            set: { rateDraft = $0 }
+            get: { isBase ? editedCurrency.base : editedCurrency.secondary },
+            set: { code in
+                invalidateRateRequest()
+                var draft = editedCurrency
+                if isBase { draft.selectBase(code) } else { draft.selectSecondary(code) }
+                currencyDraft = draft
+            }
         )
     }
 
-    /// Push the finished edit into the model in one write — the same
-    /// commit-on-leave contract as the client rename in `ClientDetailView`.
-    private func commitRateDraft() {
-        guard let draft = rateDraft else { return }
-        rateDraft = nil
-        let normalized = AppModel.validExchangeRate(draft, fallback: appModel.rate)
-        guard normalized != appModel.rate else { return }
-        appModel.rate = normalized
+    private var rateFieldBinding: Binding<Double> {
+        Binding(
+            get: { editedCurrency.rate ?? 0 },
+            set: { value in
+                invalidateRateRequest()
+                var draft = editedCurrency
+                draft.rate = value
+                currencyDraft = draft
+            }
+        )
     }
 
-    /// One-tap rate refresh. Fetch only ever runs on this explicit tap — the
-    /// typed-in rate stays authoritative, this just saves looking it up.
+    private func commitRateDraft() {
+        guard let draft = currencyDraft, draft.isValid else { return }
+        invalidateRateRequest()
+        if appModel.applyCurrencyDraft(draft) { currencyDraft = nil }
+    }
+
     private func fetchRate() {
-        guard !isFetchingRate else { return }
+        invalidateRateRequest()
         isFetchingRate = true
-        rateFetchNote = nil
-        let base = appModel.baseCurrencyCode
-        let secondary = appModel.secondaryCurrencyCode
-        Task { @MainActor in
+        let draft = editedCurrency
+        let editGeneration = rateEditGeneration
+        let profileGeneration = appModel.profileEditGeneration
+        let workspace = appModel.workspaceStoreIdentity
+        rateRequest = Task { @MainActor in
+            defer {
+                if editGeneration == rateEditGeneration { isFetchingRate = false }
+            }
             do {
-                appModel.rate = try await ExchangeRateService.fetch(base: base, secondary: secondary)
-                // The fetched value replaces whatever was mid-edit; keeping a
-                // stale draft would visually override the fetch result.
-                rateDraft = nil
+                let fetched = try await ExchangeRateService.fetch(base: draft.base, secondary: draft.secondary)
+                guard !Task.isCancelled, editGeneration == rateEditGeneration,
+                      profileGeneration == appModel.profileEditGeneration,
+                      workspace == appModel.workspaceStoreIdentity, draft == editedCurrency else { return }
+                var updated = draft
+                updated.rate = fetched
+                currencyDraft = updated
                 rateFetchFailed = false
-                rateFetchNote = String(localized: "Rate updated")
+                rateFetchNote = String(localized: "Rate loaded. Apply to update totals.")
             } catch {
+                guard !Task.isCancelled, editGeneration == rateEditGeneration,
+                      workspace == appModel.workspaceStoreIdentity else { return }
                 rateFetchFailed = true
                 rateFetchNote = error.localizedDescription
             }
-            isFetchingRate = false
         }
     }
 

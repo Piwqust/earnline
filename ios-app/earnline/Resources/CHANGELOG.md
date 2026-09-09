@@ -1,5 +1,20 @@
 # What's new
 
+## September 5, 2026
+
+### Reliability
+- Money fields preserve pasted values and reject ambiguous fractions or amounts above the limit.
+- Sync snapshots each batch consistently and checks cloud versions atomically before writing.
+- Currency changes apply together with their rate; stale network responses cannot replace an edited rate.
+- Text limits match the cloud’s Unicode contract without splitting emoji.
+- GitHub sign-in uses the registered callback scheme even when a signing service changes the bundle identifier.
+
+### Everyday use
+- Sync status, errors, and recovery are available without Developer Mode.
+- Large text uses a stacked composer and summary layout.
+- Backup previews show the original and current currency settings.
+- Added missing Russian interface and recovery messages.
+
 ## September 4, 2026
 
 ### Reliability

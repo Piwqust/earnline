@@ -106,11 +106,18 @@ extension AppModel {
         let error: String
     }
 
-    /// The callback scheme is the bundle ID (registered in Info.plist via
-    /// `$(PRODUCT_BUNDLE_IDENTIFIER)`), so the side-by-side dev build gets its
-    /// own scheme instead of fighting the App Store build over one. Each
-    /// scheme in use must be in the Supabase redirect-URL allowlist.
-    nonisolated static let oauthRedirectURL = URL(string: "\(Bundle.main.bundleIdentifier ?? "com.earnline.app")://auth/callback")!
+    /// Read the registered URL scheme, not the runtime bundle identifier:
+    /// a signing service may change the latter while the callback registered
+    /// with Supabase must stay stable.
+    nonisolated static let oauthRedirectURL = registeredOAuthRedirectURL(
+        urlTypes: Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+    )
+
+    nonisolated static func registeredOAuthRedirectURL(urlTypes: [[String: Any]]) -> URL {
+        let schemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        let scheme = schemes.first(where: { $0.hasPrefix("com.earnline.app") }) ?? "com.earnline.app"
+        return URL(string: "\(scheme)://auth/callback")!
+    }
 
     /// The dedicated local-only guest container identity. Deliberately not a
     /// real workspace: it never syncs, never migrates into an account store,

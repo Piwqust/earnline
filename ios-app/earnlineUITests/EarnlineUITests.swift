@@ -40,6 +40,28 @@ final class EarnlineUITests: XCTestCase {
         return close.waitForExistence(timeout: 3)
     }
 
+    func testComposerFieldsDoNotOverlapAtLargestTextSize() {
+        let app = launchApp(["-demoComposer", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU",
+                             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        let amount = app.textFields["composer.amount"]
+        let project = app.textFields["composer.project"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 8))
+        XCTAssertTrue(project.exists)
+        XCTAssertGreaterThan(amount.frame.width, 0)
+        XCTAssertGreaterThan(project.frame.width, 0)
+        XCTAssertFalse(amount.frame.intersects(project.frame))
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "composer-russian-largest-text"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testSyncStatusIsAvailableWithoutDeveloperMode() {
+        let app = launchApp(["-demoSettings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
+        XCTAssertTrue(app.staticTexts["Status"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Sync now"].exists)
+    }
+
     func testLedgerAndSettingsAreReachable() {
         let app = launchApp()
 
@@ -52,7 +74,7 @@ final class EarnlineUITests: XCTestCase {
         settings.tap()
 
         XCTAssertTrue(app.staticTexts["Appearance"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Primary"].exists)
+        XCTAssertTrue(reveal(app.staticTexts["Primary"], in: app))
         XCTAssertTrue(reveal(app.staticTexts["Display conversion rate"], in: app))
     }
 
@@ -159,7 +181,7 @@ final class EarnlineUITests: XCTestCase {
         let developerMode = developerModeRow.descendants(matching: .switch).firstMatch
         XCTAssertTrue(developerMode.waitForExistence(timeout: 3))
         XCTAssertTrue(developerMode.isHittable)
-        XCTAssertFalse(app.staticTexts["Status"].exists)
+        // Sync status is part of ordinary Settings, independent of Developer Mode.
         XCTAssertFalse(app.switches["Client badges"].exists)
         developerMode.tap()
         let developerEnabled = NSPredicate(format: "value == %@", "1")
@@ -176,7 +198,6 @@ final class EarnlineUITests: XCTestCase {
         expectation(for: badgesEnabled, evaluatedWith: clientBadges)
         waitForExpectations(timeout: 3)
         XCTAssertTrue(reveal(app.staticTexts["Connection"], in: app))
-        XCTAssertTrue(reveal(app.staticTexts["Sync"], in: app))
         XCTAssertTrue(reveal(app.staticTexts["Data"], in: app))
 
         let close = app.buttons["Close"].firstMatch

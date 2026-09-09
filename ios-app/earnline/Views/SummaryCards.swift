@@ -5,6 +5,7 @@ import SwiftUI
 /// with a faded sparkline and the month-over-month change on the right.
 struct SummaryCards: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let month: Date
     let total: Decimal
@@ -19,12 +20,20 @@ struct SummaryCards: View {
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 12) {
-                earnedCard
-                statsCard
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 12) {
+                    earnedCard
+                    statsCard
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(spacing: 12) {
+                    earnedCard
+                    statsCard
+                }
+                .frame(height: 112)
             }
         }
-        .frame(height: 112)
         // Editing a line may update the same visible month outside the
         // scroll-boundary transaction. Keep that numeric change alive here;
         // month changes themselves are animated at the owning mutation in
@@ -42,9 +51,10 @@ struct SummaryCards: View {
             MoneyAmountText(baseAmount: total,
                             size: 20, weight: .medium,
                             color: Theme.label,
+                            lineLimit: dynamicTypeSize.isAccessibilitySize ? nil : 1,
                             countsDownFrom: previousTotal)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: dynamicTypeSize.isAccessibilitySize ? nil : .infinity, alignment: .topLeading)
         .padding(16)
         .glassEffect(.regular, in: .rect(cornerRadius: Theme.Radius.summary))
         .accessibilityElement(children: .combine)
@@ -53,34 +63,11 @@ struct SummaryCards: View {
         .accessibilityIdentifier("ledger.earned.summary")
     }
 
-    /// "Earned in July" where the stable label stays put and the month rolls
-    /// in the scroll direction with the amount. The split remains derived from
-    /// the localized template, so it needs no second translation.
     private var earnedTitle: some View {
-        let parts = Self.earnedTitleParts
-        return HStack(spacing: 0) {
-            if !parts.prefix.isEmpty { Text(parts.prefix) }
-            Text(DateFormat.month(month))
-                .contentTransition(.numericText(value: Self.monthValue(month)))
-            if !parts.suffix.isEmpty { Text(parts.suffix) }
-        }
-        .appFont(14, .medium)
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .combine)
-    }
-
-    /// The localized "Earned in %@" split around its month placeholder.
-    private static var earnedTitleParts: (prefix: String, suffix: String) {
-        let template = String(localized: "Earned in %@")
-        guard let range = template.range(of: "%@") else { return (template, "") }
-        return (String(template[..<range.lowerBound]), String(template[range.upperBound...]))
-    }
-
-    /// A monotonic month ordinal provides `numericText` with direction for a
-    /// localized month name, matching the amount's upward/downward roll.
-    private static func monthValue(_ date: Date) -> Double {
-        let components = Calendar.current.dateComponents([.year, .month], from: date)
-        return Double((components.year ?? 0) * 12 + (components.month ?? 0))
+        Text("Earned in \(DateFormat.month(month))")
+            .appFont(14, .medium)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: Stats
@@ -88,9 +75,11 @@ struct SummaryCards: View {
     private var statsCard: some View {
         Button(action: onOpenInsights) {
             ZStack(alignment: .bottomLeading) {
-                Sparkline(values: trend.map(doubleValue))
-                    .padding(.top, 22)
-                    .accessibilityHidden(true)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Sparkline(values: trend.map(doubleValue))
+                        .padding(.top, 22)
+                        .accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Stats")
                         .appFont(14, .medium)
@@ -105,7 +94,7 @@ struct SummaryCards: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: dynamicTypeSize.isAccessibilitySize ? nil : .infinity, alignment: .topLeading)
             .padding(16)
             .contentShape(.rect)
         }

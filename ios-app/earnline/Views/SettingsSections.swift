@@ -74,7 +74,7 @@ struct ConversionRateSettingsSection: View {
 
 /// Sync controls use the app's existing orchestration methods, while the
 /// parent sheet retains the destructive cloud-copy confirmation route.
-struct DeveloperSyncSettingsContent: View {
+struct SyncSettingsContent: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.modelContext) private var context
 
@@ -85,9 +85,7 @@ struct DeveloperSyncSettingsContent: View {
     var body: some View {
         Group {
             LabeledContent("Status") {
-                Text(appModel.syncMessage)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Text(appModel.isSupabaseConfigured ? appModel.syncMessage : String(localized: "Saved on this iPhone"))
             }
             LabeledContent("Pending") {
                 Text("\(pendingSyncCount)")

@@ -8,6 +8,7 @@ struct SmartComposer: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Environment(LedgerMutationStore.self) private var mutations
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let client: Client
@@ -57,8 +58,7 @@ struct SmartComposer: View {
     @State private var existingProjects: [String] = []
 
     private var amountDecimal: Decimal? {
-        guard let d = LineParser.decimal(from: amountText), d > 0 else { return nil }
-        return Validation.clampAmount(d)
+        Validation.moneyAmount(from: amountText)
     }
     private var symbol: String { CurrencyFormatter.symbol(for: currencyCode) }
     private var canCommit: Bool {
@@ -77,7 +77,7 @@ struct SmartComposer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Chips — single row: amount · project · status
-            HStack(spacing: 6) {
+            chipLayout {
                 Image(systemName: "plus")
                     .appFont(12, .semibold)
                     .foregroundStyle(Theme.label(0.5))
@@ -88,11 +88,17 @@ struct SmartComposer: View {
                 Spacer(minLength: 0)
             }
 
+            if !amountText.isEmpty && amountDecimal == nil {
+                Text("Enter an amount up to 1,000,000,000 with at most two decimal places.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.statusProgress)
+            }
+
             // Task — full width, multi-line (line breaks allowed)
             taskField
 
             // Date row + Submit
-            HStack(spacing: 6) {
+            chipLayout {
                 Image(systemName: "arrow.turn.down.right")
                     .appFont(10)
                     .foregroundStyle(Theme.label(0.4))
@@ -125,6 +131,12 @@ struct SmartComposer: View {
         .sensoryFeedback(.warning, trigger: rejectedFeedback)
     }
 
+    private var chipLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 6))
+    }
+
     // MARK: Chips
 
     private var amountChip: some View {
@@ -148,13 +160,11 @@ struct SmartComposer: View {
                 .accessibilityLabel("Currency")
                 .accessibilityValue(currencyCode)
                 TextField("100", text: $amountText)
-                    .fixedSize()
                     .frame(minWidth: 8)
                     .foregroundStyle(Theme.label)
                     .keyboardType(.numbersAndPunctuation)
                     .focused($focus, equals: .amount)
                     .submitLabel(.next)
-                    .onChange(of: amountText) { _, v in amountText = Validation.sanitizeAmountInput(v) }
                     .onSubmit { focus = .project }
                     .accessibilityLabel("Amount")
                     .accessibilityIdentifier("composer.amount")
@@ -167,7 +177,6 @@ struct SmartComposer: View {
         chip {
             HStack(spacing: 4) {
                 TextField("Project", text: $project)
-                    .fixedSize()
                     .frame(minWidth: 8)
                     .foregroundStyle(Theme.label)
                     .focused($focus, equals: .project)
@@ -175,6 +184,7 @@ struct SmartComposer: View {
                     .onChange(of: project) { _, v in project = Validation.capped(v, max: Limits.maxProjectLength) }
                     .onSubmit { focus = .task }
                     .accessibilityLabel("Project")
+                    .accessibilityIdentifier("composer.project")
                 projectMenu
             }
             .appFont(18)

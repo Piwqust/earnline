@@ -20,6 +20,15 @@ quality, and release priority. The web client is an optional desktop companion
 for people who specifically want a browser view of the same private ledger; it
 must support the iPhone workflow rather than becoming a parallel product.
 
+## Account and Offline Mode
+
+The shipping iPhone app includes the original Supabase connection and offers
+GitHub sign-in without asking the owner to configure a server. The account
+resolves its existing private workspace; signing in must not replace or delete
+the on-device ledger. “Continue without an account” remains an independent
+local mode, with an explicit merge when importing its records into an account.
+Sync state and conflict recovery belong in ordinary Settings.
+
 ## Brand Personality
 
 Calm, precise, contemporary.

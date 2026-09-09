@@ -10,6 +10,7 @@ enum SyncState: String, Codable {
 /// Shared sync surface of the four row models, so the coordinator can mark
 /// pushed rows generically.
 protocol SyncableModel: PersistentModel {
+    var id: UUID { get }
     var syncUpdatedAt: Date { get }
     var syncState: SyncState { get set }
     var lastSyncedAt: Date? { get set }

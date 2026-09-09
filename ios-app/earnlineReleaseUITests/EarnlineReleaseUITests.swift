@@ -2,6 +2,20 @@ import XCTest
 
 @MainActor
 final class EarnlineReleaseUITests: XCTestCase {
+    func testReleaseOffersGitHubWithoutDeveloperSetup() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        // An existing session can legitimately restore a ledger. On a fresh
+        // simulator this must be the real shipping account gate.
+        if app.buttons["ledger.menu"].exists { return }
+        let github = app.buttons["Continue with GitHub"]
+        XCTAssertTrue(github.waitForExistence(timeout: 8))
+        XCTAssertTrue(github.isEnabled)
+        XCTAssertTrue(github.isHittable)
+        XCTAssertFalse(app.staticTexts["This build is missing its Supabase configuration."].exists)
+    }
+
     /// The Release target deliberately receives the old automation arguments.
     /// A real shipping binary must ignore them and start at an ordinary
     /// account gate or an already restored ledger. The latter is valid when a

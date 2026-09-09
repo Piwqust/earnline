@@ -32,6 +32,32 @@ struct ValidationTests {
         #expect(Validation.sanitizeAmountInput(input).count == Limits.maxAmountDigits)
     }
 
+    @Test(arguments: ["0.001", "12.345", "1,234", "1.2.3", "2000000000", "0", "-1", "12a3", "1 23.45"])
+    func moneyFieldRejectsAmbiguousOrInvalidAmounts(input: String) {
+        #expect(Validation.moneyAmount(from: input) == nil)
+    }
+
+    @Test(arguments: ["1,234.56", "1.234,56", "1 234,56", "1\u{00A0}234.56", "1234.56"])
+    func moneyFieldPreservesPastedAmounts(input: String) {
+        #expect(Validation.moneyAmount(from: input) == Decimal(string: "1234.56"))
+    }
+
+    @Test func moneyFieldAcceptsCentsAndMaximum() {
+        #expect(Validation.moneyAmount(from: "0,01") == Decimal(string: "0.01"))
+        #expect(Validation.moneyAmount(from: ".5") == Decimal(string: "0.5"))
+        #expect(Validation.moneyAmount(from: "1000000000") == Limits.maxAmount)
+        #expect(Validation.moneyAmount(from: "1000000000.01") == nil)
+    }
+
+    @Test func unicodeLimitsMatchServerWithoutSplittingCharacters() {
+        let family = "👨‍👩‍👧‍👦"
+        let name = String(repeating: family, count: 4)
+        #expect(!SyncValidation.isValidClient(name: name, colorHex: "#112233"))
+        #expect(Validation.capped(name, max: 24) == String(repeating: family, count: 3))
+        #expect(Validation.capped("e\u{301}🇬🇧", max: 3) == "e\u{301}")
+        #expect(SyncValidation.isValidClient(name: Validation.capped(name, max: 24), colorHex: "#112233"))
+    }
+
     @Test func cappedTruncates() {
         let s = String(repeating: "a", count: 100)
         #expect(Validation.capped(s, max: Limits.maxProjectLength).count == Limits.maxProjectLength)

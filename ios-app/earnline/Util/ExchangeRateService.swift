@@ -67,3 +67,35 @@ enum ExchangeRateService {
         return (rate * 10_000).rounded() / 10_000
     }
 }
+
+/// A pair is edited separately from the active profile. An unfamiliar pair has
+/// no rate until the user enters or fetches one, so totals never use old units.
+struct CurrencyProfileDraft: Equatable {
+    var base: String
+    var secondary: String
+    var rate: Double?
+
+    var isValid: Bool {
+        guard let rate else { return false }
+        return base != secondary && Limits.supportedCurrencyCodes.contains(base)
+            && Limits.supportedCurrencyCodes.contains(secondary)
+            && rate.isFinite && rate > 0
+    }
+
+    mutating func selectBase(_ code: String) {
+        guard code != base else { return }
+        if code == secondary {
+            secondary = base
+            rate = rate.map { 1 / $0 }
+        } else {
+            rate = nil
+        }
+        base = code
+    }
+
+    mutating func selectSecondary(_ code: String) {
+        guard code != secondary, code != base else { return }
+        secondary = code
+        rate = nil
+    }
+}

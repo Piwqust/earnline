@@ -14,9 +14,10 @@ final class EarnlineAuthStorage: AuthLocalStorage, @unchecked Sendable {
         var errorDescription: String? {
             switch self {
             case .keychain(let status):
-                return "Secure sign-in storage could not be updated (Keychain status \(status)). Unlock this iPhone and try again."
+                // swiftlint:disable:next line_length
+                return String(localized: "Secure sign-in storage could not be updated (Keychain status \(status)). Unlock this iPhone and try again.")
             case .unreadableData:
-                return "Secure sign-in storage returned unreadable data."
+                return String(localized: "Secure sign-in storage returned unreadable data.")
             }
         }
     }

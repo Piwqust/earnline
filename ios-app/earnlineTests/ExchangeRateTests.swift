@@ -76,4 +76,34 @@ struct ExchangeRateTests {
         )
         #expect(rate == 83.4266)
     }
+    @Test func currencyDraftDoesNotReuseRateForUnrelatedPair() {
+        var draft = CurrencyProfileDraft(base: "USD", secondary: "RUB", rate: 90)
+        draft.selectSecondary("EUR")
+        #expect(draft.rate == nil)
+        #expect(!draft.isValid)
+        draft.rate = 0.9
+        #expect(draft.isValid)
+    }
+
+    @Test func swappingCurrenciesInvertsRate() {
+        var draft = CurrencyProfileDraft(base: "USD", secondary: "RUB", rate: 100)
+        draft.selectBase("RUB")
+        #expect(draft.base == "RUB")
+        #expect(draft.secondary == "USD")
+        #expect(draft.rate == 0.01)
+        #expect(draft.isValid)
+    }
+
+    @Test @MainActor func incompleteDraftDoesNotChangeActiveCurrencyProfile() {
+        let defaults = UserDefaults(suiteName: "CurrencyDraftTests.\(UUID())")!
+        let app = AppModel(defaults: defaults)
+        let original = app.baseCurrencyCode
+        #expect(!app.applyCurrencyDraft(CurrencyProfileDraft(base: "EUR", secondary: "GBP", rate: nil)))
+        #expect(app.baseCurrencyCode == original)
+        #expect(app.applyCurrencyDraft(CurrencyProfileDraft(base: "EUR", secondary: "GBP", rate: 0.85)))
+        #expect(app.baseCurrencyCode == "EUR")
+        #expect(app.secondaryCurrencyCode == "GBP")
+        #expect(app.rate == 0.85)
+    }
+
 }

@@ -157,6 +157,9 @@ struct EntryRow: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
+        .accessibilityLabel("Status")
+        .accessibilityValue(entry.status.title)
+        .accessibilityHint("Choose a status for this line")
         .accessibilityIdentifier("entry.status")
     }
 

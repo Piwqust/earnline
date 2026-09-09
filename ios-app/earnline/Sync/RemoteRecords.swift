@@ -82,11 +82,11 @@ enum SyncError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingConfiguration:
-            return "Supabase is not configured."
+            return String(localized: "Supabase is not configured.")
         case .invalidRemoteCursor(let table):
-            return "The sync service returned an invalid cursor for \(table)."
+            return String(localized: "The sync service returned an invalid cursor for \(table).")
         case .invalidRemoteProfile:
-            return "The sync service returned an invalid workspace profile."
+            return String(localized: "The sync service returned an invalid workspace profile.")
         }
     }
 }
@@ -125,8 +125,23 @@ enum SyncDateCodec {
     /// advancing the sync cursor past legitimately older remote writes. The
     /// coordinator now skips rows it can't date instead.
     static func parseTimestamp(_ value: String) -> Date? {
-        timestampWithFractionalSeconds().date(from: value)
-            ?? timestamp().date(from: value)
+        // ISO8601DateFormatter truncates fractions to milliseconds. Preserve
+        // PostgreSQL microseconds so concurrent writes have distinct versions.
+        if let dot = value.firstIndex(of: ".") {
+            let start = value.index(after: dot)
+            let digits = value[start...].prefix(while: { $0.isASCII && $0.isNumber })
+            let suffix = value.index(start, offsetBy: digits.count)
+            let whole = String(value[..<dot]) + value[suffix...]
+            if !digits.isEmpty, let date = timestamp().date(from: whole),
+               let fraction = Double("0." + digits) {
+                return date.addingTimeInterval(fraction)
+            }
+        }
+        return timestamp().date(from: value)
+    }
+
+    static func versionMicroseconds(_ date: Date) -> Int64 {
+        Int64((date.timeIntervalSince1970 * 1_000_000).rounded())
     }
 
     static func dayString(_ date: Date) -> String {

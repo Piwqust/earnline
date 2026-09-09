@@ -62,6 +62,32 @@ enum ClientNameValidation: Equatable {
 }
 
 enum Validation {
+    /// Money fields never guess that a lone decimal separator means thousands,
+    /// remove invalid characters, round fractions, or clamp the user's amount.
+    static func moneyAmount(from raw: String) -> Decimal? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+        let integer = #"(?:[0-9]+|[0-9]{1,3}(?: [0-9]{3})+)"#
+        let plain = "^(?:\(integer)(?:[.,][0-9]{1,2})?|[.,][0-9]{1,2})$"
+        let grouped = #"^(?:[0-9]{1,3}(?:,[0-9]{3})+\.[0-9]{1,2}|[0-9]{1,3}(?:\.[0-9]{3})+,[0-9]{1,2})$"#
+        var canonical: String
+        if text.range(of: plain, options: .regularExpression) != nil {
+            canonical = text.replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: ",", with: ".")
+        } else if text.range(of: grouped, options: .regularExpression) != nil {
+            let separator = text.lastIndex(where: { $0 == "." || $0 == "," })!
+            let whole = text[..<separator].filter { $0 != "." && $0 != "," }
+            canonical = whole + "." + text[text.index(after: separator)...]
+        } else {
+            return nil
+        }
+        if canonical.hasPrefix(".") { canonical = "0" + canonical }
+        guard let amount = Decimal(string: canonical, locale: Locale(identifier: "en_US_POSIX")),
+              amount > 0, amount <= Limits.maxAmount else { return nil }
+        return amount
+    }
+
     /// Clamp an amount into (0, maxAmount] and snap to cents. Local rows must
     /// match the `numeric(14, 2)` wire contract; extra fraction digits used to
     /// display one total until the next sync pull rewrote them.
@@ -90,12 +116,20 @@ enum Validation {
 
     static func trimmed(_ s: String, max: Int) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.count <= max ? t : String(t.prefix(max))
+        return capped(t, max: max)
     }
 
     /// Cap a string's length while editing (no trim, so trailing spaces are allowed mid-type).
     static func capped(_ s: String, max: Int) -> String {
-        s.count <= max ? s : String(s.prefix(max))
+        var result = ""
+        var length = 0
+        for character in s {
+            let size = character.unicodeScalars.count
+            guard length + size <= max else { break }
+            result.append(character)
+            length += size
+        }
+        return result
     }
 
     static func validateClientName(_ raw: String, existingNames: [String]) -> ClientNameValidation {
@@ -141,13 +175,13 @@ enum SyncValidation {
     }
 
     static func isCanonicalOptionalProject(_ project: String) -> Bool {
-        project.count <= Limits.maxProjectLength
+        project.unicodeScalars.count <= Limits.maxProjectLength
             && project == project.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func isCanonicalNonEmpty(_ value: String, maximum: Int) -> Bool {
         !value.isEmpty
-            && value.count <= maximum
+            && value.unicodeScalars.count <= maximum
             && value == value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

@@ -81,6 +81,8 @@ jobs:
         run: xcodegen generate
       - name: Require the pinned simulator runtime
         run: xcrun simctl list runtimes | grep -F "iOS ${{ matrix.runtime_label }}"
+      - name: Check Release configuration gate
+        run: python3 Scripts/test-release-supabase-config.py
       - name: Run unit tests
         run: |
           xcodebuild \

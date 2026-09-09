@@ -8,6 +8,14 @@ struct LedgerCSVTests {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day))!
     }
 
+    @Test func rejectsNamesBeyondServerUnicodeLimit() {
+        let name = String(repeating: "👨‍👩‍👧‍👦", count: 4)
+        let csv = "date,client,task,amount,currency_code,status\n2026-09-05,\(name),Work,100,USD,paid\n"
+        let preview = LedgerCSV.preview(Data(csv.utf8))
+        #expect(!preview.isReadyToImport)
+        #expect(!preview.issues.isEmpty)
+    }
+
     @Test func exportsRFC4180WithQuotesAndRussianText() {
         let record = LedgerCSV.ExportRecord(
             date: day(2026, 7, 20),

@@ -5,7 +5,7 @@
 - Read `PRODUCT.md` before product, UX, data-model, or navigation work.
 - Read `DESIGN.md` before any visual or interaction change.
 - Treat this repository as one iPhone-first product: native SwiftUI in `ios-app/` is the primary client, while the desktop-first React app in `web/` is an optional companion.
-- Preserve the personal product model: one shared Supabase workspace, no login, no password, and no account UI unless the user explicitly changes that requirement.
+- Preserve the personal product model: a private Supabase workspace shared across the owner’s devices. GitHub sign-in is an ordinary optional entry point, including in Release builds; retain “Continue without an account” for an on-device ledger.
 
 ## Xcode 27 and MCP baseline
 

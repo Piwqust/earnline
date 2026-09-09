@@ -29,8 +29,8 @@ enum SyncCoordinator {
         var errorDescription: String? {
             switch self {
             case .detected(let count):
-                let noun = count == 1 ? "change" : "changes"
-                return "Cloud data changed while this iPhone had \(count) unsynced \(noun). Choose which copy to keep before syncing."
+                // swiftlint:disable:next line_length
+                return String(localized: "Cloud and iPhone changes conflict. Pending changes: \(count). Choose which copy to keep in Settings → Sync.")
             }
         }
     }
@@ -79,13 +79,13 @@ enum SyncCoordinator {
             }
         }
 
-        let updated: RemoteWorkspaceProfile = try await client
-            .from("earnline_profiles")
-            .upsert(local, onConflict: "workspace_id")
-            .select()
-            .single()
-            .execute()
-            .value
+        let response = try await versionedUpsert(
+            client: client, table: "earnline_profiles", workspaceID: workspaceID,
+            rows: [local], baselines: [expectedRemoteUpdatedAt],
+            conflictResolution: conflictResolution
+        )
+        let profiles = try JSONDecoder().decode([RemoteWorkspaceProfile].self, from: response)
+        guard let updated = profiles.first else { throw SyncError.invalidRemoteProfile }
 
         guard SyncDateCodec.parseTimestamp(updated.updatedAt) != nil else {
             throw SyncError.invalidRemoteProfile
@@ -138,7 +138,8 @@ enum SyncCoordinator {
 
         try await pushLocalRows(context: context,
                                 client: client,
-                                workspaceID: workspaceID)
+                                workspaceID: workspaceID,
+                                conflictResolution: conflictResolution)
 
         // Read the server-written `updated_at` values for rows just pushed.
         // A device clock is not a valid conflict baseline: if this refresh is
@@ -208,7 +209,8 @@ enum SyncCoordinator {
 
     private static func pushLocalRows(context: ModelContext,
                                       client: SupabaseClient,
-                                      workspaceID: String) async throws {
+                                      workspaceID: String,
+                                      conflictResolution: ConflictResolution) async throws {
         // Fetch only rows that can need a push — the steady state is zero,
         // and this runs on the main actor right after launch, where
         // materializing the whole Entry table stalled the UI on large
@@ -232,51 +234,73 @@ enum SyncCoordinator {
         // re-filtering after the await would swallow mid-flight edits, and the
         // next pull would then visibly revert them.
         let dirtyClients = clients.filter(\.needsSync)
-        for chunk in dirtyClients.chunked(into: pageSize) {
+        for candidates in dirtyClients.chunked(into: pageSize) {
+            let chunk = candidates.filter { !$0.isDeleted && $0.modelContext != nil && $0.needsSync }
+            guard !chunk.isEmpty else { continue }
             let payload = chunk.map { RemoteClient($0, workspaceID: workspaceID) }
             let stamps = chunk.map(\.syncUpdatedAt)
-            try await client.from("earnline_clients").upsert(payload).execute()
-            markPushed(chunk, stamps: stamps)
+            let response = try await versionedUpsert(
+                client: client, table: "earnline_clients", workspaceID: workspaceID,
+                rows: payload, baselines: chunk.map(\.lastSyncedAt), conflictResolution: conflictResolution
+            )
+            try markPushed(chunk, stamps: stamps, response: response)
         }
 
         let dirtyHeadings = headings.filter(\.needsSync)
-        for chunk in dirtyHeadings.chunked(into: pageSize) {
+        for candidates in dirtyHeadings.chunked(into: pageSize) {
+            let chunk = candidates.filter { !$0.isDeleted && $0.modelContext != nil && $0.needsSync }
+            guard !chunk.isEmpty else { continue }
             let payload = chunk.map { RemoteHeading($0, workspaceID: workspaceID) }
             let stamps = chunk.map(\.syncUpdatedAt)
-            try await client.from("earnline_headings").upsert(payload).execute()
-            markPushed(chunk, stamps: stamps)
+            let response = try await versionedUpsert(
+                client: client, table: "earnline_headings", workspaceID: workspaceID,
+                rows: payload, baselines: chunk.map(\.lastSyncedAt), conflictResolution: conflictResolution
+            )
+            try markPushed(chunk, stamps: stamps, response: response)
         }
 
         let dirtyProjectIcons = projectIcons.filter(\.needsSync)
-        for chunk in dirtyProjectIcons.chunked(into: pageSize) {
+        for candidates in dirtyProjectIcons.chunked(into: pageSize) {
+            let chunk = candidates.filter { !$0.isDeleted && $0.modelContext != nil && $0.needsSync }
+            guard !chunk.isEmpty else { continue }
             let payload = chunk.map { RemoteProjectIcon($0, workspaceID: workspaceID) }
             let stamps = chunk.map(\.syncUpdatedAt)
-            try await client.from("earnline_project_icons").upsert(payload).execute()
-            markPushed(chunk, stamps: stamps)
+            let response = try await versionedUpsert(
+                client: client, table: "earnline_project_icons", workspaceID: workspaceID,
+                rows: payload, baselines: chunk.map(\.lastSyncedAt), conflictResolution: conflictResolution
+            )
+            try markPushed(chunk, stamps: stamps, response: response)
         }
 
         let dirtyMonthReviews = monthReviews.filter(\.needsSync)
-        for chunk in dirtyMonthReviews.chunked(into: pageSize) {
+        for candidates in dirtyMonthReviews.chunked(into: pageSize) {
+            let chunk = candidates.filter { !$0.isDeleted && $0.modelContext != nil && $0.needsSync }
+            guard !chunk.isEmpty else { continue }
             let payload = chunk.map { RemoteMonthReview($0, workspaceID: workspaceID) }
             let stamps = chunk.map(\.syncUpdatedAt)
-            try await client.from("earnline_month_reviews").upsert(payload).execute()
-            markPushed(chunk, stamps: stamps)
+            let response = try await versionedUpsert(
+                client: client, table: "earnline_month_reviews", workspaceID: workspaceID,
+                rows: payload, baselines: chunk.map(\.lastSyncedAt), conflictResolution: conflictResolution
+            )
+            try markPushed(chunk, stamps: stamps, response: response)
         }
 
-        var dirtyEntries: [Entry] = []
-        var entryPayload: [RemoteEntry] = []
-        for entry in entries where entry.needsSync {
-            guard let record = RemoteEntry(entry, workspaceID: workspaceID) else { continue }
-            dirtyEntries.append(entry)
-            entryPayload.append(record)
-        }
-        for offset in stride(from: 0, to: entryPayload.count, by: pageSize) {
-            let end = Swift.min(offset + pageSize, entryPayload.count)
-            let payload = Array(entryPayload[offset..<end])
-            let rows = Array(dirtyEntries[offset..<end])
-            let stamps = rows.map(\.syncUpdatedAt)
-            try await client.from("earnline_entries").upsert(payload).execute()
-            markPushed(rows, stamps: stamps)
+        for candidates in entries.chunked(into: pageSize) {
+            var rows: [Entry] = []
+            var payload: [RemoteEntry] = []
+            var stamps: [Date] = []
+            for entry in candidates where !entry.isDeleted && entry.modelContext != nil && entry.needsSync {
+                guard let record = RemoteEntry(entry, workspaceID: workspaceID) else { continue }
+                rows.append(entry)
+                payload.append(record)
+                stamps.append(entry.syncUpdatedAt)
+            }
+            guard !rows.isEmpty else { continue }
+            let response = try await versionedUpsert(
+                client: client, table: "earnline_entries", workspaceID: workspaceID,
+                rows: payload, baselines: rows.map(\.lastSyncedAt), conflictResolution: conflictResolution
+            )
+            try markPushed(rows, stamps: stamps, response: response)
         }
     }
 
@@ -333,10 +357,67 @@ enum SyncCoordinator {
     /// deleted while the upsert was in flight, so they stay dirty for the next
     /// pass instead of being silently dropped. The post-push pull sets the
     /// server baseline; leaving it nil until then fails closed on a conflict.
-    private static func markPushed<Model: SyncableModel>(_ models: [Model], stamps: [Date]) {
-        for (model, stamp) in zip(models, stamps) where !model.isDeleted && model.syncUpdatedAt == stamp {
-            model.syncState = .synced
-            model.lastSyncedAt = nil
+    private struct WriteParameters<Row: Encodable>: Encodable {
+        let table: String
+        let workspaceID: String
+        let rows: [Row]
+        let expectedVersions: [Int64?]
+        let force: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case table = "p_table"
+            case workspaceID = "p_workspace_id"
+            case rows = "p_rows"
+            case expectedVersions = "p_expected_versions"
+            case force = "p_force"
+        }
+    }
+
+    private static func versionedUpsert<Row: Encodable>(
+        client: SupabaseClient, table: String, workspaceID: String,
+        rows: [Row], baselines: [Date?], conflictResolution: ConflictResolution
+    ) async throws -> Data {
+        do {
+            return try await client.rpc("earnline_upsert_versioned", params: WriteParameters(
+                table: table, workspaceID: workspaceID, rows: rows,
+                expectedVersions: baselines.map { $0.map(SyncDateCodec.versionMicroseconds) },
+                force: conflictResolution == .preferLocal
+            )).execute().data
+        } catch let error as PostgrestError where error.code == "PT409" {
+            throw SyncConflictError.detected(1)
+        }
+    }
+
+    private struct WriteAcknowledgment: Decodable {
+        let id: UUID
+        let updatedAt: String
+        enum CodingKeys: String, CodingKey {
+            case id
+            case updatedAt = "updated_at"
+        }
+    }
+
+    private static func markPushed<Model: SyncableModel>(
+        _ models: [Model], stamps: [Date], response: Data
+    ) throws {
+        let records = try JSONDecoder().decode([WriteAcknowledgment].self, from: response)
+        guard records.count == models.count, zip(records, models).allSatisfy({ $0.id == $1.id }) else {
+            throw SyncError.invalidRemoteCursor(table: "write")
+        }
+        let versions = try records.map { record -> Date in
+            guard let version = SyncDateCodec.parseTimestamp(record.updatedAt) else {
+                throw SyncError.invalidRemoteCursor(table: "write")
+            }
+            return version
+        }
+        for (index, model) in models.enumerated() where !model.isDeleted && model.modelContext != nil {
+            // The response is ordered by the RPC. Keep a later local edit dirty,
+            // but acknowledge its own earlier write as the new cloud baseline.
+            if model.syncUpdatedAt == stamps[index] {
+                model.markSynced(at: versions[index])
+            } else {
+                model.lastSyncedAt = versions[index]
+            }
         }
     }
 
@@ -427,7 +508,7 @@ enum SyncCoordinator {
             }
             + remoteProjectIcons.compactMap {
                 ProjectIconResolver.normalizedKey(for: $0.projectKey).isEmpty
-                    || $0.projectKey.count > Limits.maxProjectLength
+                    || $0.projectKey.unicodeScalars.count > Limits.maxProjectLength
                     || $0.projectKey != ProjectIconResolver.normalizedKey(for: $0.projectKey)
                     || ProjectSymbol(rawValue: $0.symbolName) == nil
                     ? nil
@@ -548,7 +629,7 @@ enum SyncCoordinator {
         for record in records {
             let projectKey = ProjectIconResolver.normalizedKey(for: record.projectKey)
             guard !projectKey.isEmpty,
-                  projectKey.count <= Limits.maxProjectLength,
+                  projectKey.unicodeScalars.count <= Limits.maxProjectLength,
                   projectKey == record.projectKey,
                   let symbol = ProjectSymbol(rawValue: record.symbolName),
                   let remoteUpdatedAt = SyncDateCodec.parseTimestamp(record.updatedAt) else { continue }

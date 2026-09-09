@@ -46,8 +46,7 @@ struct EditEntrySheet: View {
     @FocusState private var amountFocused: Bool
 
     private var amountDecimal: Decimal? {
-        guard let d = LineParser.decimal(from: amountText), d > 0 else { return nil }
-        return Validation.clampAmount(d)
+        Validation.moneyAmount(from: amountText)
     }
     private var symbol: String { CurrencyFormatter.symbol(for: currencyCode) }
     private var projectIconAppearance: ProjectIconAppearance {
@@ -128,7 +127,6 @@ struct EditEntrySheet: View {
                     .multilineTextAlignment(.leading)
                     .keyboardType(.numbersAndPunctuation)
                     .focused($amountFocused)
-                    .onChange(of: amountText) { _, v in amountText = Validation.sanitizeAmountInput(v) }
                     .accessibilityLabel("Amount")
             }
             .appFont(56, .bold, design: .rounded, relativeTo: .largeTitle)
@@ -140,6 +138,11 @@ struct EditEntrySheet: View {
             .onTapGesture { amountFocused = true }
 
             currencyPicker
+            if !amountText.isEmpty && amountDecimal == nil {
+                Text("Enter an amount up to 1,000,000,000 with at most two decimal places.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.statusProgress)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 4)

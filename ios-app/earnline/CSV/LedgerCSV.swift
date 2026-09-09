@@ -247,14 +247,14 @@ enum LedgerCSV {
         }
         guard !client.isEmpty else { return .failure(ValidationError("Client is required.")) }
         guard !task.isEmpty else { return .failure(ValidationError("Task is required.")) }
-        guard client.count <= Limits.maxClientNameLength else {
+        guard client.unicodeScalars.count <= Limits.maxClientNameLength else {
             return .failure(ValidationError("Client name must be at most \(Limits.maxClientNameLength) characters."))
         }
-        guard task.count <= Limits.maxTaskLength else {
+        guard task.unicodeScalars.count <= Limits.maxTaskLength else {
             return .failure(ValidationError("Task must be at most \(Limits.maxTaskLength) characters."))
         }
         let parsedProject = project.isEmpty ? nil : project
-        if let parsedProject, parsedProject.count > Limits.maxProjectLength {
+        if let parsedProject, parsedProject.unicodeScalars.count > Limits.maxProjectLength {
             return .failure(ValidationError("Project must be at most \(Limits.maxProjectLength) characters."))
         }
         guard let parsedAmount = Decimal(string: amount, locale: posixLocale), parsedAmount > 0 else {
@@ -325,8 +325,8 @@ enum LedgerCSV {
     private struct ValidationError: Error {
         let message: String
 
-        init(_ message: String) {
-            self.message = message
+        init(_ message: String.LocalizationValue) {
+            self.message = String(localized: message)
         }
     }
 

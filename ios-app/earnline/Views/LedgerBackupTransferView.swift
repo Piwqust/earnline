@@ -134,6 +134,14 @@ struct LedgerBackupTransferView: View {
                     LabeledContent("File", value: importedFilename)
                 }
                 LabeledContent("Workspace in file", value: preview.workspaceID)
+                LabeledContent("Currencies in file",
+                               value: "\(preview.settings.baseCurrencyCode) / \(preview.settings.secondaryCurrencyCode)")
+                LabeledContent("Rate in file") {
+                    Text(verbatim: "1 \(preview.settings.baseCurrencyCode) = "
+                         + "\(preview.settings.exchangeRate) \(preview.settings.secondaryCurrencyCode)")
+                }
+                LabeledContent("Current currencies", value: "\(app.baseCurrencyCode) / \(app.secondaryCurrencyCode)")
+                LabeledContent("Current rate", value: "1 \(app.baseCurrencyCode) = \(app.rate.formatted()) \(app.secondaryCurrencyCode)")
                 LabeledContent("Records", value: "\(preview.totalRecords)")
                 LabeledContent("Clients", value: "\(preview.clients.count)")
                 LabeledContent("Income lines", value: "\(preview.entries.count)")

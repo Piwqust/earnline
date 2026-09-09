@@ -43,3 +43,6 @@ supabase/.temp/
 
 # Stray plist a mis-redirected `xcodebuild -destination ... > -` leaves behind.
 -
+
+# Graphify navigation output (generated, regenerable)
+graphify-out/

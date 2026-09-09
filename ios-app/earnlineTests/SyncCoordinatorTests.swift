@@ -24,6 +24,7 @@ struct SyncCoordinatorTests {
             let body: String
         }
 
+        nonisolated(unsafe) static var onRequest: (@MainActor @Sendable (Recorded) -> Void)?
         private static let lock = NSLock()
         nonisolated(unsafe) private static var responses: [String: Data] = [:]
         nonisolated(unsafe) private static var recordedRequests: [Recorded] = []
@@ -32,6 +33,7 @@ struct SyncCoordinatorTests {
             lock.lock(); defer { lock.unlock() }
             responses = [:]
             recordedRequests = []
+            onRequest = nil
         }
 
         static func respond(_ method: String, _ table: String, json: String) {
@@ -50,21 +52,44 @@ struct SyncCoordinatorTests {
 
         override func startLoading() {
             let method = request.httpMethod ?? "GET"
-            let table = request.url?.lastPathComponent ?? ""
+            var table = request.url?.lastPathComponent ?? ""
+            var body = Self.bodyString(of: request)
+            var rpcRows: [[String: Any]]?
+            if table == "earnline_upsert_versioned",
+               let parameters = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any],
+               let rows = parameters["p_rows"] as? [[String: Any]],
+               let target = parameters["p_table"] as? String {
+                table = target
+                rpcRows = rows
+                body = String(decoding: (try? JSONSerialization.data(withJSONObject: rows)) ?? Data(), as: UTF8.self)
+            }
             let record = Recorded(method: method,
                                   table: table,
                                   query: request.url?.query ?? "",
-                                  body: Self.bodyString(of: request))
-            let data: Data
+                                  body: body)
+            var data: Data
             Self.lock.lock()
             Self.recordedRequests.append(record)
             data = Self.responses["\(method) \(table)"] ?? Data("[]".utf8)
             Self.lock.unlock()
+            if let rpcRows {
+                let value = (try? JSONSerialization.jsonObject(with: data))
+                if let object = value as? [String: Any] {
+                    data = (try? JSONSerialization.data(withJSONObject: [object])) ?? Data()
+                } else if (value as? [Any])?.isEmpty == true {
+                    data = (try? JSONSerialization.data(withJSONObject: rpcRows)) ?? Data()
+                }
+            }
 
             let response = HTTPURLResponse(url: request.url!,
                                            statusCode: 200,
                                            httpVersion: nil,
                                            headerFields: ["Content-Type": "application/json"])!
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { Self.onRequest?(record) }
+            } else {
+                DispatchQueue.main.sync { MainActor.assumeIsolated { Self.onRequest?(record) } }
+            }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
@@ -142,7 +167,7 @@ struct SyncCoordinatorTests {
         let request = try #require(MockTransport.recorded.first { $0.method == "POST" })
         #expect(request.table == "earnline_profiles")
         #expect(request.body.contains("\"exchange_rate\":\"89.125\""))
-        #expect(request.query.contains("on_conflict=workspace_id"))
+        #expect(!request.query.contains("on_conflict"))
     }
 
     @Test func workspaceProfilePullsCloudWithoutOverwritingItOnLaunch() async throws {
@@ -492,6 +517,75 @@ struct SyncCoordinatorTests {
             return payload.count
         }
         #expect(batchSizes == [250, 250, 250, 250, 1])
+    }
+
+    @Test(arguments: [251, 1001])
+    func laterBatchUsesCurrentPayloadAndVersion(rowCount: Int) async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let owner = Client(name: "Owner")
+        context.insert(owner)
+        owner.markSynced(at: .now)
+        for _ in 0..<rowCount {
+            let row = Entry(amount: 100, task: "Work")
+            row.client = owner
+            context.insert(row)
+        }
+        try context.save()
+        var editedID: UUID?
+        MockTransport.onRequest = { request in
+            guard request.method == "POST", request.table == "earnline_entries", editedID == nil,
+                  let payload = try? JSONSerialization.jsonObject(with: Data(request.body.utf8)) as? [[String: Any]],
+                  let entries = try? context.fetch(FetchDescriptor<Entry>()) else { return }
+            let sentIDs = Set(payload.compactMap { ($0["id"] as? String)?.lowercased() })
+            guard let later = entries.first(where: { !sentIDs.contains($0.id.uuidString.lowercased()) }) else { return }
+            editedID = later.id
+            later.amount = 999
+            later.markDirty()
+        }
+        _ = try await SyncCoordinator.sync(context: context, client: makeClient(), workspaceID: workspace)
+        let id = try #require(editedID)
+        let sent = try MockTransport.recorded.filter { $0.method == "POST" && $0.table == "earnline_entries" }
+            .flatMap { try JSONDecoder().decode([RemoteEntry].self, from: Data($0.body.utf8)) }
+        #expect(sent.first(where: { $0.id == id })?.amount.decimal == 999)
+        #expect(try context.fetch(FetchDescriptor<Entry>()).first(where: { $0.id == id })?.amount == 999)
+    }
+
+    @Test func deletedLaterBatchRowIsNeverEncoded() async throws {
+        MockTransport.reset()
+        let container = try makeContainer()
+        let context = container.mainContext
+        let owner = Client(name: "Owner")
+        context.insert(owner)
+        owner.markSynced(at: .now)
+        for _ in 0..<251 {
+            let row = Entry(amount: 100, task: "Work")
+            row.client = owner
+            context.insert(row)
+        }
+        try context.save()
+        var deletedID: UUID?
+        MockTransport.onRequest = { request in
+            guard request.method == "POST", request.table == "earnline_entries", deletedID == nil,
+                  let payload = try? JSONSerialization.jsonObject(with: Data(request.body.utf8)) as? [[String: Any]],
+                  let entries = try? context.fetch(FetchDescriptor<Entry>()) else { return }
+            let sentIDs = Set(payload.compactMap { ($0["id"] as? String)?.lowercased() })
+            guard let later = entries.first(where: { !sentIDs.contains($0.id.uuidString.lowercased()) }) else { return }
+            deletedID = later.id
+            context.delete(later)
+        }
+        _ = try await SyncCoordinator.sync(context: context, client: makeClient(), workspaceID: workspace)
+        let id = try #require(deletedID)
+        let sent = try MockTransport.recorded.filter { $0.method == "POST" && $0.table == "earnline_entries" }
+            .flatMap { try JSONDecoder().decode([RemoteEntry].self, from: Data($0.body.utf8)) }
+        #expect(!sent.contains(where: { $0.id == id }))
+    }
+
+    @Test func versionPreservesPostgresMicroseconds() throws {
+        let first = try #require(SyncDateCodec.parseTimestamp("2026-09-05T12:00:00.123456+00:00"))
+        let second = try #require(SyncDateCodec.parseTimestamp("2026-09-05T12:00:00.123457Z"))
+        #expect(SyncDateCodec.versionMicroseconds(second) - SyncDateCodec.versionMicroseconds(first) == 1)
     }
 
     @Test func localTombstoneIsPushedThenCleared() async throws {
