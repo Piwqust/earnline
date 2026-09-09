@@ -224,11 +224,28 @@ extension AppModel {
     /// Replace the local SwiftData cache with the selected Supabase workspace.
     /// This intentionally does not enqueue tombstones: the user is switching
     /// sources of truth, not deleting remote income rows.
+    ///
+    /// A safety snapshot of the outgoing store is written first. If that write
+    /// fails, nothing is cleared: an unrecoverable reset is worse than a stale
+    /// cache, and Settings → Data → Safety snapshots is the way back.
     @discardableResult
     func resetLocalDataAndPull(context: ModelContext, discardLocalProfile: Bool = false) async -> String? {
         guard isSupabaseConfigured else {
             syncMessage = String(localized: "Offline")
             return String(localized: "Add the Supabase URL and publishable key first.")
+        }
+        do {
+            try LedgerSafetySnapshots.capture(
+                context: context,
+                app: self,
+                reason: discardLocalProfile ? .useCloudCopy : .resetAndPull
+            )
+        } catch {
+            syncMessage = String(localized: "Needs sync")
+            // swiftlint:disable:next line_length
+            let message = String(localized: "Earnline could not write a safety snapshot, so the local ledger was left unchanged. \(error.localizedDescription)")
+            syncError = message
+            return message
         }
         syncGeneration += 1 // a pass already on the wire must not restore the old cursor
         queuedSyncTask?.cancel()

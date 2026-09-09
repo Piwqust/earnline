@@ -322,19 +322,10 @@ enum LedgerBackupCodec {
     @discardableResult
     static func importBackup(_ backup: LedgerBackup, into context: ModelContext) throws -> LedgerBackup.ImportSummary {
         let backup = try backup.validated()
-        let existingClients = try context.fetch(FetchDescriptor<Client>())
-        let existingEntries = try context.fetch(FetchDescriptor<Entry>())
-        let existingHeadings = try context.fetch(FetchDescriptor<Heading>())
-        let existingIcons = try context.fetch(FetchDescriptor<ProjectIconPreference>())
-        let existingReviews = try context.fetch(FetchDescriptor<MonthReview>())
+        let existing = try ExistingRecords(context: context)
 
         var summary = LedgerBackup.ImportSummary()
-        var clientsByID = Dictionary(uniqueKeysWithValues: existingClients.map { ($0.id, $0) })
-        let existingEntryIDs = Set(existingEntries.map(\.id))
-        let existingHeadingIDs = Set(existingHeadings.map(\.id))
-        let existingIconIDs = Set(existingIcons.map(\.id))
-        let existingIconKeys = Set(existingIcons.map(\.projectKey))
-        let existingReviewIDs = Set(existingReviews.map(\.id))
+        var clientsByID = existing.clientsByID
         let now = Date.now
 
         for record in backup.clients where clientsByID[record.id] == nil {
@@ -346,7 +337,7 @@ enum LedgerBackupCodec {
             summary.clients += 1
         }
 
-        for record in backup.entries where !existingEntryIDs.contains(record.id) {
+        for record in backup.entries where !existing.entryIDs.contains(record.id) {
             guard let client = clientsByID[record.clientID],
                   let amount = Decimal(string: record.amount, locale: Locale(identifier: "en_US_POSIX")) else {
                 throw LedgerBackupError.missingClient(record.clientID)
@@ -361,7 +352,7 @@ enum LedgerBackupCodec {
             summary.entries += 1
         }
 
-        for record in backup.headings where !existingHeadingIDs.contains(record.id) {
+        for record in backup.headings where !existing.headingIDs.contains(record.id) {
             context.insert(Heading(id: record.id, title: record.title, date: record.date,
                                    sortIndex: record.sortIndex, createdAt: record.createdAt,
                                    updatedAt: now, syncState: .dirty))
@@ -369,14 +360,14 @@ enum LedgerBackupCodec {
         }
 
         for record in backup.projectIcons
-        where !existingIconIDs.contains(record.id) && !existingIconKeys.contains(record.projectKey) {
+        where existing.acceptsProjectIcon(record) {
             context.insert(ProjectIconPreference(id: record.id, projectKey: record.projectKey,
                                                  symbol: record.symbol, createdAt: record.createdAt,
                                                  updatedAt: now, syncState: .dirty))
             summary.projectIcons += 1
         }
 
-        for record in backup.monthReviews where !existingReviewIDs.contains(record.id) {
+        for record in backup.monthReviews where !existing.reviewIDs.contains(record.id) {
             context.insert(MonthReview(id: record.id, monthStart: record.monthStart,
                                        note: record.note, closedAt: record.closedAt,
                                        createdAt: record.createdAt, updatedAt: now,
@@ -386,5 +377,47 @@ enum LedgerBackupCodec {
 
         summary.skippedExisting = backup.totalRecords - summary.inserted
         return summary
+    }
+
+    /// What `importBackup` would add, computed without touching the store, so
+    /// the preview can say “12 new, 340 already here” before the user commits.
+    static func importPlan(_ backup: LedgerBackup, into context: ModelContext) throws -> LedgerBackup.ImportSummary {
+        let backup = try backup.validated()
+        let existing = try ExistingRecords(context: context)
+        var summary = LedgerBackup.ImportSummary()
+        summary.clients = backup.clients.count { existing.clientsByID[$0.id] == nil }
+        summary.entries = backup.entries.count { !existing.entryIDs.contains($0.id) }
+        summary.headings = backup.headings.count { !existing.headingIDs.contains($0.id) }
+        summary.projectIcons = backup.projectIcons.count { existing.acceptsProjectIcon($0) }
+        summary.monthReviews = backup.monthReviews.count { !existing.reviewIDs.contains($0.id) }
+        summary.skippedExisting = backup.totalRecords - summary.inserted
+        return summary
+    }
+
+    /// The identity sets one import pass compares against. Fetched once so the
+    /// plan and the real import can never disagree about what already exists.
+    private struct ExistingRecords {
+        let clientsByID: [UUID: Client]
+        let entryIDs: Set<UUID>
+        let headingIDs: Set<UUID>
+        let iconIDs: Set<UUID>
+        let iconKeys: Set<String>
+        let reviewIDs: Set<UUID>
+
+        init(context: ModelContext) throws {
+            let clients = try context.fetch(FetchDescriptor<Client>())
+            let icons = try context.fetch(FetchDescriptor<ProjectIconPreference>())
+            clientsByID = Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0) })
+            entryIDs = Set(try context.fetch(FetchDescriptor<Entry>()).map(\.id))
+            headingIDs = Set(try context.fetch(FetchDescriptor<Heading>()).map(\.id))
+            iconIDs = Set(icons.map(\.id))
+            iconKeys = Set(icons.map(\.projectKey))
+            reviewIDs = Set(try context.fetch(FetchDescriptor<MonthReview>()).map(\.id))
+        }
+
+        /// Icons are unique on both id and project key.
+        func acceptsProjectIcon(_ record: LedgerBackup.ProjectIconRecord) -> Bool {
+            !iconIDs.contains(record.id) && !iconKeys.contains(record.projectKey)
+        }
     }
 }

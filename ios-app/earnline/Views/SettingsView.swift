@@ -339,11 +339,17 @@ struct SettingsView: View {
                 } label: {
                     SettingsRowLabel("Import full backup", glyph: "externaldrive.badge.arrow.down")
                 }
+                NavigationLink {
+                    SafetySnapshotsView()
+                } label: {
+                    SettingsRowLabel("Safety snapshots", glyph: "clock.arrow.circlepath")
+                }
+                .accessibilityIdentifier("settings.safetySnapshots.open")
             } header: {
                 Text("Data")
             } footer: {
                 // swiftlint:disable:next line_length
-                Text("CSV is for exchanging income lines. The full JSON backup also includes notes, project icons, month reviews, and settings; it is merge-only and does not replay sync deletes.")
+                Text("CSV is for exchanging income lines. The full JSON backup also includes notes, project icons, month reviews, and settings; it is merge-only and does not replay sync deletes. Safety snapshots are written automatically before the local ledger is emptied.")
             }
         }
         .scrollContentBackground(.hidden)

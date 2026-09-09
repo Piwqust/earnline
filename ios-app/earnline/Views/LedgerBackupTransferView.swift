@@ -29,6 +29,7 @@ struct LedgerBackupTransferView: View {
     @State private var presentsFileExporter = false
     @State private var presentsFileImporter = false
     @State private var preview: LedgerBackup?
+    @State private var importPlan: LedgerBackup.ImportSummary?
     @State private var importedFilename: String?
     @State private var confirmsImport = false
     @State private var importedSummary: LedgerBackup.ImportSummary?
@@ -151,13 +152,19 @@ struct LedgerBackupTransferView: View {
             }
 
             Section {
-                Button("Import \(preview.totalRecords) records") {
+                if let importPlan {
+                    LabeledContent("New records", value: "\(importPlan.inserted)")
+                        .accessibilityIdentifier("settings.backup.newRecords")
+                    LabeledContent("Already in the ledger", value: "\(importPlan.skippedExisting)")
+                }
+                Button("Import \(importPlan?.inserted ?? preview.totalRecords) records") {
                     confirmsImport = true
                 }
-                .disabled(preview.totalRecords == 0)
+                .disabled((importPlan?.inserted ?? preview.totalRecords) == 0)
                 .accessibilityIdentifier("settings.backup.confirmImport")
             } footer: {
-                Text("Currency settings are shown for provenance but are not applied automatically to the current workspace.")
+                // swiftlint:disable:next line_length
+                Text("Only records missing from the current ledger are added. Currency settings are shown for provenance but are not applied automatically to the current workspace.")
             }
         }
     }
@@ -182,10 +189,13 @@ struct LedgerBackupTransferView: View {
         }
 
         do {
-            preview = try LedgerBackupCodec.decode(Data(contentsOf: url))
+            let decoded = try LedgerBackupCodec.decode(Data(contentsOf: url))
+            preview = decoded
+            importPlan = try LedgerBackupCodec.importPlan(decoded, into: context)
             importedFilename = url.lastPathComponent
         } catch {
             preview = nil
+            importPlan = nil
             saveError = error.localizedDescription
         }
     }
