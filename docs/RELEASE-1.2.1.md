@@ -1,4 +1,4 @@
-# Earnline iOS 1.2.0 (5)
+# Earnline iOS 1.2.1 (6)
 
 Scope: iOS audit fixes and an unsigned IPA for the owner's existing installation workflow.
 Currency conversion remains live: changing the display rate reprices all
@@ -10,11 +10,12 @@ toggle changes are included.
 - [x] Preserve and commit the September 5 fixes (2934de5c, local v1.1.1 tag).
 - [x] Safety snapshots and merge-only restore; preview new/existing backup rows.
 - [x] Fix summary hit testing and the unbounded accessibility spacer.
-- [x] Direct income form preserves the selected month, currency, and client; closing a nonempty draft requires an explicit choice.
-- [x] External Home Screen/Spotlight navigation waits while a form, inline composer, or another flow is open.
+- [x] Restored the original two-card ledger header: monthly earnings on the left and tappable statistics with the trend graph on the right.
+- [x] Restored the original inline income composer and added automatic scrolling to the selected client/month when it opens.
+- [x] External Home Screen/Spotlight navigation remains available alongside the inline composer.
 - [x] Shared AppModel and SwiftData container for App Intents, foreground use, and background refresh.
 - [x] Reminder writes are serialized; workspace changes clear pending and delivered notifications; app lock suppresses details.
-- [x] Adaptive summary, auth, rows, client chips, month dividers, and profile metrics; 57 new Russian catalog entries.
+- [x] Technical accessibility and reliability fixes remain in place; the original ledger header, row styling, auth surface, and client profile layout are restored.
 - [x] Imports enforce an actual 20 MB read limit; search is debounced by 180 ms and reuses its loaded rows.
 - [x] Combined sync reads use bounded 250-row pages per table, precise cursors, and a missing-function-only compatibility fallback.
 - [x] Widget, Control Center add action, text Share extension, and optional Spotlight indexing.
@@ -24,20 +25,19 @@ toggle changes are included.
 
 ## Verification
 
-All evidence below is local and ignored by Git, under build/verification/1.2.0/.
+All evidence below is local and ignored by Git, under build/verification/1.2.1/.
 
 - Xcode 27.0 (27A5228h), iPhone 17 simulator with iOS 27.0. Deployment target remains iOS 26.
-- The final Everyday result reports 301 passed test executions and 0 failures. The log also reports 261 tests in 31 suites; the difference is dynamic-parameter and UI execution accounting in Xcode 27.
+- The final Everyday result completed with exit code 0: 299 tests passed and 0 failed. The unit portion reports 261 tests in 31 suites, and the UI stress scenario passed.
 - Expired authentication: five scenarios passed using the actual Supabase session refresh path and a mock transport. Offline access succeeds only with the matching cached membership; revoked session, missing membership, different user, and missing session fail closed.
-- Draft test exercises Keep editing, save to the selected client, explicit discard, and a fresh empty form. Passed in draft-alert.xcresult.
-- Home Screen Search action preserves an open income draft and executes after its dismissal. Passed in final-fixes.xcresult.
-- Russian dark form with keyboard and safety-snapshot route passed semantic UI checks. Maximum-size Russian composer and summary interaction were covered in the full UI runs.
-- Actual Release build and three Release UI tests passed in release-final.xcresult on a new isolated simulator. Release ignores Debug automation arguments, offers GitHub entry without developer configuration, and retains an entry point at the largest text size.
-- Simulator inspection returned a nonempty accessibility tree (207 elements) plus PNG. Screenshot attachments are retained under ignored .ios-simulator-output/release-1.2/; the final agent runtime could not accept image inputs, so these captures are not claimed as a complete visual review.
-- SwiftLint with strict mode, git diff --check, and nine Release configuration guard cases passed.
+- The original inline composer accessibility and summary-card interactions passed, including the real + -> Income -> client add-income path and the Russian largest-text layout check.
+- The Release UI action completed with exit code 0 on the production scheme.
+- Final unsigned IPA: build/releases/earnline-1.2.1-6/earnline-1.2.1-6-unsigned-final.ipa.
+- Final IPA SHA-256: 4329052e43522732903499a4524c18b85ed3abaebaea364f4b1754c33c1de585.
+- Simulator inspection returned a nonempty accessibility tree with 256 elements, including both summary-card identifiers and the restored inline composer entry points. The screenshot was captured at 368 x 800 px; visual image review was unavailable in this runtime.
+- SwiftLint with strict mode and git diff --check passed after the final source changes.
 - Local SQL suite passed: concurrent writes, stale-batch rollback, explicit restore, caller isolation, and combined-read paging. The read-only RPC was deployed first to test, then production; permission checks passed and production record counts/digests were unchanged.
 - Russian App Shortcuts strings and language metadata are present in the Release app.
-- Final artifact: `build/releases/earnline-1.2.0-5-v2/earnline-1.2.0-5-unsigned.ipa`; SHA-256: `2ecdd7f446660a4cf0b2e7987883150570050824632ef8dd5c739f150c0f080c2`.
 
 ## Verification Boundaries
 

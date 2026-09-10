@@ -18,7 +18,6 @@ struct PasteLinesSheet: View {
     @State private var text = ""
     @State private var selectedClient: Client?
     @State private var saveError: String?
-    @State private var confirmsDiscard = false
     @State private var successFeedback = 0
 
     private var drafts: [ParsedLine] {
@@ -77,17 +76,7 @@ struct PasteLinesSheet: View {
         }
         .background(Theme.background)
         .scrollDismissesKeyboard(.interactively)
-        .alert("Discard this draft?", isPresented: $confirmsDiscard) {
-            Button("Discard draft", role: .destructive) {
-                if let sharedText { LedgerSystemSurfaces.consumeSharedText(sharedText) }
-                dismiss()
-            }
-            Button("Keep editing", role: .cancel) {}
-        }
-        .sheetHeader("Paste lines", onClose: {
-            if text.isEmpty { dismiss() } else { confirmsDiscard = true }
-        })
-        .interactiveDismissDisabled(!text.isEmpty)
+        .sheetHeader("Paste lines", onClose: { dismiss() })
         .sheetFooter {
             PillCTA("Add \(validDrafts.count)",
                     isEnabled: !validDrafts.isEmpty && selectedClient != nil,

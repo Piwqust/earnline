@@ -6,8 +6,9 @@
 - An expired sign-in session no longer hides your saved workspace when the connection is unavailable. Server access denials still require signing in.
 - Automatic safety snapshots are created before a local reset or cloud-copy replacement. They can be reviewed and restored from Settings without overwriting existing lines.
 - Backup import previews show how many records are new before confirmation.
-- The global add button opens a direct income form with a visible client picker, the selected month, and confirmation before discarding a draft.
-- Home Screen commands wait for an unfinished form. Shared text can be reviewed in Paste lines before import.
+- The original two-card ledger header is restored: monthly earnings on the left and tappable statistics with the trend graph on the right.
+- The original inline income composer remains the add-income flow. Opening a composer now scrolls the ledger to its client and month automatically.
+- Home Screen commands and shared text keep their own entry points and do not replace the inline composer while it is open.
 - Added Home Screen Add income and Search commands, App Shortcuts, an earnings widget, and an Add income control.
 - Optional Spotlight indexing and widget amounts are hidden when app lock is enabled. Reminder details also follow the lock preference.
 - Large text keeps the auth panel, client profile, summary, and ledger status actions readable.

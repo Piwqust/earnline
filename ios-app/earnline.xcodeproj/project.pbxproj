@@ -10,7 +10,6 @@
 		009656EC6D3BD7CD57C61DA3 /* ClientBadgeModelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6487E31328A505F50B9EA88 /* ClientBadgeModelView.swift */; };
 		01E434676645CC365DC5FF54 /* ParsedLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB161E3E96D48C67987A255 /* ParsedLine.swift */; };
 		03F99AC16AAA57495A0F3D5B /* OfflineAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C7B92B436034F76F5E9B9C6 /* OfflineAuthenticationTests.swift */; };
-		061083DF9B479629C27BBB04 /* NewIncomeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF3F21EFF89D1674C2F9FEA /* NewIncomeSheet.swift */; };
 		071A64855336330EAA9FF25E /* UndoDelete.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE157B47C7A5C89C3BBD652D /* UndoDelete.swift */; };
 		0878983983688D6F4034052E /* OnboardingClientStep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E28155321C009EB62A5788B /* OnboardingClientStep.swift */; };
 		089E3EC6BE904283607DD1C4 /* SupabaseProjectDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 151FA53FE5F4C19E1C534018 /* SupabaseProjectDefaults.swift */; };
@@ -231,7 +230,6 @@
 		D9DB2F622DA61722852DBC0C /* LedgerBackupTransferView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEA881043DC1C786FBF347A /* LedgerBackupTransferView.swift */; };
 		DA7D4E7F108F206BC5BDA66D /* EarnlineAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 775DE9FAA5C33A0AE13E017A /* EarnlineAppDelegate.swift */; };
 		DB08FEC6F1CD88960D74F74A /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C9CAB55ED8C73794EC9ABD8 /* UndoToastView.swift */; };
-		DD06EDBEC5FA52F1FDE938F3 /* NewIncomeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF3F21EFF89D1674C2F9FEA /* NewIncomeSheet.swift */; };
 		DD29757C738DF755A044A1ED /* IncomeLedgerImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE4400DE5171E33FDB2EF6B /* IncomeLedgerImporter.swift */; };
 		DD7C53EB8D8E08335ABC69E9 /* PendingNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8270CF78D7AB6E931F047188 /* PendingNotifications.swift */; };
 		DE057A36FBC9E9D783C3BB57 /* EarnlineAuthStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B206D21DE277388BC87D506 /* EarnlineAuthStorage.swift */; };
@@ -464,7 +462,6 @@
 		B5ACE95884C50D37E7FCB0F8 /* BackgroundLedgerRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundLedgerRefresh.swift; sourceTree = "<group>"; };
 		B6487E31328A505F50B9EA88 /* ClientBadgeModelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientBadgeModelView.swift; sourceTree = "<group>"; };
 		B6B6BDC93EDB1A9836A38368 /* PrivacyPolicyURL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPolicyURL.swift; sourceTree = "<group>"; };
-		BAF3F21EFF89D1674C2F9FEA /* NewIncomeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewIncomeSheet.swift; sourceTree = "<group>"; };
 		BD044C5D1218AFB5EB7B2319 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BD4B5D260A8BB987EDE42871 /* SyncModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModelTests.swift; sourceTree = "<group>"; };
 		BE84DC11EBAD5E2764A746A4 /* Heading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Heading.swift; sourceTree = "<group>"; };
@@ -728,7 +725,6 @@
 				3EF52DF486BF776CD0284740 /* MoneyAmountText.swift */,
 				2866D0EEB82F32087C5B07DD /* MonthDivider.swift */,
 				02E03F716060DC11DCBBAD0F /* NewClientSheet.swift */,
-				BAF3F21EFF89D1674C2F9FEA /* NewIncomeSheet.swift */,
 				2938F825348BD34C3739D92C /* PairedDevicesView.swift */,
 				B401FD9C73B125C52EEB97F5 /* PasteLinesSheet.swift */,
 				8068D7B6E3C172BF0B6CA7D8 /* PendingView.swift */,
@@ -1330,7 +1326,6 @@
 				381DB26CB138E2FFB238000A /* MonthDivider.swift in Sources */,
 				F3752D8D72CE76E23CDF2953 /* MonthReview.swift in Sources */,
 				A5E20556908672C771CD7841 /* NewClientSheet.swift in Sources */,
-				061083DF9B479629C27BBB04 /* NewIncomeSheet.swift in Sources */,
 				285ED4581EF2AF7E10052043 /* OnboardingChrome.swift in Sources */,
 				0878983983688D6F4034052E /* OnboardingClientStep.swift in Sources */,
 				23600D7693C2780D63933939 /* OnboardingDoneOverlay.swift in Sources */,
@@ -1437,7 +1432,6 @@
 				DE58781EFB11AD8D54305446 /* MonthDivider.swift in Sources */,
 				8564D95EDE3F01CCC825CF6A /* MonthReview.swift in Sources */,
 				1A23EBC763DE040227797697 /* NewClientSheet.swift in Sources */,
-				DD06EDBEC5FA52F1FDE938F3 /* NewIncomeSheet.swift in Sources */,
 				1035D83ADD8A4FB910024078 /* OnboardingChrome.swift in Sources */,
 				292031B075597303ED57A6BB /* OnboardingClientStep.swift in Sources */,
 				C89A09B21B977CEFE63F9C8B /* OnboardingDoneOverlay.swift in Sources */,
@@ -1685,7 +1679,7 @@
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -1704,7 +1698,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.2.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1954,7 +1948,7 @@
 				CODE_SIGNING_REQUIRED = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1967,7 +1961,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.0;
+				MARKETING_VERSION = 1.2.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -19,7 +19,7 @@ struct AuthGateView: View {
     @State private var isOnboardingVideoMuted = true
 
     var body: some View {
-        GeometryReader { proxy in
+        GeometryReader { _ in
             ZStack(alignment: .bottom) {
                 AuthBackdropVideo(
                     isActive: previewIsActive,
@@ -35,8 +35,7 @@ struct AuthGateView: View {
                     signIn: signIn,
                     retry: { Task { await app.retryWorkspaceResolution() } },
                     signOut: { Task { await app.signOutAccount() } },
-                    reportHeight: { dockHeight = $0 },
-                    maxHeight: proxy.size.height * 0.84
+                    reportHeight: { dockHeight = $0 }
                 )
             }
             .overlay(alignment: .topTrailing) {
@@ -147,19 +146,9 @@ private struct AuthGatePanel: View {
     let retry: () -> Void
     let signOut: () -> Void
     let reportHeight: (CGFloat) -> Void
-    let maxHeight: CGFloat
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                ScrollView { content.padding(.vertical, 8) }
-                    .scrollIndicators(.visible)
-                    .frame(maxHeight: maxHeight)
-            } else {
-                content
-            }
-        }
+        content
             .frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
@@ -172,7 +161,7 @@ private struct AuthGatePanel: View {
                     .ignoresSafeArea(edges: .bottom)
             }
             .environment(\.colorScheme, .dark)
-            .frame(maxHeight: maxHeight)
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             // Report the final laid-out panel, including its action buttons,
             // directly to the video. Preference propagation here could retain
             // a zero height during the gate's initial layout.
@@ -240,7 +229,7 @@ private struct AuthGatePanel: View {
         VStack(spacing: 0) {
             Text("Track every income")
                 .appFont(22, .semibold)
-                .tracking(0)
+                .tracking(-0.24)
                 .foregroundStyle(.white.opacity(0.96))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
@@ -294,19 +283,13 @@ private struct AuthGatePanel: View {
                         isDisabled: authenticatingProvider != nil,
                         action: guest
                     )
-                    Text("Keeps your ledger only on this device")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
 
-                    Button(action: pair) {
-                        Text("Pair a device")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .contentShape(.rect)
-                    }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.white)
-                        .disabled(authenticatingProvider != nil)
-                        .accessibilityHint("Use a one-time QR code to connect this device")
+                    AuthGateButton(
+                        title: "Pair a device",
+                        hint: "Use a one-time QR code to connect this device",
+                        isDisabled: authenticatingProvider != nil,
+                        action: pair
+                    )
                 }
             }
             .padding(.top, 12)
@@ -322,7 +305,7 @@ private struct AuthGatePanel: View {
                 .fill(.white.opacity(0.1))
                 .frame(height: 1)
                 .accessibilityHidden(true)
-            Text("Other options")
+            Text("Local-only options")
                 .appFont(14, .medium)
                 .foregroundStyle(.white.opacity(0.6))
                 .fixedSize()
@@ -424,8 +407,8 @@ private struct AuthProviderButton: View {
                     // readable at the shared 44 pt control height.
                     .appFont(16, .medium)
                     .foregroundStyle(.white.opacity(0.92))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: AuthControlMetrics.height)
         }

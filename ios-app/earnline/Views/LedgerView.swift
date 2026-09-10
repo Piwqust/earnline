@@ -144,14 +144,14 @@ struct LedgerView: View {
             if let entry = entry(withID: id) {
                 EditEntrySheet(entry: entry, clients: clients)
             }
-        case .newIncome:
-            NewIncomeSheet(clients: clients, month: app.displayedMonth)
         case .newClient:
             NewClientSheet(existingClients: clients) { newClient in
                 openComposer(for: newClient, month: app.displayedMonth)
             }
         case .pasteLines:
-            PasteLinesSheet(clients: clients, defaultClient: mostRecentClient, sharedText: LedgerSystemSurfaces.sharedText())
+            PasteLinesSheet(clients: clients,
+                            defaultClient: mostRecentClient,
+                            sharedText: LedgerSystemSurfaces.sharedText())
         case .insights:
             InsightsView()
         case .pending:
@@ -275,7 +275,7 @@ struct LedgerView: View {
                 if let client {
                     openComposer(for: client, month: app.displayedMonth)
                 } else {
-                    sheetRoute = .newIncome
+                    sheetRoute = .newClient
                 }
             },
             onNewClient: { sheetRoute = .newClient },
@@ -326,12 +326,13 @@ struct LedgerView: View {
     // MARK: Scroll content (List → native swipe actions)
 
     private var scrollContent: some View {
-        // The row model and the summary header share the cached
-        // `ledgerSnapshot` (one aggregation pass, refreshed by the task below
-        // only when `ledgerRevision` changes). Body re-evaluations — and there
-        // are many around launch — reuse it for free, and scrolling never
-        // touches it: the header owns the `displayedMonth` read.
-        List {
+        ScrollViewReader { proxy in
+            // The row model and the summary header share the cached
+            // `ledgerSnapshot` (one aggregation pass, refreshed by the task below
+            // only when `ledgerRevision` changes). Body re-evaluations — and there
+            // are many around launch — reuse it for free, and scrolling never
+            // touches it: the header owns the `displayedMonth` read.
+            List {
             if let error = app.syncError, !error.isEmpty {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
@@ -372,58 +373,76 @@ struct LedgerView: View {
                 .frame(height: 24)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .coordinateSpace(.named("ledger.scroll"))
-        .environment(\.defaultMinListRowHeight, 1)
-        // Pull-to-refresh mirrors the standard syncable-list affordance; a
-        // no-op while Supabase isn't configured. Disabled in search mode so
-        // a pull doesn't fight the keyboard.
-        .refreshable {
-            guard !isSearching, app.isSupabaseConfigured else { return }
-            await app.syncNow(context: context)
-        }
-        // Keep the solid summary separate from the scrolling ledger rows.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if !showsInlineFirstEarningsHeader, let snapshot = ledgerSnapshot {
-                header(monthlyTotals: snapshot.earnedTotalByMonth, hasAnyEntries: snapshot.hasEntries)
             }
-        }
-        // UIKit replaces the docked bottom-bar items with its full search
-        // field and Cancel control once search expands. Keep the one native
-        // Filters menu reachable in the same lower chrome, above that field,
-        // rather than reviving the former horizontal chip strip.
-        .safeAreaBar(edge: .bottom) {
-            if isSearching, let source = searchFilterSource {
-                HStack {
-                    LedgerSearchFiltersMenu(source: source, tokens: $search.tokens)
-                        .buttonStyle(.glass)
-                    Spacer(minLength: 0)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .coordinateSpace(.named("ledger.scroll"))
+            .environment(\.defaultMinListRowHeight, 1)
+            // Pull-to-refresh mirrors the standard syncable-list affordance; a
+            // no-op while Supabase isn't configured. Disabled in search mode so
+            // a pull doesn't fight the keyboard.
+            .refreshable {
+                guard !isSearching, app.isSupabaseConfigured else { return }
+                await app.syncNow(context: context)
+            }
+            // The floating summary cards ride a top `safeAreaBar` — a real pinned
+            // bar, which is what a scroll edge effect attaches to. The native soft
+            // effect then frosts rows into a blurred band as they slide up behind
+            // the cards (Figma's "Scroll Edge Effect - Soft"), progressively, and
+            // stays put at rest. A plain `safeAreaInset` gave the effect no bar to
+            // frost against, so the top read as a hard cut with no blur.
+            .safeAreaBar(edge: .top) {
+                if !showsInlineFirstEarningsHeader, let snapshot = ledgerSnapshot {
+                    header(monthlyTotals: snapshot.earnedTotalByMonth, hasAnyEntries: snapshot.hasEntries)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 3)
             }
-        }
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .scrollDismissesKeyboard(.interactively)
-        // Runs after the first frame commits — the app appears immediately and
-        // the ledger fills in a beat later — then again when the currency
-        // settings re-price the totals. Data edits arrive via `didSave` below.
-        .task(id: ledgerRevision) {
-            snapshotCache.refreshLedgerSnapshot(snapshotInputs)
-        }
-        // Every mutation in this app persists through a context save (the
-        // LedgerMutationStore.save contract, plus the sync pass's own saves), so this is
-        // the one complete invalidation signal for the cached snapshot.
-        //
-        // Filtered and coalesced, though. One sync pass saves three times, and
-        // every save used to trigger a full re-aggregation — two fetches and two
-        // counts apiece. The host also keeps one container alive per workspace,
-        // so an unrelated container's save refreshed this ledger too.
-        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { notification in
-            guard (notification.object as? ModelContext) === context else { return }
-            snapshotCache.scheduleSnapshotRefresh(snapshotInputs)
+            // UIKit replaces the docked bottom-bar items with its full search
+            // field and Cancel control once search expands. Keep the one native
+            // Filters menu reachable in the same lower chrome, above that field,
+            // rather than reviving the former horizontal chip strip.
+            .safeAreaBar(edge: .bottom) {
+                if isSearching, let source = searchFilterSource {
+                    HStack {
+                        LedgerSearchFiltersMenu(source: source, tokens: $search.tokens)
+                            .buttonStyle(.glass)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 3)
+                }
+            }
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .scrollDismissesKeyboard(.interactively)
+            // Runs after the first frame commits — the app appears immediately and
+            // the ledger fills in a beat later — then again when the currency
+            // settings re-price the totals. Data edits arrive via `didSave` below.
+            .task(id: ledgerRevision) {
+                snapshotCache.refreshLedgerSnapshot(snapshotInputs)
+            }
+            // Every mutation in this app persists through a context save (the
+            // LedgerMutationStore.save contract, plus the sync pass's own saves), so this is
+            // the one complete invalidation signal for the cached snapshot.
+            //
+            // Filtered and coalesced, though. One sync pass saves three times, and
+            // every save used to trigger a full re-aggregation — two fetches and two
+            // counts apiece. The host also keeps one container alive per workspace,
+            // so an unrelated container's save refreshed this ledger too.
+            .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { notification in
+                guard (notification.object as? ModelContext) === context else { return }
+                snapshotCache.scheduleSnapshotRefresh(snapshotInputs)
+            }
+            .onChange(of: composerRoute) { _, route in
+                guard let route, let client = client(withID: route.clientID) else { return }
+                let target = LedgerRow.composer(client, route.month).id
+
+                Task { @MainActor in
+                    await Task.yield()
+                    await Task.yield()
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) {
+                        proxy.scrollTo(target, anchor: .center)
+                    }
+                }
+            }
         }
     }
 
@@ -486,7 +505,12 @@ struct LedgerView: View {
         }
         app.pendingQuickAction = nil
         switch action {
-        case .addIncome: sheetRoute = clients.isEmpty ? .newClient : .newIncome
+        case .addIncome:
+            if let client = clients.first {
+                openComposer(for: client, month: app.displayedMonth)
+            } else {
+                sheetRoute = .newClient
+            }
         case .search: search.isPresented = true
         case .pasteLines: sheetRoute = .pasteLines
         }

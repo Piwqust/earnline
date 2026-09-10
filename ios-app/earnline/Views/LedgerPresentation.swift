@@ -8,7 +8,6 @@ enum LedgerRoute: Hashable {
 
 enum LedgerSheetRoute: Identifiable, Equatable {
     case editEntry(UUID)
-    case newIncome
     case newClient
     case pasteLines
     case insights
@@ -19,7 +18,6 @@ enum LedgerSheetRoute: Identifiable, Equatable {
     var id: String {
         switch self {
         case .editEntry(let id): "edit-entry-\(id)"
-        case .newIncome: "new-income"
         case .newClient: "new-client"
         case .pasteLines: "paste-lines"
         case .insights: "insights"

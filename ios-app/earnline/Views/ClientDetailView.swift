@@ -146,21 +146,10 @@ struct ClientDetailView: View {
                 )
                 .accessibilityAddTraits(.isHeader)
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 12) {
-                    moneySummaryStat("Total earned", value: snapshot?.total)
-                    Divider()
-                    moneySummaryStat("Avg / month", value: snapshot?.averagePerActiveMonth.rounded())
-                    Divider()
-                    summaryStat("Share of income", value: shareOfIncomeString(snapshot?.shareOfIncome))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(alignment: .top, spacing: 4) {
-                    moneySummaryStat("Total earned", value: snapshot?.total)
-                    moneySummaryStat("Avg / month", value: snapshot?.averagePerActiveMonth.rounded())
-                    summaryStat("Share of income", value: shareOfIncomeString(snapshot?.shareOfIncome))
-                }
+            HStack(alignment: .top, spacing: 4) {
+                moneySummaryStat("Total earned", value: snapshot?.total)
+                moneySummaryStat("Avg / month", value: snapshot?.averagePerActiveMonth.rounded())
+                summaryStat("Share of income", value: shareOfIncomeString(snapshot?.shareOfIncome))
             }
         }
         .frame(maxWidth: .infinity)

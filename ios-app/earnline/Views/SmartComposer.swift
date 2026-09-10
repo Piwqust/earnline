@@ -81,7 +81,7 @@ struct SmartComposer: View {
                 Image(systemName: "plus")
                     .appFont(12, .semibold)
                     .foregroundStyle(Theme.label(0.5))
-                    .frame(minHeight: 44)
+                    .frame(height: 28)
                 amountChip
                 projectChip
                 statusChip
@@ -154,7 +154,7 @@ struct SmartComposer: View {
                 } label: {
                     Text(symbol)
                         .foregroundStyle(amountText.isEmpty ? Theme.label(0.4) : Theme.label)
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(minWidth: 18)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Currency")
@@ -214,7 +214,7 @@ struct SmartComposer: View {
                 Image(systemName: "chevron.down")
                     .appFont(11, .semibold)
                     .foregroundStyle(Theme.label(0.45))
-                    .frame(width: 44, height: 44)
+                    .frame(width: 22, height: 24)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -279,7 +279,7 @@ struct SmartComposer: View {
                 Image(systemName: "chevron.down").appFont(9, .semibold).foregroundStyle(Theme.label(0.4))
             }
             .padding(.horizontal, 8)
-            .frame(minHeight: 44)
+            .frame(height: 28)
             .background(Theme.label(0.05), in: .capsule)
         }
         .buttonStyle(.plain)
@@ -401,7 +401,6 @@ struct SmartComposer: View {
     }
 
     private func commit() {
-        guard !client.isInvalidated else { saveError = String(localized: "That client is no longer in this ledger."); return }
         guard let amount = amountDecimal else { focus = .amount; warn(); return }
         let cleanTask = Validation.trimmed(task, max: Limits.maxTaskLength)
         guard !cleanTask.isEmpty else { focus = .task; warn(); return }
