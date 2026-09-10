@@ -2,6 +2,9 @@
 
 ## September 10, 2026
 
+### Appearance
+- The Stats card now matches the earnings card's neutral heading, typography, and padding while keeping its trend graph and Insights action.
+
 ### Reliability and access
 - An expired sign-in session no longer hides your saved workspace when the connection is unavailable. Server access denials still require signing in.
 - Automatic safety snapshots are created before a local reset or cloud-copy replacement. They can be reviewed and restored from Settings without overwriting existing lines.

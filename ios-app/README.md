@@ -37,6 +37,13 @@ close at hand.
 - Use the app fully locally, or sign in to a private workspace and pair your
   own devices when sync is useful.
 
+## Current release
+
+[Earnline 1.2.1 (7)](https://github.com/Piwqust/earnline/releases/tag/v1.2.1)
+provides unsigned primary and Dev IPAs with SHA-256 checksums. The primary app
+includes widget and Share extensions; Dev remains a separate local-only app.
+Read the [release notes](../docs/RELEASE-1.2.1.md) before re-signing or updating.
+
 ## Run locally
 
 ```bash

@@ -10,7 +10,7 @@ app.
 | Need | Read |
 | --- | --- |
 | Run the primary native app | [iPhone guide](../ios-app/README.md) |
-| Read the current release boundary | [Earnline 1.1.0 notes](RELEASE-1.1.0.md) |
+| Read the current release boundary | [Earnline 1.2.1 notes](RELEASE-1.2.1.md) |
 | Review what Earnline stores and syncs | [Privacy statement](../PRIVACY.md) |
 | Use the optional desktop companion | [Web guide](../web/README.md) |
 | Configure private OAuth, pairing, and the authorization cutover | [Auth rollout](AUTH_ROLLOUT.md) |

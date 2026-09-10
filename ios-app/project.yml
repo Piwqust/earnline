@@ -14,7 +14,7 @@ fileGroups:
 settings:
   base:
     MARKETING_VERSION: "1.2.1"
-    CURRENT_PROJECT_VERSION: "6"
+    CURRENT_PROJECT_VERSION: "7"
     SWIFT_VERSION: "6.0"
   configs:
     Debug:

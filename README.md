@@ -10,21 +10,28 @@ Add a line in seconds. See the month clearly. Keep the ledger on your phone,
 then connect a private workspace only when you want your own devices to stay in
 sync.
 
-[Download](#download-earnline-110) · [Run from Xcode](#run-from-xcode) · [Why it feels right on iPhone](#why-it-feels-right-on-iphone) · [Contribute](CONTRIBUTING.md)
+[Download](#download-earnline-121) · [Run from Xcode](#run-from-xcode) · [Why it feels right on iPhone](#why-it-feels-right-on-iphone) · [Contribute](CONTRIBUTING.md)
 
-## Download Earnline 1.1.0
+## Download Earnline 1.2.1
 
 [**Open the latest GitHub release →**](https://github.com/Piwqust/earnline/releases/latest)
 
 The release includes two unsigned IPA archives:
 
-- `earnline-1.1.0-unsigned.ipa` — the primary iPhone app;
-- `earnline-dev-1.1.0-unsigned.ipa` — a separate local-only development companion.
+- `earnline-1.2.1-7-unsigned.ipa` — the primary iPhone app;
+- `earnline-dev-1.2.1-7-unsigned.ipa` — a separate local-only development companion.
 
 Unsigned IPA files are inspectable build artifacts, not one-tap App Store
 installers. To use Earnline on your own iPhone today, build it from Xcode with
-your Apple development team. Version 1.1.0 is intended for local-first daily
-use; optional Supabase sync remains an operator-configured beta feature.
+your Apple development team, or use a signing workflow that supports the app
+and its extensions. The primary IPA includes a widget and Share extension;
+re-signing must preserve the OAuth URL scheme and App Group entitlements.
+
+Version 1.2.1 (build 7) restores the two-card header and inline composer, aligns
+the Stats card with the earnings card, and adds safety snapshots, backup
+previews, offline-session recovery, and system shortcuts.
+See the [release notes](docs/RELEASE-1.2.1.md) for changes and verification limits.
+The release includes `SHA256SUMS.txt` to verify both downloads.
 
 ## A quick tour
 
@@ -96,8 +103,8 @@ OAuth, device-pairing, security, and operations material is intentionally kept
 out of the product introduction; operators can start in
 [the documentation map](docs/README.md).
 
-Earnline has no ads or analytics. Ledger data stays on the device unless an
-operator deliberately configures the optional Supabase workspace. See the
+Earnline has no ads or analytics. Ledger data stays on the device in local mode. Signing in enables synchronization
+with your private Supabase workspace. See the
 [privacy statement](PRIVACY.md) for the exact boundary.
 
 All screenshots above come from the running apps with fictional disposable
