@@ -319,6 +319,31 @@ jobs:
           node --check scripts/verify-supabase-security.mjs
           node --check scripts/verify-supabase-e2e.mjs
 
+  ios-sync-sql:
+    name: iOS atomic sync and combined reads
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local_ci_only
+        ports:
+          - 55547:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Verify real concurrent writes and read isolation
+        env:
+          PGUSER: postgres
+          PGPASSWORD: local_ci_only
+        run: python3 scripts/test-ios-atomic-sync.py 55547
+
   backend-migrations-from-zero:
     name: Supabase migrations from zero
     runs-on: ubuntu-latest

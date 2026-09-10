@@ -101,7 +101,9 @@ enum SyncCoordinator {
                      client: SupabaseClient,
                      workspaceID: String,
                      lastPulledAt: Date? = nil,
-                     conflictResolution: ConflictResolution = .requireUserChoice) async throws -> SyncCursor {
+                     conflictResolution: ConflictResolution = .requireUserChoice,
+                     usesBatchReads: Bool = false) async throws -> SyncCursor {
+        try Task.checkCancellation()
         // Push tombstones before pulling rows: in this personal no-login model,
         // a local delete intentionally wins over a concurrent remote update.
         try await pushDeletes(context: context, client: client, workspaceID: workspaceID)
@@ -131,7 +133,8 @@ enum SyncCoordinator {
                                                        workspaceID: workspaceID,
                                                        lastPulledAt: lastPulledAt,
                                                        deletionTimes: deletionTimes,
-                                                       conflictResolution: conflictResolution)
+                                                       conflictResolution: conflictResolution,
+                                                       usesBatchReads: usesBatchReads)
         // Materialize remote cascade deletes before pushing rows so an entry
         // whose client vanished remotely cannot violate the remote FK.
         try context.save()
@@ -155,7 +158,8 @@ enum SyncCoordinator {
                                                               workspaceID: workspaceID,
                                                               lastPulledAt: pushCursor,
                                                               deletionTimes: deletionTimes,
-                                                              conflictResolution: conflictResolution)
+                                                              conflictResolution: conflictResolution,
+                                                              usesBatchReads: usesBatchReads)
 
         try context.save()
 
@@ -430,7 +434,8 @@ enum SyncCoordinator {
                                        workspaceID: String,
                                        lastPulledAt: Date?,
                                        deletionTimes: [DeletionKey: Date],
-                                       conflictResolution: ConflictResolution) async throws -> Date? {
+                                       conflictResolution: ConflictResolution,
+                                       usesBatchReads: Bool) async throws -> Date? {
         // Clients stay a full fetch: there are few, and every remote entry
         // needs its owner resolvable even when that client wasn't in this
         // pull. Headings and entries are indexed only to merge the pulled
@@ -448,19 +453,28 @@ enum SyncCoordinator {
             ? nil
             : lastPulledAt
 
-        let remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
-        let remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
-        let remoteEntries = try await fetchEntries(client: client, workspaceID: workspaceID, updatedAfter: entrySince)
-        let remoteProjectIcons = try await fetchProjectIcons(
-            client: client,
-            workspaceID: workspaceID,
-            updatedAfter: projectIconSince
-        )
-        let remoteMonthReviews = try await fetchMonthReviews(
-            client: client,
-            workspaceID: workspaceID,
-            updatedAfter: monthReviewSince
-        )
+        let batch = usesBatchReads ? try await SyncBatchReader.read(client: client, workspace: workspaceID, since: [
+            "earnline_clients": clientSince, "earnline_headings": headingSince, "earnline_entries": entrySince,
+            "earnline_project_icons": projectIconSince, "earnline_month_reviews": monthReviewSince,
+        ]) : nil
+        let remoteClients: [RemoteClient]
+        let remoteHeadings: [RemoteHeading]
+        let remoteEntries: [RemoteEntry]
+        let remoteProjectIcons: [RemoteProjectIcon]
+        let remoteMonthReviews: [RemoteMonthReview]
+        if let batch {
+            remoteClients = batch.clients
+            remoteHeadings = batch.headings
+            remoteEntries = batch.entries
+            remoteProjectIcons = batch.projectIcons
+            remoteMonthReviews = batch.monthReviews
+        } else {
+            remoteClients = try await fetchClients(client: client, workspaceID: workspaceID, updatedAfter: clientSince)
+            remoteHeadings = try await fetchHeadings(client: client, workspaceID: workspaceID, updatedAfter: headingSince)
+            remoteEntries = try await fetchEntries(client: client, workspaceID: workspaceID, updatedAfter: entrySince)
+            remoteProjectIcons = try await fetchProjectIcons(client: client, workspaceID: workspaceID, updatedAfter: projectIconSince)
+            remoteMonthReviews = try await fetchMonthReviews(client: client, workspaceID: workspaceID, updatedAfter: monthReviewSince)
+        }
 
         // A retained tombstone stays authoritative until the row is explicitly
         // restored with a *newer* server timestamp. Without this the pass would
@@ -989,6 +1003,7 @@ enum SyncCoordinator {
         var out: [T] = []
         var cursor: (timestamp: String, id: UUID)?
         while true {
+            try Task.checkCancellation()
             var query = client
                 .from(table)
                 .select()

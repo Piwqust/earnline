@@ -136,5 +136,28 @@ create publication supabase_realtime;
     denied = sql('set role anon;' + rpc('earnline_entries', [entry], [None]), ok=False)
     assert denied.returncode and '42501' in denied.stderr
     print('PASS: anonymous and foreign-workspace access denied, including forced writes')
+    # Combined reads preserve RLS and return bounded, keyset-paged snapshots.
+    def pull(since=None, before=None, done=None, identity=AS_OWNER):
+        return sql(identity + "select public.earnline_pull_page('cas-test',$j$%s$j$,$j$%s$j$,ARRAY[%s]::text[]);" % (
+            json.dumps(since or {}), json.dumps(before or {}),
+            ','.join("'%s'" % name for name in (done or []))))
+    page = json.loads(pull().stdout.strip())
+    assert len(page['earnline_clients']) == 1 and len(page['earnline_entries']) == 1
+    more = [{**entry, 'id': str(uuid.uuid4()), 'task': 'Page %s' % n} for n in range(251)]
+    for start in range(0, len(more), 250):
+        rows = more[start:start+250]
+        sql(AS_OWNER + rpc('earnline_entries', rows, [None]*len(rows)))
+    first = json.loads(pull().stdout.strip())['earnline_entries']
+    assert len(first) == 250
+    last = first[-1]
+    second = json.loads(pull(before={'earnline_entries': {'timestamp': last['updated_at'], 'id': last['id']}}).stdout.strip())['earnline_entries']
+    assert len(second) == 2 and not ({x['id'] for x in first} & {x['id'] for x in second})
+    assert json.loads(pull(done=['earnline_entries']).stdout.strip())['earnline_entries'] == []
+    denied = sql(stranger + "select public.earnline_pull_page('cas-test');", ok=False)
+    assert denied.returncode and '42501' in denied.stderr
+    denied = sql("set role anon;select public.earnline_pull_page('cas-test');", ok=False)
+    assert denied.returncode and '42501' in denied.stderr
+    print('PASS: bounded combined reads, keyset pagination and caller isolation')
+
 finally:
     sql('drop database ' + DATABASE + ' with (force)', database='postgres')

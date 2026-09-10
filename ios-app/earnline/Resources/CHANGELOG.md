@@ -1,5 +1,20 @@
 # What's new
 
+## September 10, 2026
+
+### Reliability and access
+- An expired sign-in session no longer hides your saved workspace when the connection is unavailable. Server access denials still require signing in.
+- Automatic safety snapshots are created before a local reset or cloud-copy replacement. They can be reviewed and restored from Settings without overwriting existing lines.
+- Backup import previews show how many records are new before confirmation.
+- The global add button opens a direct income form with a visible client picker, the selected month, and confirmation before discarding a draft.
+- Home Screen commands wait for an unfinished form. Shared text can be reviewed in Paste lines before import.
+- Added Home Screen Add income and Search commands, App Shortcuts, an earnings widget, and an Add income control.
+- Optional Spotlight indexing and widget amounts are hidden when app lock is enabled. Reminder details also follow the lock preference.
+- Large text keeps the auth panel, client profile, summary, and ledger status actions readable.
+- Search waits briefly while typing and reuses loaded rows. Sync reads combine five tables into bounded pages; reminders follow the latest saved state.
+- iOS can schedule background sync for a prepared signed-in workspace. Its timing is controlled by the system.
+- Reduced the bundled welcome video size while preserving its resolution and audio.
+
 ## September 5, 2026
 
 ### Reliability

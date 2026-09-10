@@ -9,11 +9,13 @@ import UserNotifications
 /// removing stale requests and adding missing ones, leaving matching requests
 /// untouched. The pure `desiredRequests` step is unit-tested; the
 /// `UNUserNotificationCenter` plumbing is not.
+@MainActor
 enum PendingNotifications {
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.earnline.app",
         category: "notifications"
     )
+    private static let scheduler = PendingReminderScheduler()
     /// One reminder we want scheduled.
     struct Request: Equatable, Sendable {
         let id: String              // entry.id.uuidString — stable, so rebuilds are idempotent
@@ -61,31 +63,34 @@ enum PendingNotifications {
     /// Reconcile scheduled reminders with `entries`. Permission is requested
     /// lazily, the first time there is actually something to schedule — so the
     /// prompt appears in context (setting a hold date) rather than at launch.
-    static func sync(_ entries: [Entry]) {
-        let desired = desiredRequests(for: entries)
-        // The center is obtained inside the task: UNUserNotificationCenter is
-        // not Sendable, so it must not be captured across the Task boundary.
-        Task {
-            do {
-                try await reconcile(desired, center: .current())
-            } catch {
-                logger.error("Notification reconciliation failed: \(error.localizedDescription, privacy: .public)")
-            }
+    static func sync(_ entries: [Entry], hidesDetails: Bool = false) {
+        let desired = desiredRequests(for: entries).map { request in
+            Request(id: request.id, dateComponents: request.dateComponents,
+                    body: hidesDetails ? String(localized: "Open Earnline to review an income reminder.") : request.body)
         }
+        scheduler.submit(desired)
     }
 
-    static func reconcile(_ desired: [Request], center: UNUserNotificationCenter) async throws {
+    static func clear() {
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        scheduler.submit([])
+    }
+
+    static func reconcile(_ desired: [Request], center: any PendingReminderCenter,
+                          isCurrent: () -> Bool = { true }) async throws {
+        guard isCurrent() else { return }
         if !desired.isEmpty {
-            let settings = await center.notificationSettings()
-            if settings.authorizationStatus == .notDetermined {
-                guard await requestAuthorization(center: center) else { return }
-            } else if settings.authorizationStatus == .denied {
-                logger.info("Notifications are disabled; keeping existing requests unchanged")
+            let authorization = await center.authorization()
+            guard isCurrent() else { return }
+            if authorization == .notDetermined {
+                guard try await center.requestPermission(), isCurrent() else { return }
+            } else if authorization == .denied {
                 return
             }
         }
 
-        let pending = await center.pendingNotificationRequests()
+        let pending = await center.pendingRequests()
+        guard isCurrent() else { return }
         let desiredByID = Dictionary(uniqueKeysWithValues: desired.map { ($0.id, $0) })
         var unchanged = Set<String>()
         var stale: [String] = []
@@ -97,9 +102,10 @@ enum PendingNotifications {
             }
         }
         if !stale.isEmpty {
-            center.removePendingNotificationRequests(withIdentifiers: stale)
+            center.remove(identifiers: stale)
         }
         for want in desired where !unchanged.contains(want.id) {
+            guard isCurrent() else { return }
             let content = UNMutableNotificationContent()
             content.title = String(localized: "Income due")
             content.body = want.body
@@ -117,5 +123,68 @@ enum PendingNotifications {
             && scheduled.month == want.dateComponents.month
             && scheduled.day == want.dateComponents.day
             && scheduled.hour == want.dateComponents.hour
+    }
+}
+
+@MainActor
+protocol PendingReminderCenter {
+    func authorization() async -> UNAuthorizationStatus
+    func requestPermission() async throws -> Bool
+    func pendingRequests() async -> [UNNotificationRequest]
+    func remove(identifiers: [String])
+    func add(_ request: UNNotificationRequest) async throws
+}
+
+@MainActor
+struct SystemReminderCenter: PendingReminderCenter {
+    func authorization() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+    func requestPermission() async throws -> Bool {
+        try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+    }
+    func pendingRequests() async -> [UNNotificationRequest] {
+        await UNUserNotificationCenter.current().pendingNotificationRequests()
+    }
+    func remove(identifiers: [String]) {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+    func add(_ request: UNNotificationRequest) async throws {
+        try await UNUserNotificationCenter.current().add(request)
+    }
+}
+
+/// A single writer drains the latest desired state. Cancellation alone cannot
+/// stop a notification add already in flight, so newer passes wait for it.
+@MainActor
+final class PendingReminderScheduler {
+    private let center: any PendingReminderCenter
+    private var revision = 0
+    private var desired: [PendingNotifications.Request] = []
+    private var worker: Task<Void, Never>?
+    private let logger = Logger(subsystem: "com.earnline.app", category: "reminders")
+
+    init(center: any PendingReminderCenter = SystemReminderCenter()) { self.center = center }
+
+    func submit(_ requests: [PendingNotifications.Request]) {
+        revision &+= 1
+        desired = requests
+        guard worker == nil else { return }
+        worker = Task { await drain() }
+    }
+
+    func flush() async { await worker?.value }
+
+    private func drain() async {
+        while true {
+            let stamp = revision
+            do {
+                try await PendingNotifications.reconcile(desired, center: center, isCurrent: { self.revision == stamp })
+            } catch {
+                logger.error("Could not update reminders: \(error.localizedDescription, privacy: .private)")
+            }
+            if revision == stamp { break }
+        }
+        worker = nil
     }
 }

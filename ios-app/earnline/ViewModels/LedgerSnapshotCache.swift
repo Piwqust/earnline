@@ -43,6 +43,7 @@ final class LedgerSnapshotCache {
     )
 
     private var windowMonthCount = 8
+    @ObservationIgnored private var searchEntries: [Entry]?
     /// Held rather than fire-and-forgotten. `LedgerView` is `.id`-keyed on the
     /// workspace store, so a switch releases this cache while a deferred pass
     /// may still be queued against the outgoing `ModelContext`; `deinit` cancels
@@ -87,6 +88,7 @@ final class LedgerSnapshotCache {
     func beginSearch(_ inputs: Inputs) {
         do {
             let entries = try inputs.context.fetch(FetchDescriptor<Entry>())
+            searchEntries = entries
             searchSnapshot = fullLedgerSnapshot(entries: entries, inputs: inputs)
             searchFilterSource = buildSearchFilterSource(clients: inputs.clients, entries: entries)
             applySearchScan(scanSearchHits(entries: entries, inputs: inputs))
@@ -108,7 +110,7 @@ final class LedgerSnapshotCache {
     }
 
     private func scanSearchHits(_ inputs: Inputs) throws -> SearchScan {
-        scanSearchHits(entries: try inputs.context.fetch(FetchDescriptor<Entry>()), inputs: inputs)
+        try scanSearchHits(entries: searchEntries ?? inputs.context.fetch(FetchDescriptor<Entry>()), inputs: inputs)
     }
 
     private func scanSearchHits(entries: [Entry], inputs: Inputs) -> SearchScan {
@@ -136,6 +138,7 @@ final class LedgerSnapshotCache {
     }
 
     func endSearch() {
+        searchEntries = nil
         searchSnapshot = nil
         searchFilterSource = nil
         searchHitIDs = []
@@ -172,6 +175,7 @@ final class LedgerSnapshotCache {
             )
             if inputs.isSearching {
                 let allEntries = try context.fetch(FetchDescriptor<Entry>())
+                searchEntries = allEntries
                 searchSnapshot = fullLedgerSnapshot(entries: allEntries, inputs: inputs)
                 searchFilterSource = buildSearchFilterSource(clients: inputs.clients, entries: allEntries)
                 applySearchScan(scanSearchHits(entries: allEntries, inputs: inputs))

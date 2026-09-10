@@ -13,8 +13,8 @@ fileGroups:
   - TestPlans
 settings:
   base:
-    MARKETING_VERSION: "1.1.1"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "1.2.0"
+    CURRENT_PROJECT_VERSION: "5"
     SWIFT_VERSION: "6.0"
   configs:
     Debug:
@@ -34,6 +34,7 @@ targets:
       Release: Config/Local.xcconfig
     sources:
       - path: earnline
+      - path: Shared
     preBuildScripts:
       - name: Reset Dev companion build marker
         script: |
@@ -51,12 +52,17 @@ targets:
         basedOnDependencyAnalysis: false
         showEnvVars: false
     dependencies:
+      - target: earnline-widgets
+        embed: true
+      - target: earnline-share
+        embed: true
       - package: Supabase
         product: Supabase
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app
         PRODUCT_DISPLAY_NAME: earnline
+        CODE_SIGN_ENTITLEMENTS: Shared/Shared.entitlements
         # The primary app must be signed for a physical-device Debug run. The
         # local Xcode account/team remains in ignored Local.private.xcconfig.
         CODE_SIGNING_ALLOWED: "YES"
@@ -70,7 +76,7 @@ targets:
         DEVELOPMENT_ASSET_PATHS: ""
       configs:
         Release:
-          CODE_SIGN_ENTITLEMENTS: earnline/Resources/earnline.entitlements
+          CODE_SIGN_ENTITLEMENTS: Shared/Shared.entitlements
   # A separate, side-by-side installable build for testing: same sources, its
   # own bundle ID and home-screen name, and the full in-app debug menu
   # compiled in via the DEBUGMENU condition. The App Store target never
@@ -84,6 +90,7 @@ targets:
       Release: Config/Local.xcconfig
     sources:
       - path: earnline
+      - path: Shared
     dependencies:
       # Keep the marker ordering deterministic: the production target clears
       # it first, then the Dev target sets it only when this build action
@@ -115,6 +122,40 @@ targets:
           : > "${PROJECT_TEMP_DIR}/earnline-dev-ready-to-install"
         basedOnDependencyAnalysis: false
         showEnvVars: false
+  earnline-widgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Widgets
+      - path: Shared
+      - path: earnline/Resources/Localizable.xcstrings
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app.widgets
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_FILE: Widgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Shared/Shared.entitlements
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: "YES"
+  earnline-share:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Share
+      - path: Shared
+      - path: earnline/Resources/Localizable.xcstrings
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.earnline.app.share
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_FILE: Share/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Shared/Shared.entitlements
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: "YES"
   earnlineTests:
     type: bundle.unit-test
     platform: iOS

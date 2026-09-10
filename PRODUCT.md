@@ -48,3 +48,7 @@ Avoid generic colored settings glyphs, dense developer dashboards, tiny floating
 ## Accessibility & Inclusion
 
 Support Dynamic Type, VoiceOver labels, high-contrast legibility, and 44-point minimum touch targets. Respect the app's existing Reduce Motion behavior.
+
+## Currency Display
+
+The owner intentionally uses a live, editable display rate. Changing it recalculates all historical displays between the primary and secondary currencies. Do not store a per-entry historical rate or alter earned-status/rounding semantics without a new product request. Original amounts and currencies stay authoritative.

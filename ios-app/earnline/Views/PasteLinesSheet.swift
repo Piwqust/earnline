@@ -13,10 +13,12 @@ struct PasteLinesSheet: View {
 
     let clients: [Client]
     var defaultClient: Client?
+    var sharedText: String?
 
     @State private var text = ""
     @State private var selectedClient: Client?
     @State private var saveError: String?
+    @State private var confirmsDiscard = false
     @State private var successFeedback = 0
 
     private var drafts: [ParsedLine] {
@@ -75,13 +77,24 @@ struct PasteLinesSheet: View {
         }
         .background(Theme.background)
         .scrollDismissesKeyboard(.interactively)
-        .sheetHeader("Paste lines", onClose: { dismiss() })
+        .alert("Discard this draft?", isPresented: $confirmsDiscard) {
+            Button("Discard draft", role: .destructive) {
+                if let sharedText { LedgerSystemSurfaces.consumeSharedText(sharedText) }
+                dismiss()
+            }
+            Button("Keep editing", role: .cancel) {}
+        }
+        .sheetHeader("Paste lines", onClose: {
+            if text.isEmpty { dismiss() } else { confirmsDiscard = true }
+        })
+        .interactiveDismissDisabled(!text.isEmpty)
         .sheetFooter {
             PillCTA("Add \(validDrafts.count)",
                     isEnabled: !validDrafts.isEmpty && selectedClient != nil,
                     action: commit)
         }
         .onAppear {
+            if text.isEmpty, let sharedText { text = sharedText }
             if selectedClient == nil { selectedClient = defaultClient ?? clients.first }
         }
         .saveErrorAlert($saveError, title: "Could not import lines")
@@ -184,6 +197,7 @@ struct PasteLinesSheet: View {
             // `LedgerMutationStore.save` rolls the entire failed transaction back.
             saveError = error
         } else {
+            if let sharedText { LedgerSystemSurfaces.consumeSharedText(sharedText) }
             successFeedback += 1
             dismiss()
         }

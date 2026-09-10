@@ -72,11 +72,12 @@ enum LedgerSafetySnapshots {
                         now: Date = .now,
                         fileManager: FileManager = .default) throws -> Snapshot? {
         let data = try LedgerBackupCodec.export(context: context, app: app)
+        guard data.count <= LedgerImportFile.maximumBytes else { throw LedgerImportFile.ReadError.tooLarge }
         let backup = try LedgerBackupCodec.decode(data)
         guard backup.totalRecords > 0 else { return nil }
 
         let folder = try directory(forStoreIdentity: app.workspaceStoreIdentity, fileManager: fileManager)
-        let url = folder.appendingPathComponent(fileName(for: reason, at: now))
+        let url = folder.appendingPathComponent(fileName(for: reason, at: now) + "_" + UUID().uuidString)
             .appendingPathExtension(fileExtension)
         // Financial data at rest: complete protection is safe because snapshots
         // are only ever written and read while the app is in the foreground.
@@ -105,7 +106,7 @@ enum LedgerSafetySnapshots {
     static func load(_ snapshot: Snapshot) throws -> LedgerBackup {
         let data: Data
         do {
-            data = try Data(contentsOf: snapshot.url)
+            data = try LedgerImportFile.read(snapshot.url)
         } catch {
             throw LedgerSafetySnapshotError.unreadableSnapshot
         }
@@ -148,7 +149,8 @@ enum LedgerSafetySnapshots {
         let stampEnd = name.index(name.startIndex, offsetBy: 20)
         guard let createdAt = stampFormatter.date(from: String(name[..<stampEnd])),
               name[stampEnd] == "-" else { return nil }
-        let reason = Reason(rawValue: String(name[name.index(after: stampEnd)...]))
+        let reasonText = name[name.index(after: stampEnd)...].split(separator: "_").first.map(String.init) ?? ""
+        let reason = Reason(rawValue: reasonText)
         return (createdAt, reason)
     }
 

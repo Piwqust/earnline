@@ -2,6 +2,7 @@ import SwiftUI
 
 /// One income line. Tap to expand the task; tap the dot to change status.
 struct EntryRow: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(AppModel.self) private var app
     @AppStorage(ProjectIconAppearance.userDefaultsKey) private var projectIconAppearanceRaw = ProjectIconAppearance.fill.rawValue
 
@@ -34,12 +35,7 @@ struct EntryRow: View {
 
     private var rowBody: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .top, spacing: 7) {
-                Image(systemName: "plus")
-                    .appFont(11, .semibold)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 7)
-
+            rowLayout {
                 entryAmount
 
                 if let projectSymbol {
@@ -64,7 +60,7 @@ struct EntryRow: View {
             }
 
             dateLine
-                .padding(.leading, 18)
+
         }
         .padding(.vertical, 2)
         .contentShape(.rect)
@@ -92,6 +88,12 @@ struct EntryRow: View {
             EntryContextPreview(entry: entry)
                 .environment(app)
         }
+    }
+
+    private var rowLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 7))
     }
 
     private var accessibilityDescription: String {
@@ -145,15 +147,10 @@ struct EntryRow: View {
             Image(systemName: entry.status.symbol)
                 .appFont(14, .semibold)
                 .foregroundStyle(entry.status.tint)
-                .frame(minWidth: 22, minHeight: 22)
+                .frame(minWidth: 44, minHeight: 44)
                 .contentTransition(.symbolEffect(.replace))
                 .animation(.snappy(duration: 0.3), value: entry.status)
-                // Grow the hit region to the HIG's 44 pt without moving the
-                // 22 pt glyph: pad out to 44, take the shape, pull the layout
-                // back in (hit testing isn't clipped to layout bounds).
-                .padding(11)
-                .contentShape(.circle)
-                .padding(-11)
+                .contentShape(.rect)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -192,10 +189,8 @@ struct EntryRow: View {
     }
 
     private var dateLine: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "arrow.turn.down.right")
-                .appFont(9, .regular)
-                .foregroundStyle(.tertiary)
+        HStack(spacing: 6) {
+            if entry.status == .canceled { Text(entry.status.title).foregroundStyle(.secondary) }
             Text(DateFormat.dotted(entry.date))
                 .foregroundStyle(.secondary)
             if let hold = entry.holdUntil {
@@ -313,7 +308,7 @@ private struct EntryDescriptionText: View {
 
     private func displayText(lineLimit: Int?) -> some View {
         text
-            .appFont(20, .medium)
+            .appFont(17, .regular)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -333,7 +328,7 @@ private struct EntryDescriptionText: View {
 
     private func measuredText(lineLimit: Int?, mode: EntryDescriptionHeightMode) -> some View {
         text
-            .appFont(20, .medium)
+            .appFont(17, .regular)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)

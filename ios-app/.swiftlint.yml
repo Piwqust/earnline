@@ -4,6 +4,9 @@
 
 included:
   - earnline
+  - Shared
+  - Share
+  - Widgets
   - earnlineTests
   - earnlineUITests
   - earnlineDevUITests

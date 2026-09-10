@@ -34,6 +34,8 @@ struct LedgerBackupTransferView: View {
     @State private var confirmsImport = false
     @State private var importedSummary: LedgerBackup.ImportSummary?
     @State private var saveError: String?
+    @State private var inspectionTask: Task<Void, Never>?
+    @State private var isInspecting = false
 
     var body: some View {
         NavigationStack {
@@ -94,6 +96,7 @@ struct LedgerBackupTransferView: View {
             }
         }
         .saveErrorAlert($saveError, title: "Could not transfer backup")
+        .onDisappear { inspectionTask?.cancel() }
     }
 
     @ViewBuilder
@@ -123,7 +126,9 @@ struct LedgerBackupTransferView: View {
             } label: {
                 Label("Choose backup file", systemImage: "folder")
             }
+            .disabled(isInspecting)
             .accessibilityIdentifier("settings.backup.import")
+            if isInspecting { ProgressView("Reading backup") }
         } footer: {
             Text("The backup is checked completely before the ledger changes. "
                  + "Import adds missing records and never overwrites rows already in this workspace.")
@@ -183,20 +188,23 @@ struct LedgerBackupTransferView: View {
             if case let .failure(error) = result { saveError = error.localizedDescription }
             return
         }
-        let hasSecurityScope = url.startAccessingSecurityScopedResource()
-        defer {
-            if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
-        }
-
-        do {
-            let decoded = try LedgerBackupCodec.decode(Data(contentsOf: url))
-            preview = decoded
-            importPlan = try LedgerBackupCodec.importPlan(decoded, into: context)
-            importedFilename = url.lastPathComponent
-        } catch {
-            preview = nil
-            importPlan = nil
-            saveError = error.localizedDescription
+        inspectionTask?.cancel()
+        isInspecting = true
+        preview = nil
+        importPlan = nil
+        inspectionTask = Task {
+            defer { isInspecting = false }
+            do {
+                let data = try await LedgerImportFile.readInBackground(url)
+                try Task.checkCancellation()
+                let decoded = try LedgerBackupCodec.decode(data)
+                preview = decoded
+                importPlan = try LedgerBackupCodec.importPlan(decoded, into: context)
+                importedFilename = url.lastPathComponent
+            } catch {
+                guard !Task.isCancelled else { return }
+                saveError = error.localizedDescription
+            }
         }
     }
 

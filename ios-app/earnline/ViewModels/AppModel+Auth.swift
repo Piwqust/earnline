@@ -125,6 +125,29 @@ extension AppModel {
     nonisolated static let localGuestWorkspaceID = "local-guest"
     nonisolated static let localGuestDefaultsKey = "localGuestMode"
 
+    /// Handles both OAuth callbacks and the URL form used by the quick-action
+    /// fallback. The latter keeps manual deep links useful in addition to the
+    /// native UIApplication shortcut.
+    func handleAppURL(_ url: URL) async {
+        if Self.isExpectedOAuthCallback(url) {
+            await handleAuthCallback(url)
+        } else if url.scheme == Self.oauthRedirectURL.scheme {
+            switch url.host {
+            case "add-income": pendingQuickAction = .addIncome
+            case "search": pendingQuickAction = .search
+            case "paste": pendingQuickAction = .pasteLines
+            default: break
+            }
+        }
+    }
+
+    func consumeQuickAction() {
+        guard let raw = defaults.string(forKey: EarnlineAppDelegate.pendingQuickActionKey),
+              let action = QuickAction(rawValue: raw) else { return }
+        defaults.removeObject(forKey: EarnlineAppDelegate.pendingQuickActionKey)
+        pendingQuickAction = action
+    }
+
     /// A UI-test-only route that keeps the real authentication gate visible
     /// while the rest of UI automation stays offline and in-memory. Production
     /// code never sets this argument.
@@ -200,9 +223,26 @@ extension AppModel {
         }
 
         accountState = .checking
+        await restoreAuthentication()
+    }
+
+    /// The SDK refreshes an expired session before returning it. Preserve the
+    /// cached identity only for a transport failure during that refresh.
+    func restoreAuthentication() async {
+        let generation = syncGeneration
         do {
-            let session = try await supabase().auth.session
-            await resolveWorkspace(for: session)
+            let client = try supabase()
+            let cachedSession = client.auth.currentSession
+            do {
+                let session = try await client.auth.session
+                guard generation == syncGeneration else { return }
+                await resolveWorkspace(for: session)
+            } catch {
+                guard generation == syncGeneration else { return }
+                if Self.isOfflineTransportError(error), let cachedSession,
+                   restoreCachedMembership(for: cachedSession) { return }
+                throw error
+            }
         } catch let error as EarnlineAuthStorage.StorageError {
             accountState = .failure(error.localizedDescription)
         } catch {
@@ -320,12 +360,7 @@ extension AppModel {
         #endif
         guard hasSupabaseConfiguration else { return }
         accountState = .checking
-        do {
-            let session = try await supabase().auth.session
-            await resolveWorkspace(for: session)
-        } catch {
-            accountState = .signedOut
-        }
+        await restoreAuthentication()
     }
 
     func createPairingCode() async throws -> PairingCode {
@@ -503,12 +538,15 @@ extension AppModel {
     }
 
     private func resolveWorkspace(for session: Session) async {
+        let generation = syncGeneration
         do {
             let rows: [WorkspaceMembershipResponse] = try await supabase()
                 .rpc("earnline_current_workspace")
                 .execute()
                 .value
+            guard generation == syncGeneration else { return }
             guard let membership = rows.first else {
+                defaults.removeObject(forKey: Self.cachedMembershipKey(for: session.user.id.uuidString))
                 accountState = .awaitingWorkspace(isPairedDevice: isPairedIdentity(session))
                 return
             }
@@ -532,6 +570,7 @@ extension AppModel {
             syncMessage = String(localized: "Ready")
             syncError = nil
         } catch {
+            guard generation == syncGeneration else { return }
             if Self.isOfflineTransportError(error), restoreCachedMembership(for: session) {
                 return
             }
@@ -566,6 +605,8 @@ extension AppModel {
         guard let data = defaults.data(forKey: Self.cachedMembershipKey(for: userID)),
               let membership = try? JSONDecoder().decode(CachedWorkspaceMembership.self, from: data),
               membership.userID == userID,
+              !membership.workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              Self.acceptedMembershipRoles.contains(membership.membershipRole),
               membership.isPairedDevice == isPairedIdentity(session) else {
             return false
         }

@@ -53,28 +53,9 @@ struct LedgerBottomBarItems: ToolbarContent {
             .accessibilityLabel("Add client")
             .accessibilityIdentifier("ledger.fab")
         } else {
-            Menu {
-                Menu {
-                    ForEach(clients) { client in
-                        Button { onIncome(client) } label: { Text(client.name) }
-                    }
-                } label: {
-                    MenuRowLabel("Income", glyph: "dollarsign")
-                }
-                Button(action: onNewClient) {
-                    MenuRowLabel("Client", glyph: "person.crop.circle.badge.plus")
-                }
-                Button(action: onNewHeading) {
-                    MenuRowLabel("Event note", glyph: "note.text")
-                }
-                Button(action: onPasteLines) {
-                    MenuRowLabel("Paste lines", glyph: "doc.on.clipboard")
-                }
-            } label: {
-                Label("Add", systemImage: "plus")
+            Button { onIncome(nil) } label: {
+                Label("Add income", systemImage: "plus")
             }
-            .tint(.primary)
-            .accessibilityLabel("Add")
             .accessibilityIdentifier("ledger.fab")
         }
     }
@@ -83,6 +64,11 @@ struct LedgerBottomBarItems: ToolbarContent {
     /// toolbar, exactly like Notes and Mail.
     private var moreMenu: some View {
         Menu {
+            Section {
+                Button(action: onNewClient) { MenuRowLabel("Client", glyph: "person.crop.circle.badge.plus") }
+                Button(action: onNewHeading) { MenuRowLabel("Event note", glyph: "note.text") }
+                Button(action: onPasteLines) { MenuRowLabel("Paste lines", glyph: "doc.on.clipboard") }
+            }
             Button(action: onInsights) {
                 MenuRowLabel("Insights", glyph: "chart.bar")
             }

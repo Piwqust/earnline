@@ -27,18 +27,21 @@ struct SyncCoordinatorTests {
         nonisolated(unsafe) static var onRequest: (@MainActor @Sendable (Recorded) -> Void)?
         private static let lock = NSLock()
         nonisolated(unsafe) private static var responses: [String: Data] = [:]
+        nonisolated(unsafe) private static var statusCodes: [String: Int] = [:]
         nonisolated(unsafe) private static var recordedRequests: [Recorded] = []
 
         static func reset() {
             lock.lock(); defer { lock.unlock() }
             responses = [:]
+            statusCodes = [:]
             recordedRequests = []
             onRequest = nil
         }
 
-        static func respond(_ method: String, _ table: String, json: String) {
+        static func respond(_ method: String, _ table: String, json: String, statusCode: Int = 200) {
             lock.lock(); defer { lock.unlock() }
             responses["\(method) \(table)"] = Data(json.utf8)
+            statusCodes["\(method) \(table)"] = statusCode
         }
 
         static var recorded: [Recorded] {
@@ -71,6 +74,7 @@ struct SyncCoordinatorTests {
             Self.lock.lock()
             Self.recordedRequests.append(record)
             data = Self.responses["\(method) \(table)"] ?? Data("[]".utf8)
+            let statusCode = Self.statusCodes["\(method) \(table)"] ?? 200
             Self.lock.unlock()
             if let rpcRows {
                 let value = (try? JSONSerialization.jsonObject(with: data))
@@ -82,7 +86,7 @@ struct SyncCoordinatorTests {
             }
 
             let response = HTTPURLResponse(url: request.url!,
-                                           statusCode: 200,
+                                           statusCode: statusCode,
                                            httpVersion: nil,
                                            headerFields: ["Content-Type": "application/json"])!
             if Thread.isMainThread {
@@ -143,6 +147,71 @@ struct SyncCoordinatorTests {
     }
 
     // MARK: Pull
+
+    @Test func combinedReadDecodesAllTablesInOneRequestPerPull() async throws {
+        MockTransport.reset()
+        let clientID = UUID()
+        MockTransport.respond("POST", "earnline_pull_page", json: """
+        {"earnline_clients":[{"id":"\(clientID)","workspace_id":"\(workspace)",
+          "name":"Fixture","color_hex":"#123456","sort_index":0,
+          "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-09-10T10:00:00.123456Z"}],
+          "earnline_headings":[],"earnline_entries":[],"earnline_project_icons":[],"earnline_month_reviews":[]}
+        """)
+        let container = try makeContainer()
+        let cursor = try await SyncCoordinator.sync(context: container.mainContext, client: makeClient(),
+            workspaceID: workspace, usesBatchReads: true)
+        #expect(try container.mainContext.fetch(FetchDescriptor<Client>()).first?.name == "Fixture")
+        #expect(cursor.rowUpdatedAt == timestamp("2026-09-10T10:00:00.123456Z"))
+        #expect(MockTransport.recorded.filter { $0.table == "earnline_pull_page" }.count == 2)
+        #expect(!MockTransport.recorded.contains { $0.method == "GET" && $0.table == "earnline_entries" })
+    }
+
+    @Test func combinedReadFallsBackOnlyWhenTheFunctionIsMissing() async throws {
+        MockTransport.reset()
+        MockTransport.respond("POST", "earnline_pull_page",
+            json: #"{"code":"PGRST202","message":"Function not found","details":null,"hint":null}"#, statusCode: 404)
+        let missing = try await SyncBatchReader.read(client: makeClient(), workspace: workspace, since: [:])
+        #expect(missing == nil)
+        MockTransport.respond("POST", "earnline_pull_page",
+            json: #"{"code":"42501","message":"Access denied","details":null,"hint":null}"#, statusCode: 403)
+        await #expect(throws: PostgrestError.self) {
+            try await SyncBatchReader.read(client: makeClient(), workspace: workspace, since: [:])
+        }
+    }
+
+    @Test func combinedReadContinuesFullTablesWithAPreciseCursor() async throws {
+        MockTransport.reset()
+        let stamp = "2026-09-10T10:00:00.123456Z"
+        let identifiers = (0..<251).map { _ in UUID() }
+        func page(_ ids: [UUID]) throws -> String {
+            let rows: [[String: Any]] = ids.map {
+                ["id": $0.uuidString, "workspace_id": workspace, "name": "Fixture", "color_hex": "#123456",
+                 "sort_index": 0, "created_at": stamp, "updated_at": stamp]
+            }
+            return String(decoding: try JSONSerialization.data(withJSONObject: [
+                "earnline_clients": rows, "earnline_headings": [], "earnline_entries": [],
+                "earnline_project_icons": [], "earnline_month_reviews": [],
+            ]), as: UTF8.self)
+        }
+        MockTransport.respond("POST", "earnline_pull_page", json: try page(Array(identifiers.prefix(250))))
+        let lastPage = try page([identifiers[250]])
+        MockTransport.onRequest = { request in
+            if request.table == "earnline_pull_page" {
+                MockTransport.respond("POST", "earnline_pull_page", json: lastPage)
+            }
+        }
+        let result = try #require(await SyncBatchReader.read(client: makeClient(), workspace: workspace, since: [:]))
+        #expect(result.clients.map(\.id) == identifiers)
+        let requests = MockTransport.recorded
+        #expect(requests.count == 2)
+        let body = try #require(JSONSerialization.jsonObject(with: Data(requests[1].body.utf8)) as? [String: Any])
+        let before = try #require(body["p_before"] as? [String: [String: String]])
+        #expect(before["earnline_clients"]?["timestamp"] == stamp)
+        #expect(before["earnline_clients"]?["id"] == identifiers[249].uuidString)
+        #expect(Set(try #require(body["p_done"] as? [String])) == Set([
+            "earnline_headings", "earnline_entries", "earnline_project_icons", "earnline_month_reviews",
+        ]))
+    }
 
     @Test func workspaceProfileSeedsCloudWithPrecisionSafeCurrencyTuple() async throws {
         MockTransport.reset()

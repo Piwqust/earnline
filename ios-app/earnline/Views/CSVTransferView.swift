@@ -250,7 +250,7 @@ struct CSVTransferView: View {
         }
 
         do {
-            let data = try Data(contentsOf: url)
+            let data = try LedgerImportFile.read(url)
             let existingKeys = Set(liveEntries.compactMap { entry -> LedgerCSV.DuplicateKey? in
                 guard let client = entry.client, !client.isDeleted else { return nil }
                 return LedgerCSV.DuplicateKey(

@@ -339,6 +339,17 @@ final class AppModel {
     /// Production/Test picker inside it.
     var showSettings = false
 
+    /// A system quick action can arrive before the ledger scene is mounted.
+    /// Keep it until the resolved local store can present the real add-income
+    /// surface.
+    enum QuickAction: String, Equatable {
+        case addIncome = "add-income"
+        case search
+        case pasteLines = "paste"
+    }
+    var pendingQuickAction: QuickAction?
+    var spotlightEntryID: UUID?
+
     // Persisted-settings store plus the sync / realtime / retry machinery.
     // These are module-`internal` (not `private`) only so the sync orchestration
     // can live in `AppModel+Sync.swift` while remaining owned by `AppModel`;
@@ -630,7 +641,7 @@ final class AppModel {
             predicate: #Predicate { $0.holdUntil != nil && $0.statusRaw == inProgress }
         )
         do {
-            PendingNotifications.sync(try context.fetch(descriptor))
+            PendingNotifications.sync(try context.fetch(descriptor), hidesDetails: requireAppLock)
         } catch {
             // A failed read must not be interpreted as "there are no holds":
             // that would remove valid reminders. Keep existing notifications

@@ -304,6 +304,108 @@ final class EarnlineUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["insights.sheet"].waitForExistence(timeout: 5))
     }
 
+    func testDirectIncomeFormPreservesDraftAndSavesToSelectedClient() {
+        let app = launchApp(["-demoLedger", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
+        let add = app.buttons["ledger.fab"]
+        XCTAssertTrue(add.waitForExistence(timeout: 8))
+        add.tap()
+        let amount = app.textFields["composer.newIncome.amount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        amount.tap()
+        amount.typeText("241.50")
+        let task = app.textFields["composer.newIncome.task"]
+        task.tap()
+        task.typeText("Release verification")
+        let client = app.buttons["composer.newIncome.client"]
+        client.tap()
+        app.buttons["Acme Studio"].firstMatch.tap()
+        app.buttons["Close"].firstMatch.tap()
+        let keep = app.buttons["Keep editing"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 3))
+        keep.tap()
+        XCTAssertEqual(amount.value as? String, "241.50")
+        XCTAssertEqual(task.value as? String, "Release verification")
+        let save = app.buttons["Save"].firstMatch
+        XCTAssertTrue(save.isEnabled)
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "direct-income-filled"
+        screenshot.lifetime = .keepAlways
+        self.add(screenshot)
+        save.tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        let entry = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH 'entry.row.' AND label CONTAINS 'Release verification'")
+        ).firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        add.tap()
+        XCTAssertTrue(amount.waitForExistence(timeout: 3))
+        amount.tap()
+        amount.typeText("999")
+        app.buttons["Close"].firstMatch.tap()
+        let discard = app.buttons["Discard draft"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 3))
+        discard.tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 3))
+        add.tap()
+        XCTAssertTrue(amount.waitForExistence(timeout: 3))
+        XCTAssertNotEqual(amount.value as? String, "999")
+    }
+
+    func testHomeScreenQuickActionWaitsForTheIncomeDraft() {
+        let app = launchApp(["-demoLedger", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"])
+        let add = app.buttons["ledger.fab"]
+        XCTAssertTrue(add.waitForExistence(timeout: 8))
+        add.tap()
+        let amount = app.textFields["composer.newIncome.amount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        amount.tap()
+        amount.typeText("375")
+        XCUIDevice.shared.press(.home)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let icon = springboard.icons["earnline"].firstMatch
+        XCTAssertTrue(icon.waitForExistence(timeout: 5))
+        icon.press(forDuration: 1.2)
+        let quickAction = springboard.buttons["Search income"]
+        XCTAssertTrue(quickAction.waitForExistence(timeout: 3))
+        quickAction.tap()
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        XCTAssertEqual(amount.value as? String, "375")
+        app.buttons["Close"].firstMatch.tap()
+        let discard = app.buttons["Discard draft"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 3))
+        discard.tap()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+    }
+
+    func testRussianIncomeAndRecoveryScreensInDarkAppearance() {
+        let app = launchApp(["-demoLedger", "-uiTestDarkAppearance", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"])
+        let add = app.buttons["ledger.fab"]
+        XCTAssertTrue(add.waitForExistence(timeout: 8))
+        add.tap()
+        let amount = app.textFields["composer.newIncome.amount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        XCTAssertTrue(amount.isHittable)
+        XCTAssertTrue(app.buttons["composer.newIncome.client"].isHittable)
+        let form = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        form.name = "direct-income-russian-dark-keyboard"
+        form.lifetime = .keepAlways
+        self.add(form)
+        app.buttons["Закрыть"].firstMatch.tap()
+        let menu = app.buttons["ledger.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        menu.tap()
+        app.buttons["Настройки"].tap()
+        let snapshots = app.buttons["settings.safetySnapshots.open"]
+        for _ in 0..<10 where !snapshots.isHittable { app.swipeUp() }
+        XCTAssertTrue(snapshots.isHittable)
+        snapshots.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.safetySnapshots"].waitForExistence(timeout: 5))
+        let recovery = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        recovery.name = "safety-snapshots-russian-dark"
+        recovery.lifetime = .keepAlways
+        self.add(recovery)
+    }
+
     func testInsightsRemainInMoreMenu() {
         let app = launchApp(["-demoLedger"])
 

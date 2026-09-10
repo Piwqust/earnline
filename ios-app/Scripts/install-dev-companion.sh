@@ -23,6 +23,15 @@ if [[ -z "$destination_id" || "$destination_id" == *"DVTiPhonePlaceholder"* ]]; 
   exit 0
 fi
 
+# Command-line test/build actions can carry a stale UUID after the simulator
+# was shut down. Installing the companion is a convenience post-action; it
+# must never turn a successful build into a failed one when that destination is
+# unavailable. A real Run action still supplies a live destination.
+if [[ "${PLATFORM_NAME:-}" == "iphonesimulator" ]] && ! xcrun simctl list devices | grep -Fq "(${destination_id}) (Booted)"; then
+  echo "note: earnline Dev was built but not installed because the simulator is not booted." >&2
+  exit 0
+fi
+
 app_path="${TARGET_BUILD_DIR:?Missing TARGET_BUILD_DIR}/${WRAPPER_NAME:?Missing WRAPPER_NAME}"
 if [[ ! -d "$app_path" ]]; then
   echo "error: earnline Dev was built without an installable app at $app_path." >&2

@@ -11,6 +11,9 @@ enum SyncState: String, Codable {
 /// pushed rows generically.
 protocol SyncableModel: PersistentModel {
     var id: UUID { get }
+    var syncStateRaw: String? { get set }
+    var updatedAt: Date? { get set }
+    var createdAt: Date { get }
     var syncUpdatedAt: Date { get }
     var syncState: SyncState { get set }
     var lastSyncedAt: Date? { get set }
@@ -343,87 +346,7 @@ extension Heading: SyncableModel {}
 extension ProjectIconPreference: SyncableModel {}
 extension MonthReview: SyncableModel {}
 
-extension Client {
-    var syncState: SyncState {
-        get { syncStateRaw.flatMap(SyncState.init(rawValue:)) ?? .dirty }
-        set { syncStateRaw = newValue.rawValue }
-    }
-
-    var needsSync: Bool { syncState != .synced }
-    var syncUpdatedAt: Date { updatedAt ?? createdAt }
-
-    func markDirty(at date: Date = .now) {
-        updatedAt = date
-        syncState = .dirty
-    }
-
-    func markSynced(at date: Date = .now) {
-        syncState = .synced
-        lastSyncedAt = date
-    }
-}
-
-extension Entry {
-    var syncState: SyncState {
-        get { syncStateRaw.flatMap(SyncState.init(rawValue:)) ?? .dirty }
-        set { syncStateRaw = newValue.rawValue }
-    }
-
-    var needsSync: Bool { syncState != .synced }
-    var syncUpdatedAt: Date { updatedAt ?? createdAt }
-
-    func markDirty(at date: Date = .now) {
-        updatedAt = date
-        syncState = .dirty
-    }
-
-    func markSynced(at date: Date = .now) {
-        syncState = .synced
-        lastSyncedAt = date
-    }
-}
-
-extension Heading {
-    var syncState: SyncState {
-        get { syncStateRaw.flatMap(SyncState.init(rawValue:)) ?? .dirty }
-        set { syncStateRaw = newValue.rawValue }
-    }
-
-    var needsSync: Bool { syncState != .synced }
-    var syncUpdatedAt: Date { updatedAt ?? createdAt }
-
-    func markDirty(at date: Date = .now) {
-        updatedAt = date
-        syncState = .dirty
-    }
-
-    func markSynced(at date: Date = .now) {
-        syncState = .synced
-        lastSyncedAt = date
-    }
-}
-
-extension ProjectIconPreference {
-    var syncState: SyncState {
-        get { syncStateRaw.flatMap(SyncState.init(rawValue:)) ?? .dirty }
-        set { syncStateRaw = newValue.rawValue }
-    }
-
-    var needsSync: Bool { syncState != .synced }
-    var syncUpdatedAt: Date { updatedAt ?? createdAt }
-
-    func markDirty(at date: Date = .now) {
-        updatedAt = date
-        syncState = .dirty
-    }
-
-    func markSynced(at date: Date = .now) {
-        syncState = .synced
-        lastSyncedAt = date
-    }
-}
-
-extension MonthReview {
+extension SyncableModel {
     var syncState: SyncState {
         get { syncStateRaw.flatMap(SyncState.init(rawValue:)) ?? .dirty }
         set { syncStateRaw = newValue.rawValue }

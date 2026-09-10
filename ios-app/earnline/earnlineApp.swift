@@ -1,8 +1,10 @@
 import SwiftUI
 import SwiftData
+import CoreSpotlight
 
 @main
 struct earnlineApp: App {
+    @UIApplicationDelegateAdaptor(EarnlineAppDelegate.self) private var appDelegate
     @State private var app: AppModel
 
     init() {
@@ -19,6 +21,8 @@ struct earnlineApp: App {
         defaults = .standard
         #endif
         let model = AppModel(defaults: defaults)
+        EarnlineRuntime.shared.app = model
+        BackgroundLedgerRefresh.register()
         _app = State(initialValue: model)
     }
 
@@ -50,13 +54,23 @@ private struct WorkspaceContainerHost: View {
         self.app = app
         let key = WorkspaceStore.Key(environment: app.workspaceEnvironment, workspaceID: app.workspaceID, mode: app.accountStoreMode)
         do {
-            _stores = State(initialValue: [key: try WorkspaceStore(key: key)])
+            _stores = State(initialValue: [key: try EarnlineRuntime.shared.store(for: key)])
             _storeOpenError = State(initialValue: nil)
         } catch {
             _stores = State(initialValue: [:])
             _storeOpenError = State(initialValue: error.localizedDescription)
         }
         _activeStoreKey = State(initialValue: key)
+    }
+
+    private struct SystemSurfaceRevision: Hashable {
+        let identity: String
+        let revision: Int
+        let rate: Double
+        let locked: Bool
+        let accountReady: Bool
+        let base: String
+        let secondary: String
     }
 
     private var store: WorkspaceStore? { stores[activeStoreKey] }
@@ -81,6 +95,20 @@ private struct WorkspaceContainerHost: View {
                         DebugMenuOverlay.install(app: app, container: store.container)
                         #endif
                         await bootstrapCurrentStore(store: store)
+                    }
+                    .task(id: SystemSurfaceRevision(identity: app.workspaceStoreIdentity,
+                                                    revision: app.mutations.dataRevision,
+                                                    rate: app.rate, locked: app.requireAppLock,
+                                                    accountReady: app.isAccountReady,
+                                                    base: app.baseCurrencyCode, secondary: app.secondaryCurrencyCode)) {
+                        guard store.key == app.currentWorkspaceStoreKey else { return }
+                        await LedgerSystemSurfaces.refresh(app: app, context: store.container.mainContext)
+                    }
+                    .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                        guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                              identifier.hasPrefix(app.workspaceStoreIdentity + "|"),
+                              let id = identifier.split(separator: "|").last.flatMap({ UUID(uuidString: String($0)) }) else { return }
+                        app.spotlightEntryID = id
                     }
                     .onChange(of: scenePhase) { _, phase in
                         handleScenePhase(phase, store: store)
@@ -114,7 +142,10 @@ private struct WorkspaceContainerHost: View {
                 switchStore(to: app.workspaceEnvironment, workspaceID: app.workspaceID, mode: app.accountStoreMode)
             }
             .onOpenURL { url in
-                Task { await app.handleAuthCallback(url) }
+                Task { await app.handleAppURL(url) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .earnlineQuickAction)) { _ in
+                app.consumeQuickAction()
             }
     }
 
@@ -280,7 +311,7 @@ private struct WorkspaceContainerHost: View {
         // client it names lives in the store being switched away from.
         if stores[key] == nil {
             do {
-                stores[key] = try WorkspaceStore(key: key)
+                stores[key] = try EarnlineRuntime.shared.store(for: key)
                 storeOpenError = nil
             } catch {
                 activeStoreKey = key
@@ -295,7 +326,7 @@ private struct WorkspaceContainerHost: View {
     private func retryActiveStore() {
         guard stores[activeStoreKey] == nil else { return }
         do {
-            stores[activeStoreKey] = try WorkspaceStore(key: activeStoreKey)
+            stores[activeStoreKey] = try EarnlineRuntime.shared.store(for: activeStoreKey)
             storeOpenError = nil
         } catch {
             storeOpenError = error.localizedDescription
@@ -307,7 +338,10 @@ private struct WorkspaceContainerHost: View {
         // Cover on `.inactive` (before the app-switcher snapshot), commit the
         // lock only on `.background`.
         if phase == .inactive { app.coverIfNeeded() }
-        if phase == .background { app.lockIfNeeded() }
+        if phase == .background {
+            app.lockIfNeeded()
+            BackgroundLedgerRefresh.scheduleIfNeeded(app: app)
+        }
         guard phase == .active else { return }
         // A window created while backgrounded starts on the system scheme;
         // re-assert the in-app choice on every activation.
@@ -316,6 +350,10 @@ private struct WorkspaceContainerHost: View {
         app.attemptUnlockIfNeeded()
         // Returning to the foreground pulls whatever happened while the socket
         // was suspended.
+        app.consumeQuickAction()
+        if app.pendingQuickAction == nil, LedgerSystemSurfaces.sharedText() != nil {
+            app.pendingQuickAction = .pasteLines
+        }
         guard app.isAccountReady, !app.isSyncing else { return }
         Task { await app.syncNow(context: store.container.mainContext) }
     }
@@ -365,46 +403,5 @@ private struct StoreRecoveryView: View {
             // swiftlint:disable:next line_length
             Text("Your older local ledger will stay on this device untouched. Earnline will use a separate cache for your signed-in workspace, which you can populate by syncing or importing later.")
         }
-    }
-}
-
-private struct WorkspaceStore {
-    struct Key: Hashable {
-        let environment: AppModel.WorkspaceEnvironment
-        let workspaceID: String
-        let mode: AppModel.AccountStoreMode
-    }
-
-    let key: Key
-    let container: ModelContainer
-
-    var environment: AppModel.WorkspaceEnvironment { key.environment }
-
-    init(key: Key) throws {
-        self.key = key
-        let schema = Schema(versionedSchema: EarnlineSchemaV3.self)
-        // UI and unit tests must never open a person's old simulator store.
-        // UI automation also seeds deterministic demo/stress fixtures. An
-        // in-memory container keeps both test surfaces isolated and prevents
-        // stale migration errors from polluting otherwise unrelated tests.
-        let configuration = ModelConfiguration(
-            Self.localStoreName(for: key),
-            schema: schema,
-            isStoredInMemoryOnly: AppModel.isRunningUIAutomation || AppModel.isRunningUnitTests
-        )
-        container = try ModelContainer(for: schema,
-                                       migrationPlan: EarnlineMigrationPlan.self,
-                                       configurations: configuration)
-    }
-
-    private static func localStoreName(for key: Key) -> String {
-        // Preserve the existing production file for the approved legacy
-        // handoff. Any other resolved workspace gets a different SwiftData
-        // container, so switching accounts on one device cannot reuse data.
-        if key.mode == .legacy { return key.environment.storeName }
-        let safeWorkspaceID = key.workspaceID.unicodeScalars.map { scalar -> Character in
-            CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "-"
-        }
-        return "\(key.environment.storeName)-\(String(safeWorkspaceID))"
     }
 }

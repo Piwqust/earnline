@@ -90,13 +90,14 @@ extension AppModel {
         var remainingPasses = Self.maxChainedSyncPasses
         var outcome: String?
         repeat {
+            if Task.isCancelled { return String(localized: "Sync was interrupted. Your saved changes will retry later.") }
             followUpSyncRequested = false
             outcome = await runSyncPass(context: context, conflictResolution: resolution)
             // An explicit conflict choice belongs to the pass the user asked
             // for, not to whatever landed while that pass was running.
             resolution = .requireUserChoice
             remainingPasses -= 1
-        } while followUpSyncRequested && remainingPasses > 0 && isSupabaseConfigured
+        } while followUpSyncRequested && remainingPasses > 0 && isSupabaseConfigured && !Task.isCancelled
         followUpSyncRequested = false
         return outcome
     }
@@ -170,7 +171,8 @@ extension AppModel {
                                                             client: client,
                                                             workspaceID: workspaceID,
                                                             lastPulledAt: syncCursor,
-                                                            conflictResolution: conflictResolution)
+                                                            conflictResolution: conflictResolution,
+                                                            usesBatchReads: true)
             guard generation == syncGeneration else {
                 finishStaleSyncPass()
                 return nil
@@ -193,21 +195,30 @@ extension AppModel {
             if syncTransactionStarted {
                 context.rollback()
             }
-            if let conflict = error as? SyncCoordinator.SyncConflictError {
-                syncConflictCount = conflict.count
-                syncMessage = String(localized: "Resolve conflict")
-                syncError = conflict.localizedDescription
-                lastSyncFailed = false
-            } else {
-                syncMessage = String(localized: "Needs sync")
-                syncError = error.localizedDescription
-                lastSyncFailed = true
-                scheduleRetrySync(context: context)
-            }
-            passError = syncError
+            passError = handleSyncFailure(error, context: context)
         }
         isSyncing = false
         return passError
+    }
+
+    private func handleSyncFailure(_ error: Error, context: ModelContext) -> String? {
+        if Task.isCancelled || error is CancellationError {
+            syncMessage = String(localized: "Needs sync")
+            lastSyncFailed = false
+            return String(localized: "Sync was interrupted. Your saved changes will retry later.")
+        }
+        if let conflict = error as? SyncCoordinator.SyncConflictError {
+            syncConflictCount = conflict.count
+            syncMessage = String(localized: "Resolve conflict")
+            syncError = conflict.localizedDescription
+            lastSyncFailed = false
+        } else {
+            syncMessage = Self.isOfflineTransportError(error) ? String(localized: "Offline") : String(localized: "Needs sync")
+            syncError = error.localizedDescription
+            lastSyncFailed = true
+            scheduleRetrySync(context: context)
+        }
+        return syncError
     }
 
     /// An in-flight pass outlived a workspace switch: drop its results and
@@ -230,6 +241,7 @@ extension AppModel {
     /// cache, and Settings → Data → Safety snapshots is the way back.
     @discardableResult
     func resetLocalDataAndPull(context: ModelContext, discardLocalProfile: Bool = false) async -> String? {
+        guard !isSyncing else { return String(localized: "Wait for the current sync to finish, then try again.") }
         guard isSupabaseConfigured else {
             syncMessage = String(localized: "Offline")
             return String(localized: "Add the Supabase URL and publishable key first.")
@@ -292,6 +304,9 @@ extension AppModel {
 
     func detachWorkspaceStore() {
         syncGeneration += 1
+        PendingNotifications.clear()
+        LedgerSystemSurfaces.hide()
+        BackgroundLedgerRefresh.cancel()
         // A staged undo describes a row in the store being left behind. Replaying
         // it against the incoming container would restore into the wrong
         // workspace — see `LedgerMutationStore.discardStagedUndo()`.

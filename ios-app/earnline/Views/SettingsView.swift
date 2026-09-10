@@ -15,6 +15,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage(LedgerSystemSurfaces.spotlightPreference) private var spotlightEnabled = false
     @State private var saveError: String?
     @State private var diagnosticsError: String?
     /// Counts shown in the form, refreshed on demand via `fetchCount` (a SQL
@@ -141,6 +142,10 @@ struct SettingsView: View {
                 )) {
                     SettingsRowLabel(verbatim: AppLockAuth.settingTitle, glyph: "faceid")
                 }
+                Toggle("Show ledger in Spotlight", isOn: $spotlightEnabled)
+                    .onChange(of: spotlightEnabled) { _, _ in
+                        Task { await LedgerSystemSurfaces.refresh(app: appModel, context: context) }
+                    }
                 if let privacyPolicyURL = PrivacyPolicyURL.current {
                     Link(destination: privacyPolicyURL) {
                         SettingsRowLabel("Privacy policy", glyph: "hand.raised")
@@ -591,6 +596,8 @@ struct SettingsView: View {
             switch await AppLockAuth.evaluate(reason: String(localized: "Confirm to change the app lock")) {
             case .authenticated:
                 appModel.requireAppLock = enable
+                if enable { PendingNotifications.clear(); LedgerSystemSurfaces.hide() }
+                appModel.refreshPendingReminders(context: context)
                 appModel.appLockNotice = nil
             case .unavailable:
                 if enable {

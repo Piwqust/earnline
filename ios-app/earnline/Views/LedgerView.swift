@@ -25,6 +25,7 @@ struct LedgerView: View {
     @State private var didRunDemo = false
     @State private var saveError: String?
     @State private var dataLoadError: String?
+    @State private var searchRefreshTask: Task<Void, Never>?
     // MARK: Derived
 
     private var isSearching: Bool { search.isPresented }
@@ -111,7 +112,7 @@ struct LedgerView: View {
         // Settings is presented by `WorkspaceContainerHost` (bound to
         // `app.showSettings`) so it survives the `.id` reset on a workspace
         // switch; every other sheet is scoped to this ledger's lifetime.
-        .sheet(item: $sheetRoute, content: sheetContent)
+        .sheet(item: $sheetRoute, onDismiss: handlePendingNavigation, content: sheetContent)
         .alert(
             confirmationTitle,
             isPresented: Binding(
@@ -133,6 +134,7 @@ struct LedgerView: View {
         .onChange(of: snapshotCache.loadError) { _, error in
             if let error { dataLoadError = error }
         }
+        .onDisappear { searchRefreshTask?.cancel() }
     }
 
     @ViewBuilder
@@ -142,12 +144,14 @@ struct LedgerView: View {
             if let entry = entry(withID: id) {
                 EditEntrySheet(entry: entry, clients: clients)
             }
+        case .newIncome:
+            NewIncomeSheet(clients: clients, month: app.displayedMonth)
         case .newClient:
             NewClientSheet(existingClients: clients) { newClient in
                 openComposer(for: newClient, month: app.displayedMonth)
             }
         case .pasteLines:
-            PasteLinesSheet(clients: clients, defaultClient: mostRecentClient)
+            PasteLinesSheet(clients: clients, defaultClient: mostRecentClient, sharedText: LedgerSystemSurfaces.sharedText())
         case .insights:
             InsightsView()
         case .pending:
@@ -234,6 +238,7 @@ struct LedgerView: View {
                     // month, while the ledger itself stays windowed.
                     snapshotCache.beginSearch(snapshotInputs)
                 } else {
+                    searchRefreshTask?.cancel()
                     search.query = ""
                     search.tokens = []
                     snapshotCache.endSearch()
@@ -241,10 +246,19 @@ struct LedgerView: View {
             }
             // The query and the token chips are the only other inputs to the
             // hit scan, so this is the complete refresh set.
-            .onChange(of: search.query) { _, _ in snapshotCache.refreshSearchStats(snapshotInputs) }
-            .onChange(of: search.tokens) { _, _ in snapshotCache.refreshSearchStats(snapshotInputs) }
+            .onChange(of: search.query) { _, _ in scheduleSearchRefresh() }
+            .onChange(of: search.tokens) { _, _ in scheduleSearchRefresh() }
             .onAppear(perform: runDemoIfNeeded)
             .onChange(of: clients.count) { _, _ in runDemoIfNeeded() }
+            .onChange(of: app.pendingQuickAction, initial: true) { _, _ in handlePendingNavigation() }
+            .onChange(of: app.spotlightEntryID) { _, _ in handlePendingNavigation() }
+            .onChange(of: app.isLocked) { _, _ in handlePendingNavigation() }
+            .onChange(of: app.isPresentingOnboarding) { _, _ in handlePendingNavigation() }
+            .onChange(of: app.showSettings) { _, shown in if !shown { handlePendingNavigation() } }
+            .onChange(of: composerRoute) { _, route in if route == nil { handlePendingNavigation() } }
+            .onChange(of: confirmationRoute) { _, route in if route == nil { handlePendingNavigation() } }
+            .onChange(of: navigationPath) { _, path in if path.isEmpty { handlePendingNavigation() } }
+            .onChange(of: search.isPresented) { _, shown in if !shown { handlePendingNavigation() } }
     }
 
     private var bottomToolbar: some ToolbarContent {
@@ -261,7 +275,7 @@ struct LedgerView: View {
                 if let client {
                     openComposer(for: client, month: app.displayedMonth)
                 } else {
-                    sheetRoute = .newClient
+                    sheetRoute = .newIncome
                 }
             },
             onNewClient: { sheetRoute = .newClient },
@@ -370,13 +384,8 @@ struct LedgerView: View {
             guard !isSearching, app.isSupabaseConfigured else { return }
             await app.syncNow(context: context)
         }
-        // The floating summary cards ride a top `safeAreaBar` — a real pinned
-        // bar, which is what a scroll edge effect attaches to. The native soft
-        // effect then frosts rows into a blurred band as they slide up behind
-        // the cards (Figma's "Scroll Edge Effect - Soft"), progressively, and
-        // stays put at rest. A plain `safeAreaInset` gave the effect no bar to
-        // frost against, so the top read as a hard cut with no blur.
-        .safeAreaBar(edge: .top) {
+        // Keep the solid summary separate from the scrolling ledger rows.
+        .safeAreaInset(edge: .top, spacing: 0) {
             if !showsInlineFirstEarningsHeader, let snapshot = ledgerSnapshot {
                 header(monthlyTotals: snapshot.earnedTotalByMonth, hasAnyEntries: snapshot.hasEntries)
             }
@@ -462,6 +471,27 @@ struct LedgerView: View {
         )
     }
 
+    private func handlePendingNavigation() {
+        // External navigation must never replace an unsaved sheet or inline draft.
+        // Keep the request pending until the person finishes the current flow.
+        guard !app.isLocked, !app.isPresentingOnboarding, !app.showSettings,
+              sheetRoute == nil, composerRoute == nil, confirmationRoute == nil,
+              navigationPath.isEmpty, !search.isPresented else { return }
+        guard let action = app.pendingQuickAction else {
+            if let id = app.spotlightEntryID {
+                sheetRoute = .editEntry(id)
+                app.spotlightEntryID = nil
+            }
+            return
+        }
+        app.pendingQuickAction = nil
+        switch action {
+        case .addIncome: sheetRoute = clients.isEmpty ? .newClient : .newIncome
+        case .search: search.isPresented = true
+        case .pasteLines: sheetRoute = .pasteLines
+        }
+    }
+
     // MARK: Entry actions
 
     private func setStatus(_ e: Entry, _ s: EntryStatus) {
@@ -513,12 +543,25 @@ struct LedgerView: View {
     }
 
     private func entry(withID id: UUID) -> Entry? {
-        for client in clients where !client.isInvalidated {
-            if let entry = client.entries.first(where: { !$0.isInvalidated && $0.id == id }) {
-                return entry
-            }
+        do {
+            return try context.fetch(FetchDescriptor<Entry>(
+                predicate: #Predicate { $0.id == id }
+            )).first { !$0.isInvalidated }
+        } catch {
+            dataLoadError = String(localized: "Could not load that income line. Your ledger was not changed.")
+            return nil
         }
-        return nil
+    }
+
+    /// Search scans the full ledger. A short debounce prevents one expensive
+    /// pass per keystroke while keeping the results responsive.
+    private func scheduleSearchRefresh() {
+        searchRefreshTask?.cancel()
+        searchRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            snapshotCache.refreshSearchStats(snapshotInputs)
+        }
     }
 
     private func heading(withID id: UUID) -> Heading? {

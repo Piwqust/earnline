@@ -268,7 +268,8 @@ enum LedgerCSV {
             return .failure(ValidationError("Amount can use at most two decimal places."))
         }
         guard parsedAmount <= Limits.maxAmount else {
-            return .failure(ValidationError("Amount must not exceed \(Limits.maxAmount)."))
+            let maximum = NSDecimalNumber(decimal: Limits.maxAmount).stringValue
+            return .failure(ValidationError("Amount must not exceed \(maximum)."))
         }
         let code = currencyCode.uppercased()
         guard supportedCurrencyCodes.contains(code) else {

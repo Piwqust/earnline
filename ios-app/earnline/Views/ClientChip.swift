@@ -5,6 +5,7 @@ import SwiftUI
 /// currency. While this client's composer is open the button reads "Close",
 /// since the same tap collapses it.
 struct ClientChip: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let client: Client
     let total: Decimal
     var isComposing: Bool = false
@@ -24,14 +25,18 @@ struct ClientChip: View {
         }
     }
 
+    private var layout: AnyLayout {
+        typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
+    }
+
     private var chipBody: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
+        layout {
+            layout {
                 Button(action: onOpen) {
                     Text(client.name)
                         .appFont(16, .semibold)
                         .foregroundStyle(.white)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .glassEffect(.regular.tint(Color(hex: client.colorHex)).interactive(),
@@ -39,7 +44,8 @@ struct ClientChip: View {
                         // The drawn capsule is ~19 pt tall; this reaches into the
                         // row's own padding so the target approaches 44 pt
                         // without thickening the ledger's densest row.
-                        .expandedTapArea()
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
 
@@ -62,7 +68,7 @@ struct ClientChip: View {
             .layoutPriority(1)
 
             if showsAdd {
-                Spacer(minLength: 8)
+                if !typeSize.isAccessibilitySize { Spacer(minLength: 8) }
 
                 // "+ Line" / "× Close"; collapses to just the "+" icon when the
                 // client name is long enough to crowd the row.
@@ -96,6 +102,7 @@ struct ClientChip: View {
         // Same reasoning as the client capsule: the "+ Line" / "× Close" label is
         // only ~18 pt tall, so grow the touch region into the row's padding
         // rather than the row itself.
-        .expandedTapArea()
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 }
